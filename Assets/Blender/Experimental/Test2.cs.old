@@ -1,0 +1,99 @@
+﻿using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.IO;
+using System.IO.Pipes;
+using System.Text;
+using System.Threading.Tasks;
+using UnityEngine;
+
+public class BlenderResponseMessage
+{
+    public bool IsSuccess;
+}
+
+public class Test2 : MonoBehaviour
+{
+
+    NamedPipeClientStream client;
+
+    void OnEnable()
+    {
+        client = new NamedPipeClientStream(".", "Foo", PipeDirection.InOut, PipeOptions.Asynchronous);
+        ConnectToBlender();
+
+        SendMessageToBlender("Hello");
+    }
+
+    private void OnDisable()
+    {
+        CloseBlenderConnection();
+    }
+
+    IEnumerator Start()
+    {
+        while (true)
+        {
+            SendMessageToBlender("Spam");
+            yield return new WaitForSeconds(2);
+        }
+    }
+
+
+    private void ConnectToBlender()
+    {
+        client.Connect();
+    }
+
+    public Task<BlenderResponseMessage> SendMessageToBlender(string message)
+    {
+        var completionSource = new TaskCompletionSource<BlenderResponseMessage>();
+
+        if (client.IsConnected)
+        {
+            var buffer = Encoding.UTF8.GetBytes(message);
+            client.BeginWrite(buffer, 0, buffer.Length, (result) =>
+            {
+                try
+                {
+                    completionSource.SetResult(EndWriteCallBack(result));
+                }
+                catch (Exception e)
+                {
+                    completionSource.SetException(e);
+                }
+            }, null);
+
+            
+        }
+        else
+        {
+            throw new IOException("Pipe is not connected");
+        }
+
+        return completionSource.Task;
+    }
+
+    private BlenderResponseMessage EndWriteCallBack(IAsyncResult result)
+    {
+        client.EndWrite(result);
+        client.Flush();
+
+        return new BlenderResponseMessage {
+            IsSuccess = true
+        };
+    }
+
+    void CloseBlenderConnection()
+    {
+        try
+        {
+            client.WaitForPipeDrain();
+        }
+        finally
+        {
+            client.Close();
+            client.Dispose();
+        }
+    }
+}

@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v3.1",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v3.1": {
+      "UnityBlenderBridge/1.0.0": {
+        "runtime": {
+          "UnityBlenderBridge.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "UnityBlenderBridge/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

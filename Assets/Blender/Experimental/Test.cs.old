@@ -1,0 +1,239 @@
+﻿using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.IO;
+using System.IO.MemoryMappedFiles;
+using System.IO.Pipes;
+using System.Text;
+using System.Runtime.InteropServices;
+using UnityEngine;
+using System.ComponentModel;
+
+[StructLayout(LayoutKind.Sequential)]
+public struct Foo
+{
+    public double doubleValue;
+    public int intValue;
+
+    [MarshalAs(UnmanagedType.U1)]
+    public bool boolValue;
+    // safer to just make it predictable, like an int.
+}
+
+public class Test : MonoBehaviour
+{
+    private void OnEnable()
+    {
+        Debug.Log("Enable behavior");
+
+        /*
+        FileStream file = new FileStream(
+            @"C:\Temp\Foo.dat", FileMode.OpenOrCreate
+        );
+
+        var mmf = MemoryMappedFile.CreateNew("Test Map", 10 * 1024 * 1024); // 10 MB file 
+        var accessor = mmf.CreateViewAccessor(1024 * 1024, 10 * 1024); // Map 10 KB at 1 MB offset
+
+        var buffer = new byte[10];
+        accessor.ReadArray(0, buffer, 0, buffer.Length);*/
+
+        var size = Marshal.SizeOf<Foo>();
+
+        Debug.Log($"Marshalled size: {size}"); // 16
+
+        NamedPipeTest();
+    }
+
+    private void OnDisable()
+    {
+        Debug.Log("disable");
+
+        if (server != null && server.IsConnected)
+        {
+            Debug.Log("disconnect server");
+            server.Disconnect();
+        }
+    }
+
+    private NamedPipeServerStream server;
+    AsyncCallback callback;
+
+    NamedPipeClientStream client;
+
+    void NamedPipeTest()
+    {
+        /*
+        server = new NamedPipeServerStream(
+            "testpipe", 
+            PipeDirection.InOut, 
+            1, 
+            PipeTransmissionMode.Message, 
+            PipeOptions.Asynchronous
+        );
+        
+        Debug.Log("Start wait");
+        */
+
+        // StartSync();
+
+        client = new NamedPipeClientStream(".", "testpipeclient", PipeDirection.InOut);
+        writer = new BinaryWriter(client);
+        // reader = new BinaryReader(client);
+
+        //writer2 = new StreamWriter(client);
+        reader2 = new StreamReader(client);
+
+        StartCoroutine(ConnectToPipe());
+
+        Debug.Log("End setup");
+    }
+
+    BinaryWriter writer;
+    BinaryReader reader;
+
+    StreamReader reader2;
+    StreamWriter writer2;
+
+    bool isConnected = false;
+
+    IEnumerator ConnectToPipe()
+    {
+        while (true)
+        {
+            try
+            {
+                if (!isConnected)
+                {
+                    Debug.Log("trying to connect");
+
+                    client.Connect(); // Will throw if the pipe doesn't exist.
+                    isConnected = true;
+
+                    Debug.Log("Connected to server");
+                }
+                else
+                {
+                    // Do IO with the server
+
+                    // need a try/catch for IOException (broken pipe)
+
+                    // Runs in master mode - HAS to write and then read. 
+                    Debug.Log("Write value");
+
+                    try
+                    {
+                        //writer.Write("foo"); 
+                        writer.Write("foo");
+
+                        Debug.Log("trying to read");
+                        // var value = reader2.ReadLine();
+
+                        //var value = reader.ReadString();
+                        // Debug.Log($"Read value {value}");
+                        string temp;
+                        while ((temp = reader2.ReadLine()) != null)
+                        {
+                            Debug.Log($"Received from server: {temp}");
+                        }
+                    }
+                    catch (IOException e)
+                    {
+                        Debug.Log($"IO: {e.Message}");
+                        client.Close();
+                        isConnected = false;
+                    }
+                }
+            }
+            catch (Win32Exception e)
+            {
+                Debug.Log($"Cannot connect to server {e.Message}");
+            }
+
+            yield return new WaitForSeconds(2);
+        }
+    }
+
+    void StartSync()
+    {
+        server.WaitForConnection(); // Win32Exception: Waiting for a process to open the other end of the pipe.
+        
+        Debug.Log("end wait in sync");
+
+        try
+        {
+            Debug.Log("push to client");
+
+            // Push to client
+            //using (var sw = new StreamWriter(server))
+            using (var bw = new BinaryWriter(server))
+            {
+                // sw.AutoFlush = true;
+                // sw.WriteLine("Foo bar");
+                bw.Write((uint)14);
+            }
+        }
+        catch (IOException e)
+        {
+            Debug.LogError($"ERROR: {e.Message}");
+        }
+
+        server.Disconnect();
+    }
+
+    void StartAsync()
+    {
+        callback = new AsyncCallback(AsyncPipeCallback);
+        server.BeginWaitForConnection(callback, null);
+    }
+
+    void AsyncPipeCallback(IAsyncResult result)
+    {
+        Debug.Log($"Entering async callback {result.IsCompleted}");
+        server.EndWaitForConnection(result);
+        
+        Debug.Log("end wait in async callback");
+
+        try
+        {
+            Debug.Log("push to client");
+
+            // Push to client
+            //using (var sw = new StreamWriter(server))
+            using (var bw = new BinaryWriter(server))
+            {
+                // sw.AutoFlush = true;
+                // sw.WriteLine("Foo bar");
+                bw.Write((uint)14);
+            }
+        }
+        catch (IOException e)
+        {
+            Debug.LogError($"ERROR: {e.Message}");
+        }
+    }
+
+    T BytesToStruct<T>(byte[] bytes) where T : struct
+    {
+        T result;
+
+        // Pinned = don't let GC move the memory space
+        var handle = GCHandle.Alloc(bytes, GCHandleType.Pinned);
+
+        try
+        {
+            result = Marshal.PtrToStructure<T>(handle.AddrOfPinnedObject());
+        }
+        finally
+        {
+            handle.Free();
+        }
+
+        return result;
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        
+    }
+}

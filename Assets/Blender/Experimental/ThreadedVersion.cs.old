@@ -1,0 +1,194 @@
+﻿ using UnityEngine;
+ using System.IO.Pipes;
+ using System.IO;
+ using System.Threading;
+ using System.ComponentModel;
+using System.Security.Cryptography;
+
+public class ThreadedVersion : MonoBehaviour
+ {
+     private string pipeName
+     {
+         get
+         {
+             return "testpipe";
+         }
+     }
+     private NamedPipeClientStream stream;
+     private StreamWriter sw;
+     private StreamReader sr;
+ 
+     /// <summary>
+     /// Thread for inter process communication
+     /// </summary>
+     private Thread interProc;
+ 
+     /// <summary>
+     /// When set tells thread to continue its work.
+     /// </summary>
+     private AutoResetEvent msgEvent;
+ 
+     /// <summary>
+     /// Must-have for get{} in messageTo
+     /// </summary>
+     private string tmpMessageTo;
+ 
+     /// <summary>
+     /// Message that will be sent to another process. Sets msgEvent automatically.
+     /// </summary>
+     private string messageTo
+     {
+         get
+         {
+             return tmpMessageTo; //Required so it doesn't cause infinite loop.
+         }
+         set
+         {
+             tmpMessageTo = value;
+             msgEvent.Set(); //Setting event will cause second thread to continue its work.
+         }
+     }
+     private string messageFrom;
+ 
+     /// <summary>
+     /// Should 2nd thread be still running?
+     /// </summary>
+     private volatile bool run = true;
+ 
+     void Start()
+     {
+         msgEvent = new AutoResetEvent(false); //False means that it will not trigger the event when it's created.
+     }
+ 
+     void Update()
+     {
+         //Sending messages to the pipe
+         if (Input.GetKeyDown(KeyCode.Space))
+         {
+             Debug.Log("[IPC] Changing message to server");
+             messageTo = "message";
+             Debug.Log("[IPC] Success");
+         }
+ 
+         //Starting the thread
+         if (Input.GetKeyDown(KeyCode.LeftControl))
+         {
+             if (interProc != null && interProc.IsAlive)
+             {
+                 Debug.Log("[IPC] Thread is already running");
+                 return;
+             }
+             Debug.Log("[LOCAL INFO] Starting new thread");
+             interProc = new Thread(Listen);
+             interProc.Start();
+         }
+ 
+         //Stooping thread
+         if (Input.GetKeyDown(KeyCode.Escape))
+         {
+             Debug.Log("Stopping the thread");
+             run = false;
+             if (interProc != null)
+             {
+                 if (interProc.ThreadState != ThreadState.Aborted)
+                     interProc.Abort();
+             }
+         }
+     }
+ 
+     /* --- SECOND THREAD ---*/
+     /// <summary>
+     /// Initialises writers/readers and the pipe
+     /// </summary>
+     void Initialise()
+     {
+         //Starting the pipe
+         Debug.LogFormat("[2T-IPC] Creating new ClientStream. Pipe name: {0}", pipeName);
+         stream = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut);
+ 
+         //Connecting to the pipe
+         Debug.Log("[2T-IPC] Connecting...");
+         try
+         {
+             stream.Connect(120);
+         }
+         catch (Win32Exception)
+         {
+             Debug.LogError("[2T-IPC] Server not running");
+             run = false;
+             return;
+         }
+         Debug.Log("[2T-IPC] Connected");
+ 
+         //Initialising Readers/Writers
+         Debug.Log("[2T-IPC] Starting StreamReader");
+         sr = new StreamReader(stream);
+ 
+         Debug.Log("[2T-IPC] Starting StreamWriter");
+         sw = new StreamWriter(stream);
+ 
+         //AutoFlush
+         Debug.Log("[2T-IPC] AutoFlush = true");
+         sw.AutoFlush = true;
+     }
+     void Listen()
+     {
+         Initialise();
+ 
+         while (run) //Main loop of the thread
+         {
+             messageFrom = "";
+ 
+             Debug.Log("[2T-IPC] Waiting for change of message event");
+             msgEvent.WaitOne(); //Waiting for event to be triggered (set)
+ 
+             Debug.Log("[2T-IPC] Sending test message");
+             sw.WriteLine(messageTo); //Writing command to the pipe
+ 
+             Debug.Log("[2T-IPC] Waiting for pipe drain");
+             // stream.WaitForPipeDrain(); //Waiting for another process to read the command
+             Debug.Log($"readable: {stream.CanRead} {stream.InBufferSize}");
+         
+
+             Debug.Log($"peek outer: {sr.Peek()}");
+             while (sr.Peek() > 0)
+             {
+                Debug.Log($"peek: {sr.Peek()}");
+                // readline doesn't fucking work. Fuck readline then (probably no null terminator sent?)
+
+                var foo = new char[5];
+                sr.ReadBlock(foo, 0, foo.Length); //Reading
+
+              //populate message to with data, if is needed to respond
+              
+                 Debug.Log(new string(foo, 0, foo.Length));
+              //  sw.WriteLine(messageTo);
+                }
+
+             Debug.Log($"Done with that, what we at? {run}");
+         }
+         Debug.Log("Finished");
+     }
+ 
+     /* --- UNITY'S THREAD --- */
+     //The following should stop the thread on Editor and Standalone quit and also when the game object is destroyed.
+     public void OnApplicationQuit()
+     {
+         run = false;
+         if (interProc != null)
+         {
+             if (interProc.ThreadState != ThreadState.Aborted)
+                 interProc.Abort();
+         }
+     }
+ 
+     public void OnDestroy()
+     {
+         run = false;
+         if (interProc != null)
+         {
+             if (interProc.ThreadState != ThreadState.Aborted)
+                 interProc.Abort();
+         }
+     }
+ }

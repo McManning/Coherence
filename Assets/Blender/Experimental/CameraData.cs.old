@@ -1,0 +1,163 @@
+﻿using SharedMemory;
+using System.Collections;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using UnityEngine;
+using UnityEngine.Profiling;
+using UnityEngine.Profiling.Memory.Experimental;
+using UnityEngine.Rendering;
+
+public class CameraData : MonoBehaviour
+{
+    public int Width
+    {
+        get { return tex.width; }
+    }
+
+    public int Height
+    {
+        get { return tex.height; }
+    }
+
+    Texture2D tex;
+    RenderTexture rt;
+    Camera cam;
+
+    CircularBuffer pixelsProducer;
+    CircularBuffer chunksConsumer;
+
+    //SharedArray<byte> producer;
+
+    private void OnEnable()
+    {
+        cam = GetComponent<Camera>();
+        rt = cam.targetTexture;
+        
+        // There's no A in this texture format, yet we're transferring it. 
+        // Any way to drop that from the structs? Probably not - it'd be slower
+        // to iterate and strip than to just flat copy those extra 2mil bytes.
+
+        tex = new Texture2D(rt.width, rt.height, TextureFormat.RGB24, false);
+
+        // 4 bytes per color channel - 1980*1080*4 = ~8 MB
+       // producer = new SharedArray<byte>("PixelData3"); // , rt.width * rt.height * Marshal.SizeOf<Color32>());
+        
+        // Works when I'm the owner, but not with unity. Maybe something 
+        // weird with how Unity is setup? Whatever. I own the buffer,
+        // which may make it quicker to pipe into blender anyway. 
+        //producer = new SharedArray<byte>("PixelData4", 1980 * 1050 * Marshal.SizeOf<Color32>());
+        //producer = new BufferReadWrite("PixelData4x", 1980 * 1050 * Marshal.SizeOf<Color32>());
+
+        pixelsProducer = new CircularBuffer("CB"); // , 10, size);
+        chunksConsumer = new CircularBuffer("Chunks");
+
+        // Needs to be the full size of the node because we want 
+        // to read everything we can *once* (header + data)
+        chunkBuffer = new byte[chunksConsumer.NodeBufferSize];
+
+        // pixels = new byte[producer.BufferSize];
+        Debug.Log(
+            $"PixelsProducer - Is owner: {pixelsProducer.IsOwnerOfSharedMemory} " +
+            $"size: {pixelsProducer.BufferSize}"
+        );
+
+        Debug.Log(
+            $"ChunksConsumer - Is owner: {chunksConsumer.IsOwnerOfSharedMemory} " +
+            $"size: {chunksConsumer.BufferSize}, nodeSize: {chunksConsumer.NodeBufferSize}"
+        );
+    }
+
+    private void OnDisable()
+    {
+        pixelsProducer.Dispose();
+        pixelsProducer = null;
+    }
+
+    private void Update()
+    {
+        // OnPostRender() doesn't work in URP
+        
+        ConsumeChunks();
+        PublishRenderTexture();
+    }
+
+    byte[] chunkBuffer;
+
+    void PublishRenderTexture()
+    {
+        var prevRT = RenderTexture.active;
+        var rt = cam.targetTexture;
+        
+        RenderTexture.active = cam.targetTexture;
+
+        Profiler.BeginSample("Copy RT to CPU");
+
+        // Copy it to the CPU (ugh)
+        tex.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
+        tex.Apply();
+
+        Profiler.EndSample(); // 6ms
+        
+        Profiler.BeginSample("Get Tex2D Data Array");
+
+        // Copy it (again, ... ugh) to the shared memory space
+        //var data = tex.GetRawTextureData<byte>(); // 4 bytes, rgba
+        //var dataArr = data.ToArray(); // Copy op? -  seems to have an alloc here. avoidable?
+        var dataArr = tex.GetRawTextureData();
+
+        Profiler.EndSample(); // 2.8 ms
+        
+
+       // Debug.Log($"Is owner: {producer.IsOwnerOfSharedMemory} length: {producer.BufferSize}");
+
+        // read 9x times after unity disconnect (because there was nothing else to read in the circular)
+        
+        Profiler.BeginSample("Wait write");
+
+        pixelsProducer.Write((ptr) => {
+            
+            Profiler.BeginSample("Write bytes");
+
+            // Pack header followed by raw RGB bytes into shared memory
+            var header = new ImageHeader
+            {
+                width = tex.width,
+                height = tex.height
+            };
+
+            var headerSize = FastStructure.SizeOf<ImageHeader>();
+
+            FastStructure.WriteBytes(ptr, FastStructure.ToBytes(ref header), 0, headerSize);
+
+            FastStructure.WriteBytes(ptr + headerSize, dataArr, 0, dataArr.Length);
+            Debug.Log($"Writing {dataArr.Length} bytes with meta {header.width} x {header.height} and pix 0 is " + 
+                $"{dataArr[0]}, {dataArr[1]}, {dataArr[2]}"
+            );
+
+            Profiler.EndSample(); // 0.42ms?
+        
+            return headerSize + dataArr.Length;
+        }, 100);
+        
+        Profiler.EndSample();
+        
+        RenderTexture.active = prevRT;
+    }
+
+    void ConsumeChunks()
+    {
+        chunksConsumer.Read(chunkBuffer);
+
+        // parse out header
+        var headerSize = FastStructure.SizeOf<ChunkHeader>();
+        var header = FastStructure.FromBytes<ChunkHeader>(chunkBuffer, 0);
+
+        Debug.Log(
+            $"Header {header.type} - {header.count} items " +
+            $"starting from {header.index} of {header.length} total"
+        );
+
+        // and do stuff with it. 
+    }
+}
+ 
