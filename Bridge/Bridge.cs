@@ -1,13 +1,7 @@
 ﻿using SharedMemory;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.IO.Pipes;
-using System.Runtime.InteropServices;
-using System.Runtime.Serialization.Formatters.Binary;
-using System.Text;
-using System.Threading;
+using System.Linq;
 
 public delegate int MessageHandler(string target, IntPtr ptr);
 
@@ -29,15 +23,15 @@ class Bridge : IDisposable
     const string MESSAGE_CONSUMER_ID = "UnityMessages";
     
     public bool IsConnected { get; private set; }
-
-    public Scene Scene { get; private set; }
-
+    
     /// <summary>
     /// How long to wait for a readable node to become available
     /// </summary>
-    const int READ_WAIT = 10;
+    const int READ_WAIT = 1;
 
     Dictionary<int, Viewport> Viewports { get; set; }
+    
+    Dictionary<int, SceneObject> Objects { get; set; }
 
     InteropUnityState unityState;
 
@@ -49,8 +43,9 @@ class Bridge : IDisposable
 
     public Bridge()
     {
-        Scene = new Scene();
         Viewports = new Dictionary<int, Viewport>();
+        Objects = new Dictionary<int, SceneObject>();
+
         handlers = new Dictionary<RpcRequest, MessageHandler>();
     }
 
@@ -113,6 +108,10 @@ class Bridge : IDisposable
 
         messages?.Dispose();
         messages = null;
+
+        // Release our copy of synced scene objects. Next time the Python 
+        // addon starts up the connection, it should load in objects to sync.
+        Objects.Clear();
     }
     
     /// <summary>
@@ -188,6 +187,15 @@ class Bridge : IDisposable
         messages.ReplaceOrQueue(type, entity.Name, ref data);
     }
 
+    /// <summary>
+    /// Send an array of <typeparamref name="T"/> to Unity, splitting into multiple
+    /// <see cref="RpcRequest"/> if all the objects cannot fit in a single message.
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <param name="type"></param>
+    /// <param name="target"></param>
+    /// <param name="data"></param>
+    /// <param name="allowSplitMessages"></param>
     internal void SendArray<T>(RpcRequest type, string target, T[] data, bool allowSplitMessages) where T : struct
     {
         if (!IsConnected)
@@ -225,6 +233,7 @@ class Bridge : IDisposable
         SendArray(RpcRequest.UpdateNormals, obj.Name, obj.Normals, true);
         SendArray(RpcRequest.UpdateUVs, obj.Name, obj.GetUV(0), true);
         // ... and so on, per-buffer ...
+
     }
 
     #endregion 
@@ -238,15 +247,13 @@ class Bridge : IDisposable
 
         InteropLogger.Debug($"{target} - {unityState.version} connected. Flavor Blasting.");
         
-        // Send the scene + all current object metadata
-        SendEntity(RpcRequest.UpdateScene, Scene);
-
-        foreach (var obj in Scene.Objects)
+        // Send all objects currently in the scene
+        foreach (var obj in Objects)
         {
             SendEntity(RpcRequest.AddObjectToScene, obj.Value);
         }
 
-        // Send active viewports and their visibility liists
+        // Send active viewports and their visibility lists
         foreach (var vp in Viewports)
         {
             var viewport = vp.Value;
@@ -263,9 +270,9 @@ class Bridge : IDisposable
         // THEN send current mesh data for all objects with meshes.
         // We do this last so that we can ensure Unity is completely setup and 
         // ready to start accepting large data chunks.
-        foreach (var entry in Scene.Objects)
+        foreach (var obj in Objects)
         {
-            SendAllMeshData(entry.Value);
+            SendAllMeshData(obj.Value);
         }
 
         return FastStructure.SizeOf<InteropUnityState>();
@@ -296,17 +303,12 @@ class Bridge : IDisposable
 
     public Viewport GetViewport(int id)
     {
-        if (!HasViewport(id))
+        if (!Viewports.ContainsKey(id))
         {
             throw new Exception($"Viewport {id} does not exist");
         }
 
         return Viewports[id];
-    }
-
-    public bool HasViewport(int id)
-    {
-        return Viewports.ContainsKey(id);
     }
 
     /// <summary>
@@ -315,17 +317,17 @@ class Bridge : IDisposable
     /// <param name="id"></param>
     /// <param name="initialWidth"></param>
     /// <param name="initialHeight"></param>
-    internal void AddViewport(int id, int initialWidth, int initialHeight)
+    internal void AddViewport(int id)
     {
-        if (HasViewport(id))
+        if (Viewports.ContainsKey(id))
         {
             throw new Exception($"Viewport {id} already exists");
         }
 
-        var viewport = new Viewport(id, initialWidth, initialHeight);
+        var viewport = new Viewport(id);
 
         // Assume everything is visible upon creation
-        viewport.SetVisibleObjects(Scene.GetObjectIds());
+        viewport.SetVisibleObjects(Objects.Keys.ToArray());
         Viewports[id] = viewport;
 
         SendEntity(RpcRequest.AddViewport, viewport);
@@ -344,6 +346,44 @@ class Bridge : IDisposable
         
         Viewports.Remove(id);
         viewport.Dispose();
+    }
+
+    #endregion
+
+    #region Object Management
+
+    public SceneObject GetObject(int id)
+    {
+        if (!Objects.ContainsKey(id))
+        {
+            throw new Exception($"Object {id} does not exist in the scene");
+        }
+
+        return Objects[id];
+    }
+
+    public void AddObject(SceneObject obj)
+    {
+        if (Objects.ContainsKey(obj.data.id))
+        {
+            throw new Exception($"Object {obj.data.id} already exists in the scene");
+        }
+
+        Objects[obj.data.id] = obj;
+
+        SendEntity(RpcRequest.AddObjectToScene, obj);
+    }
+
+    public void RemoveObject(int id)
+    {
+        if (!Objects.ContainsKey(id))
+        {
+            throw new Exception($"Object {id} does not exist in the scene");
+        }
+
+        var obj = Objects[id];
+        SendEntity(RpcRequest.RemoveObjectFromScene, obj);
+        Objects.Remove(id);
     }
 
     #endregion

@@ -38,7 +38,7 @@ public class SceneManager : MonoBehaviour
 
         // Throws, but wasn't caught anywhere... ? Must've been caught in the RPC silently. Fak.
         // throw new NotImplementedException();
-        Debug.Log($"Update from interop: {interopScene.objectCount} objects");
+        InteropLogger.Debug($"Update from interop: {interopScene.objectCount} objects");
     }
     
     /*
@@ -76,14 +76,14 @@ public class SceneManager : MonoBehaviour
 
     internal void RemoveObject(string name)
     {
-        Debug.Log($"Removing scene object {name}");
+        InteropLogger.Debug($"Removing scene object {name}");
         controllers[name].gameObject.SetActive(false); // TODO: Actual removal?
         controllers.Remove(name);
     }
 
     internal void AddObject(string name, InteropSceneObject obj)
     {
-        Debug.Log($"Adding scene object {name} with ID {obj.id}");
+        InteropLogger.Debug($"Adding scene object {name} with ID {obj.id}");
 
         var go = new GameObject($"{name} (ID: {obj.id})");
         go.transform.parent = transform;
@@ -93,6 +93,6 @@ public class SceneManager : MonoBehaviour
         controllers[name] = controller;
         controller.UpdateFromInterop(obj);
 
-        Debug.Log($"Added GO {go.name}");
+        InteropLogger.Debug($"Added GO {go.name}");
     }
 }

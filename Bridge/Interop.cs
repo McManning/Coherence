@@ -99,7 +99,7 @@ public enum RpcRequest : byte
     ///     Payload: <see cref="InteropScene"/>
     /// </para>
     /// </summary>
-    UpdateScene,
+    UpdateScene, // DEPRECATED.
 
     /// <summary>
     /// Notify Unity that a <see cref="InteropSceneObject"/>
@@ -167,6 +167,15 @@ public enum RpcRequest : byte
     /// </summary>
     UpdateUVs,
 
+    /// <summary>
+    /// Notify Unity that the active material name for a 
+    /// <see cref="InteropSceneObject"/> has changed.
+    /// 
+    /// <para>
+    ///     Payload: Material name as <see cref="byte"/>[]
+    /// </para>
+    /// </summary>
+    UpdateMaterial,
 
     #endregion 
 }
@@ -242,27 +251,27 @@ public struct InteropViewport
     /// consumer/producer to easily map pixel data to a viewport.
     /// </summary>
     public int id;
-    public int width;
-    public int height;
 
     /// <summary>
     /// Metadata about the viewport camera
     /// </summary>
     public InteropCamera camera;
-
-    /// <summary>
-    /// Number of visible objects in this viewport
-    /// </summary>
-    public int visibleObjectIdsCount;
 }
-    
+   
 /// <summary>
 /// Current viewport camera state (transform, matrices, etc)
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public struct InteropCamera
 {
+    /// <summary>Viewport width in pixels</summary>
+    public int width;
+
+    /// <summary>Viewport height in pixels</summary>
+    public int height;
+
     public float lens;
+
     public InteropVector3 position;
     public InteropVector3 forward;
     public InteropVector3 up;
@@ -275,6 +284,8 @@ public struct InteropCamera
     public override bool Equals(object obj)
     {
         return obj is InteropCamera cam 
+            && cam.width == width 
+            && cam.height == height
             && cam.lens == lens
             && cam.position.Approx(position)
             && cam.forward.Approx(forward)
@@ -310,7 +321,7 @@ public struct InteropMatrix4x4
 /// Blender scene metadata
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
-public struct InteropScene
+public struct InteropScene // DEPRECATED
 {
     /// <summary>
     /// Number of BlenderObject instances in the scene
@@ -322,6 +333,90 @@ public enum SceneObjectType
 {
     Mesh = 1,
     Other,
+}
+
+/// <summary>
+/// Fixed length (63 byte + \0) string that can be packed into an interop struct.
+/// 
+/// <para>
+///     This exists to add string support to <see cref="FastStructure" />
+///     and safely pack strings within other structs in shared memory.
+///     
+///     Can be implicitly cast to and from <see cref="string"/>.
+/// </para>
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public unsafe struct InteropString64
+{
+    public fixed sbyte buffer[64];
+
+    public InteropString64(string value)
+    {
+        Value = value;
+    }
+
+    /// <summary>
+    /// Read or write the fixed character buffer
+    /// </summary>
+    public string Value
+    {
+        get
+        {
+            fixed (sbyte* s = buffer)
+            {
+                var str = new string(s); // , 0, 64, Encoding.ASCII);
+                InteropLogger.Debug($"Unpack string '{str}'");
+                return str;
+            }
+        }
+        set
+        {
+            fixed (sbyte* s = buffer)
+            {
+                if (value.Length > 63)
+                {
+                    throw new OverflowException(
+                        $"String `{value}` is too large to pack into an InteropString64"
+                    );
+                }
+                
+                int i = 0;
+                foreach (char c in value)
+                {
+                    *(s + i) = (sbyte)c;
+                    i++;
+                    if (i >= 63) break;
+                }
+                *(s + i) = 0;
+                InteropLogger.Debug($"Pack string '{value}' zeroed at {i}");
+            }
+        }
+    }
+
+    public override bool Equals(object obj)
+    {
+        return Value.Equals(obj);
+    }
+
+    public override int GetHashCode()
+    {
+        return Value.GetHashCode();
+    }
+
+    public override string ToString()
+    {
+        return Value;
+    }
+
+    public static implicit operator string(InteropString64 s)
+    {
+        return s.Value;
+    }
+
+    public static implicit operator InteropString64(string s)
+    {
+        return new InteropString64(s);
+    }
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -341,6 +436,11 @@ public struct InteropSceneObject
     /// Number of <see cref="int"/> elements in the triangle array
     /// </summary>
     public int triangleCount;
+
+    /// <summary>
+    /// Name of the material used by this object
+    /// </summary>
+    public InteropString64 material;
 }
 
 /// <summary>
@@ -484,6 +584,23 @@ public struct RenderTextureData
     public IntPtr pixels;
 }
 
+/*
+public static class InteropUtility
+{
+    public unsafe static void ToFixedBuffer(this string str, sbyte* s, int len)
+    {
+        int i = 0;
+        foreach (char c in str)
+        {
+            *(s + i) = (sbyte)c;
+            i++;
+            if (i >= len - 1) break;
+        }
+        *(s + i) = 0;
+    }
+}
+*/
+
 public static class InteropLogger
 {
     [Conditional("DEBUG")]
@@ -499,7 +616,7 @@ public static class InteropLogger
     public static void Warning(string message)
     {
     #if UNITY_EDITOR
-        UnityEngine.Debug.Warn(message);
+        UnityEngine.Debug.LogWarning(message);
     #else 
         Console.WriteLine("WARNING: " + message);
     #endif 
@@ -508,7 +625,7 @@ public static class InteropLogger
     public static void Error(string message)
     {
     #if UNITY_EDITOR
-        UnityEngine.Debug.Error(message);
+        UnityEngine.Debug.LogError(message);
     #else 
         Console.WriteLine("ERROR: " + message);
     #endif 

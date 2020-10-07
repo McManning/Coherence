@@ -3,6 +3,7 @@ using System;
 using SharedMemory;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 /// <summary>
 /// Data management for a Blender viewport.
@@ -44,16 +45,19 @@ class Viewport : IDisposable, IInteropSerializable<InteropViewport>
     public InteropViewport data;
     public int[] VisibleObjectIds;
 
-    public Viewport(int id, int width, int height)
+    private readonly object renderTextureLock = new object();
+
+    public Viewport(int id)
     {
         data = new InteropViewport
         {
             id = id,
-            width = width,
-            height = height
+            camera = new InteropCamera
+            {
+                width = 100,
+                height = 100
+            }
         };
-
-        Resize(width, height);
 
         Frame = 0;
         Pixels = IntPtr.Zero;
@@ -72,22 +76,6 @@ class Viewport : IDisposable, IInteropSerializable<InteropViewport>
     public void SetVisibleObjects(int[] ids)
     {
         VisibleObjectIds = ids;
-    }
-
-    public void Resize(int width, int height)
-    {
-        if (width < 1 || height < 1)
-        {
-            throw new Exception("Viewport dimensions must be nonzero");
-        }
-
-        if (width > MAX_VIEWPORT_WIDTH || height > MAX_VIEWPORT_HEIGHT)
-        {
-            throw new Exception($"Viewport dimensions cannot exceed {MAX_VIEWPORT_WIDTH} x {MAX_VIEWPORT_HEIGHT}");
-        }
-
-        data.width = width;
-        data.height = height;
     }
 
     public InteropViewport Serialize()
@@ -111,39 +99,65 @@ class Viewport : IDisposable, IInteropSerializable<InteropViewport>
     {
         var pixelArraySize = header.width * header.height * 3;
         
-        if (Pixels == IntPtr.Zero)
+        lock (renderTextureLock)
         {
-            InteropLogger.Debug($"Allocating {header.width} x {header.height}");
-            Pixels = Marshal.AllocHGlobal(pixelArraySize);
-        }
-        else if (header.width != Header.width || header.height != Header.height)
-        {
-            // If the inbound data resized - resize our buffer
-            InteropLogger.Debug($"Reallocating {header.width} x {header.height}");
-            Pixels = Marshal.ReAllocHGlobal(Pixels, new IntPtr(pixelArraySize));
-        }
+            if (Pixels == IntPtr.Zero)
+            {
+                InteropLogger.Debug($"Allocating {header.width} x {header.height}");
+                Pixels = Marshal.AllocHGlobal(pixelArraySize);
+            }
+            else if (header.width != Header.width || header.height != Header.height)
+            {
+                // If the inbound data resized - resize our buffer
+                InteropLogger.Debug($"Reallocating {header.width} x {header.height}");
+                Pixels = Marshal.ReAllocHGlobal(Pixels, new IntPtr(pixelArraySize));
+            }
 
-        // Could do a Buffer.MemoryCopy here - but I'm locked to
-        // .NET 4.5 due to the DllExport library we're using.
-        UnsafeNativeMethods.CopyMemory(Pixels, intPtr, (uint)pixelArraySize);
+            // Could do a Buffer.MemoryCopy here - but I'm locked to
+            // .NET 4.5 due to the DllExport library we're using.
+            UnsafeNativeMethods.CopyMemory(Pixels, intPtr, (uint)pixelArraySize);
 
-        Header = header;
-        Frame++;
+            Header = header;
+            Frame++;
+        }
 
         return pixelArraySize;
     }
 
+    internal void CameraFromInterop(InteropCamera camera)
+    {
+        if (camera.width != data.camera.width || camera.height != data.camera.height)
+        {
+            // TODO: .. anything?
+        }
+
+        if (camera.width > MAX_VIEWPORT_WIDTH || camera.height > MAX_VIEWPORT_HEIGHT)
+        {
+            throw new Exception($"Camera dimensions cannot exceed {MAX_VIEWPORT_WIDTH} x {MAX_VIEWPORT_HEIGHT}");
+        }
+        
+        data.camera = camera;
+    }
+
     internal void ReleasePixelBuffer()
     {
-        if (Pixels != IntPtr.Zero)
+        lock (renderTextureLock)
         {
-            Marshal.FreeHGlobal(Pixels);
-            Pixels = IntPtr.Zero;
+            if (Pixels != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(Pixels);
+                Pixels = IntPtr.Zero;
+            }
         }
     }
 
-    internal RenderTextureData GetRenderTextureData()
+    internal RenderTextureData GetRenderTextureAndLock()
     {
+        // We lock here and unlock in a separate thread.
+        // This is so that Python can safely lock while retrieving, 
+        // do work, and call ReleaseRenderTextureLock once it's done.
+
+        Monitor.Enter(renderTextureLock);
         return new RenderTextureData
         {
             viewportId = data.id,
@@ -152,5 +166,10 @@ class Viewport : IDisposable, IInteropSerializable<InteropViewport>
             frame = Frame,
             pixels = Pixels
         };
+    }
+
+    internal void ReleaseRenderTextureLock()
+    {
+        Monitor.Exit(renderTextureLock);
     }
 }

@@ -3,6 +3,7 @@ using SharedMemory;
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Text;
 
 /// <summary>
 /// A distinct object in a blender scene
@@ -15,6 +16,21 @@ class SceneObject : IInteropSerializable<InteropSceneObject>
     internal InteropSceneObject data;
 
     public string Name { get; set; }
+    
+    /// <summary>
+    /// Name of the active material for this object
+    /// </summary>
+    internal string Material 
+    { 
+        get { return data.material; }
+        set { data.material = value; } 
+    }
+
+    internal InteropMatrix4x4 Transform
+    {
+        get { return data.transform; }
+        set { data.transform = value; }
+    }
 
     internal uint[] Triangles 
     { 
@@ -38,7 +54,7 @@ class SceneObject : IInteropSerializable<InteropSceneObject>
     private InteropVector3[] normals;
 
     internal InteropBoneWeight[] BoneWeights { get; set; }
-
+    
     private Dictionary<int, InteropVector2[]> uvLayers;
     private MLoop[] cachedLoops;
 
@@ -49,7 +65,8 @@ class SceneObject : IInteropSerializable<InteropSceneObject>
         data = new InteropSceneObject
         {
             id = id,
-            type = type
+            type = type,
+            material = "Default"
         };
 
         uvLayers = new Dictionary<int, InteropVector2[]>();
@@ -70,13 +87,6 @@ class SceneObject : IInteropSerializable<InteropSceneObject>
         return null;
     }
     
-    internal void SetTransform(InteropMatrix4x4 transform)
-    {
-        var data = this.data;
-        data.transform = transform;
-        this.data = data;
-    }
-
     /// <summary>
     /// Copy an <see cref="MLoop"/> array into managed memory for vertex lookups
     /// aligned with other MLoop* structures.

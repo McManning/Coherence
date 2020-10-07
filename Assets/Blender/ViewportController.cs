@@ -65,21 +65,6 @@ public class ViewportController : MonoBehaviour
         }
     }
 
-    private void Update()
-    {
-        // TODO: OnPostRender() doesn't work in URP. Alternatives?
-        
-        if (Sync.IsConnected)
-        {
-            Sync.PublishRenderTexture(this, CaptureRenderTexture);
-        }
-    }
-
-    public void Resize(int width, int height)
-    {
-        throw new NotImplementedException();
-    }
-
     /// <summary>
     /// Setup a RenderTexture to match the viewport and 
     /// match the Camera component to Blender's view
@@ -87,14 +72,12 @@ public class ViewportController : MonoBehaviour
     /// <param name="camera"></param>
     private void UpdateCamera()
     {
-        var width = InteropData.width;
-        var height = InteropData.height;
         var camera = InteropData.camera;
 
         // Resize the render texture / target Texture2D to match the viewport
-        if (rt == null || rt.width != width || rt.height != height)
+        if (rt == null || rt.width != camera.width || rt.height != camera.height)
         {
-            Debug.LogWarning($"Realloc to {width} x {height}");
+            Debug.LogWarning($"Realloc to {camera.width} x {camera.height}");
 
             Profiler.BeginSample("Resize Viewport RT");
 
@@ -104,8 +87,8 @@ public class ViewportController : MonoBehaviour
             }
 
             rt = new RenderTexture(
-                width, 
-                height, 
+                camera.width, 
+                camera.height, 
                 16, RenderTextureFormat.ARGB32
             );
             rt.Create();
@@ -113,8 +96,8 @@ public class ViewportController : MonoBehaviour
             cam.targetTexture = rt;
             
             tex = new Texture2D(
-                width,
-                height, 
+                camera.width,
+                camera.height, 
                 TextureFormat.RGB24, 
                 false
             );
@@ -164,33 +147,6 @@ public class ViewportController : MonoBehaviour
         cam.sensorSize = new Vector2(72, 72); // Matched via trial and error.
         // TODO: Actual value from Blender somehow?
         
-        /*
-        transform.localScale = new Vector4(
-            new Vector4(t.m00, t.m10, t.m30, t.m20).magnitude,
-            new Vector4(t.m01, t.m11, t.m31, t.m21).magnitude,
-            new Vector4(t.m02, t.m12, t.m32, t.m22).magnitude
-        );
-        
-
-        // Fuck that shit, set matrix directly.
-        var mat = new Matrix4x4(
-            new Vector4(t.m00, t.m10, t.m20, t.m30),
-            new Vector4(t.m01, t.m11, t.m21, t.m31),
-            new Vector4(t.m02, t.m12, t.m22, t.m32),
-            new Vector4(t.m03, t.m13, t.m23, t.m33)
-        );*/
-        /*
-        var mat = new Matrix4x4(
-            new Vector4(t.m00, t.m01, t.m02, t.m03),
-            new Vector4(t.m10, t.m11, t.m12, t.m13),
-            new Vector4(t.m20, t.m21, t.m22, t.m23),
-            new Vector4(t.m30, t.m31, t.m32, t.m33)
-        );
-
-        Debug.Log(mat.ToString());
-        Debug.Log(cam.worldToCameraMatrix.ToString());
-        */
-        // cam.worldToCameraMatrix = mat;
     }
 
     /// <summary>

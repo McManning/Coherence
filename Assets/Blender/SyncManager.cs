@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Runtime.InteropServices;
 using UnityEngine;
 using UnityEngine.Profiling;
@@ -30,6 +31,18 @@ public class SyncManager : MonoBehaviour
 
     public bool IsConnected { get; private set; }
 
+    [Tooltip(
+        "Camera prefab to instantiate for each synced Blender viewport.\n\n" + 
+        "Transform and projection will be automatically updated to " + 
+        "match Blender's viewport settings."
+    )] public GameObject viewportCameraPrefab;
+
+    [Tooltip(
+        "GO prefab to instantiate for each synced Blender object.\n\n" +
+        "Additional components may be added to the object based on its type " +
+        "within Blender - e.g. adding Mesh Renderers"
+    )]  public GameObject sceneObjectPrefab;
+
     /// <summary>
     /// Shared memory we write RenderTexture pixel data into
     /// </summary>
@@ -40,10 +53,19 @@ public class SyncManager : MonoBehaviour
     /// <summary>
     /// Viewport controller to match Blender's viewport configuration
     /// </summary>
-    Dictionary<string, ViewportController> viewports;
+    OrderedDictionary viewports;
+    
+    Dictionary<string, ObjectController> objects = new Dictionary<string, ObjectController>();
+
+    /// <summary>
+    /// Current index in <see cref="viewports"/> to use for  
+    /// sending a render texture to Blender
+    /// </summary>
+    int viewportIndex;
 
     SceneManager scene;
     GameObject viewportsContainer;
+    GameObject objectsContainer;
     
     /// <summary>
     /// State information reported to Blender on connect
@@ -53,7 +75,7 @@ public class SyncManager : MonoBehaviour
     // Start is called before the first frame update
     private void OnEnable()
     {
-        viewports = new Dictionary<string, ViewportController>();
+        viewports = new OrderedDictionary();
 
         unityState = new InteropUnityState
         {
@@ -77,7 +99,8 @@ public class SyncManager : MonoBehaviour
             // SendRequestToBlender(RpcRequest.SyncBlenderState);
             messages.ProcessQueue();
             ConsumeMessages();
-            // ConsumeChunk();
+
+            PublishNextRenderTexture();
         }
 
         // This is our equivalent to a "Connect" button in the UI for now.
@@ -95,25 +118,36 @@ public class SyncManager : MonoBehaviour
         }
     }
 
-    private SceneManager GetScene()
+    /// <summary>
+    /// Publish the RT of the next viewport in the dictionary.
+    /// 
+    /// <para>
+    ///     We do this to ensure that every viewport has a chance of writing 
+    ///     to the circular buffer - in case there isn't enough room to write 
+    ///     all the viewports in one frame. 
+    /// </para>
+    /// </summary>
+    private void PublishNextRenderTexture()
     {
-        if (scene == null)
+        if (viewports.Count < 1)
         {
-            var go = new GameObject("Blender Scene");
-            scene = go.AddComponent<SceneManager>();
+            return;
         }
 
-        return scene;
+        viewportIndex = (viewportIndex + 1) % viewports.Count;
+
+        var viewport = viewports[viewportIndex] as ViewportController;
+        PublishRenderTexture(viewport, viewport.CaptureRenderTexture);
     }
-    
+
     private ViewportController GetViewport(string name)
     {
-        if (!viewports.ContainsKey(name))
+        if (!viewports.Contains(name))
         {
             throw new Exception($"Viewport {name} does not exist");
         }
 
-        return viewports[name];
+        return viewports[name] as ViewportController;
     }
 
     private ViewportController AddViewport(string name, InteropViewport iv)
@@ -123,8 +157,9 @@ public class SyncManager : MonoBehaviour
             viewportsContainer = new GameObject("Blender Viewports");
         }
 
-        // Create a new controller GO, assign iv to it, and track.
-        var go = new GameObject("Viewport - " + name);
+        var go = (viewportCameraPrefab) ? Instantiate(viewportCameraPrefab) : new GameObject();
+
+        go.name = $"Viewport {name}";
         go.transform.parent = viewportsContainer.transform;
 
         var controller = go.AddComponent<ViewportController>();
@@ -137,13 +172,61 @@ public class SyncManager : MonoBehaviour
 
     private void RemoveViewport(string name)
     {
-        if (!viewports.ContainsKey(name))
+        if (!viewports.Contains(name))
         {
             return;
         }
 
-        viewports[name].gameObject.SetActive(false); // TODO: Destroy
+        var viewport = viewports[name] as ViewportController;
+
+        Destroy(viewport.gameObject);
         viewports.Remove(name);
+
+        // Reset viewport iterator, in case this causes us to go out of range
+        viewportIndex = 0;
+    }
+    
+    private ObjectController GetObject(string name)
+    {
+        if (!objects.ContainsKey(name))
+        {
+            throw new Exception($"Object {name} does not exist");
+        }
+
+        return objects[name];
+    }
+    
+    private ObjectController AddObject(string name, InteropSceneObject iso)
+    {
+        if (objectsContainer == null)
+        {
+            objectsContainer = new GameObject("Blender Objects");
+        }
+        
+        var go = (sceneObjectPrefab) ? Instantiate(sceneObjectPrefab) : new GameObject();
+
+        go.name = $"{name} (ID: {iso.id})";
+        go.transform.parent = objectsContainer.transform;
+
+        var controller = go.AddComponent<ObjectController>();
+
+        objects[name] = controller;
+        controller.UpdateFromInterop(iso);
+
+        return controller;
+    }
+
+    private void RemoveObject(string name)
+    {
+        if (!objects.ContainsKey(name))
+        {
+            return;
+        }
+
+        var instance = objects[name];
+
+        Destroy(instance.gameObject);
+        objects.Remove(name);
     }
     
     private void OnConnectToBlender()
@@ -165,7 +248,7 @@ public class SyncManager : MonoBehaviour
     /// </summary>
     private void OnDisconnectFromBlender()
     {
-        Debug.Log("Disconnect from Blender");
+        Debug.Log("Disconnected from Blender");
         IsConnected = false;
 
         pixelsProducer?.Dispose();
@@ -269,37 +352,31 @@ public class SyncManager : MonoBehaviour
                     );
                     break;
                 case RpcRequest.AddObjectToScene:
-                    GetScene().AddObject(
+                    AddObject(
                         target,
                         FastStructure.PtrToStructure<InteropSceneObject>(ptr)
                     );
                     break;
                 case RpcRequest.RemoveObjectFromScene:
-                    GetScene().RemoveObject(target);
-                    break;
-                case RpcRequest.UpdateScene:
-                    GetScene().UpdateFromInterop(
-                        FastStructure.PtrToStructure<InteropScene>(ptr)
-                    );
+                    RemoveObject(target);
                     break;
                 case RpcRequest.UpdateSceneObject:
-                    obj = GetScene().FindObject(target);
-                    obj.UpdateFromInterop(
+                    GetObject(target).UpdateFromInterop(
                         FastStructure.PtrToStructure<InteropSceneObject>(ptr)
                     );
                     break;
-                case RpcRequest.UpdateTrianges:
-                    obj = GetScene().FindObject(target);
+                case RpcRequest.UpdateTriangles:
+                    obj = GetObject(target);
                     FastStructure.ReadArray(obj.GetOrCreateTriangleBuffer(), ptr, header.index, header.count);
                     obj.OnUpdateTriangleRange(header.index, header.count);
                     break;
                 case RpcRequest.UpdateVertices:
-                    obj = GetScene().FindObject(target);
+                    obj = GetObject(target);
                     FastStructure.ReadArray(obj.GetOrCreateVertexBuffer(), ptr, header.index, header.count);
                     obj.OnUpdateVertexRange(header.index, header.count);
                     break;
                 case RpcRequest.UpdateNormals:
-                    obj = GetScene().FindObject(target);
+                    obj = GetObject(target);
                     FastStructure.ReadArray(obj.GetOrCreateNormalBuffer(), ptr, header.index, header.count);
                     obj.OnUpdateNormalRange(header.index, header.count);
                     break;
@@ -362,7 +439,7 @@ public class SyncManager : MonoBehaviour
             // Copy render image data into shared memory
             FastStructure.WriteBytes(ptr + headerSize, pixelsRGB24, 0, pixelsRGB24.Length);
 
-            Debug.Log($"Writing {pixelsRGB24.Length} bytes with meta {header.width} x {header.height} and pix 0 is " + 
+            InteropLogger.Debug($"Writing {pixelsRGB24.Length} bytes with meta {header.width} x {header.height} and pix 0 is " + 
                 $"{pixelsRGB24[0]}, {pixelsRGB24[1]}, {pixelsRGB24[2]}"
             );
 

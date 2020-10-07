@@ -1,23 +1,6 @@
 ﻿
-
-// Alternatively, Python does the heavy lifting of
-// per-blender-version parsing DNAMesh and then just
-// hands us the ptrs to the appropriate subtypes
-
-// This is only really needed for custom split normals.
-// Via Mesh->ldata layer
-// But that means we need to fill out Mesh all the way down
-// to the ldata entry (which means filling out ID, etc)
-// And then pull the layer from CustomData->layers
-// and requiring CustomData->typemap
-
 using System;
 using System.Runtime.InteropServices;
-using System.Runtime.Remoting.Channels;
-
-/**
-* DNA structures from Blender
-*/
 
 [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
 public struct ID
@@ -105,6 +88,13 @@ public struct MLoopTri
     
     public uint poly;
 }
+
+// This is only really needed for custom split normals.
+// Via Mesh->ldata layer
+// But that means we need to fill out Mesh all the way down
+// to the ldata entry (which means filling out ID, etc)
+// And then pull the layer from CustomData->layers
+// and requiring CustomData->typemap
 
 [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
 public struct Mesh

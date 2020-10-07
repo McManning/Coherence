@@ -1,6 +1,8 @@
-﻿using System;
+﻿using SharedMemory;
+using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using UnityEngine;
 
 public class ObjectController : MonoBehaviour
@@ -21,7 +23,7 @@ public class ObjectController : MonoBehaviour
 
     Mesh mesh;
     MeshFilter meshFilter;
-    MeshRenderer renderer;
+    MeshRenderer meshRenderer;
 
     bool isDirty;
 
@@ -43,10 +45,10 @@ public class ObjectController : MonoBehaviour
     /// Add a Unity mesh representation of this object. 
     /// We expect it to be filled through data chunks coming from Blender. 
     /// </summary>
-    void AddMesh()
+    void AddMesh(string name)
     {
         mesh = new Mesh();
-        mesh.name = $"Blender Mesh #{Data.id}";
+        mesh.name = name;
 
         mesh.MarkDynamic();
 
@@ -56,15 +58,15 @@ public class ObjectController : MonoBehaviour
             meshFilter = gameObject.AddComponent<MeshFilter>();
         }
 
-        renderer = GetComponent<MeshRenderer>();
-        if (renderer == null)
+        meshRenderer = GetComponent<MeshRenderer>();
+        if (meshRenderer == null)
         {
-            renderer = gameObject.AddComponent<MeshRenderer>();
+            meshRenderer = gameObject.AddComponent<MeshRenderer>();
 
             // TODO: Determine the material per object to load from metadata.
             // ... somehow :)
             var defaultMaterial = Resources.Load<Material>("Materials/Blender-Default");
-            renderer.sharedMaterial = defaultMaterial;
+            meshRenderer.sharedMaterial = defaultMaterial;
         }
 
         meshFilter.mesh = mesh;
@@ -72,8 +74,6 @@ public class ObjectController : MonoBehaviour
 
     internal void UpdateFromInterop(InteropSceneObject obj)
     {
-        Data = obj;
-        
         // Blender is z-up - swap z/y everywhere 
         // TODO: But they could also change the up axis manually...
         InteropMatrix4x4 t = obj.transform;
@@ -101,8 +101,30 @@ public class ObjectController : MonoBehaviour
         
         if (obj.type == SceneObjectType.Mesh && mesh == null)
         {
-            AddMesh();
+            AddMesh($"Blender Mesh #{obj.id}");
         }
+        
+        // Material name change
+        if (Data.material != obj.material)
+        {
+            SetMaterial(obj.material);
+        }
+
+        Data = obj;
+    }
+
+    void SetMaterial(string name)
+    {
+        string path = $"Materials/{name}";
+
+        var material = Resources.Load<Material>(path);
+        if (!material)
+        {
+            Debug.LogWarning($"Cannot find material resource at '{path}'");
+            return;
+        }
+
+        meshRenderer.sharedMaterial = material;
     }
 
     internal Vector3[] GetOrCreateVertexBuffer()
@@ -190,8 +212,23 @@ public class ObjectController : MonoBehaviour
 
         // Upload to Unity's managed mesh data
         mesh.Clear();
-        mesh.vertices = vertices;
-        mesh.triangles = triangles;
+        try
+        { 
+            mesh.vertices = vertices;
+            mesh.triangles = triangles;
+        }
+        catch (Exception e)
+        {
+            // Removing subd from blender errors out on 226 for:
+            // Failed setting triangles. Some indices are referencing out of bounds vertices. IndexCount: 188928, VertexCount: 507
+            
+            // Probably due to the ordering of getting mesh data. We get updated verts first (with new count smaller)
+            // and then use the old indices list until we get the updated indices immediately after. 
+            // TODO: We might need a footer message for "yes here's everything, please rebuild the mesh now"
+            
+            // TODO: Seems like this is uncatchable. Raised from UnityEngine.Mesh:set_triangles(Int32[])
+            Debug.LogWarning($"Could not copy Blender mesh data: {e}");
+        }
 
         // We check for normal length here because if a vertex array
         // update comes in and we rebuild the mesh *before* a followup
@@ -209,7 +246,7 @@ public class ObjectController : MonoBehaviour
 
     internal void OnUpdateVertexRange(int index, int count)
     {
-        Debug.Log($"updating {count} verts starting at {index}");
+        // InteropLogger.Debug($"updating {count} verts starting at {index}");
         isDirty = true;
     }
 

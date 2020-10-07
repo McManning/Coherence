@@ -51,27 +51,54 @@ namespace UnityBlenderBridge
         /// and start listening for requests.
         /// </summary>
         [DllExport]
-        public static void Start()
+        public static int Start()
         {
-            Bridge.Start();
+            try
+            {
+                Bridge.Start();
+                return 1;
+            } 
+            catch (Exception e)
+            {
+                SetLastError(e);
+                return -1;
+            }
         }
         
         /// <summary>
         /// Dispose shared memory and shutdown communication to Unity
         /// </summary>
         [DllExport]
-        public static void Shutdown()
+        public static int Shutdown()
         {
-            Bridge.Shutdown();
+            try
+            {
+                Bridge.Shutdown();
+                return 1;
+            } 
+            catch (Exception e)
+            {
+                SetLastError(e);
+                return -1;
+            }
         }
 
         /// <summary>
         /// Pull data from read buffers and update local state
         /// </summary>
         [DllExport]
-        public static void Update()
+        public static int Update()
         {
-            Bridge.Update();
+            try
+            {
+                Bridge.Update();
+                return 1;
+            } 
+            catch (Exception e)
+            {
+                SetLastError(e);
+                return -1;
+            }
         }
         
         [DllExport]
@@ -91,13 +118,13 @@ namespace UnityBlenderBridge
         /// <param name="width"></param>
         /// <param name="height"></param>
         [DllExport]
-        public static int AddViewport(int viewportId, int width, int height)
+        public static int AddViewport(int viewportId)
         {
-            InteropLogger.Debug($"Adding viewport={viewportId} width={width}, height={height}");
+            InteropLogger.Debug($"Adding viewport={viewportId}");
             
             try
             {
-                Bridge.AddViewport(viewportId, width, height);
+                Bridge.AddViewport(viewportId);
                 return 1;
             } 
             catch (Exception e)
@@ -136,34 +163,12 @@ namespace UnityBlenderBridge
 
                 if (!camera.Equals(viewport.data.camera))
                 {
-                    InteropLogger.Debug($"Set Camera viewport={viewportId} camera={camera}");
-
-                    viewport.data.camera = camera;
+                    viewport.CameraFromInterop(camera);
                     Bridge.SendEntity(RpcRequest.UpdateViewport, viewport);
                 }
                 
                 return 1;
             }
-            catch (Exception e)
-            {
-                SetLastError(e);
-                return -1;
-            }
-        }
-
-        [DllExport]
-        public static int ResizeViewport(int viewportId, int width, int height)
-        {
-            InteropLogger.Debug($"Resizing viewport={viewportId} width={width}, height={height}");
-
-            try
-            {
-                var viewport = Bridge.GetViewport(viewportId);
-                viewport.Resize(width, height);
-                
-                Bridge.SendEntity(RpcRequest.UpdateViewport, viewport);
-                return 1;
-            } 
             catch (Exception e)
             {
                 SetLastError(e);
@@ -211,31 +216,73 @@ namespace UnityBlenderBridge
             }
         }
 
+        /// <summary>
+        /// Experimental control over bridge's pixel buffer consumer. 
+        /// </summary>
         [DllExport]
-        public static void ConsumeRenderTextures()
+        public static int ConsumeRenderTextures()
         {
-            // Experimental control over bridge's pixel buffer consumer. 
-            Bridge.ConsumePixels();
+            try
+            {
+                Bridge.ConsumePixels();
+                return 1;
+            } 
+            catch (Exception e)
+            {
+                SetLastError(e);
+                return -1;
+            }
         }
         
         /// <summary>
-        /// Get the render texture data from Unity's last render of the given viewport.
+        /// Get the render texture data from Unity's last render of the given viewport
+        /// and lock the texture data from writes until UnlockRenderTexture() is called. 
         /// </summary>
         /// <param name="viewportId"></param>
         /// <returns></returns>
         [DllExport]
         public static RenderTextureData GetRenderTexture(int viewportId)
         {
+            Viewport viewport;
             try
             {
-                var viewport = Bridge.GetViewport(viewportId);
-                return viewport.GetRenderTextureData();
+                viewport = Bridge.GetViewport(viewportId);
             }
             catch (Exception e)
             {
                 SetLastError(e);
                 return RenderTextureData.Invalid;
             }
+
+            try
+            {
+                var rt = viewport.GetRenderTextureAndLock();
+                return rt;
+            }
+            catch (Exception e)
+            {
+                viewport.ReleaseRenderTextureLock();
+                SetLastError(e);
+                return RenderTextureData.Invalid;
+            }
+        }
+
+        [DllExport]
+        public static int ReleaseRenderTextureLock(int viewportId)
+        {
+            Viewport viewport;
+            try
+            {
+                viewport = Bridge.GetViewport(viewportId);
+                viewport.ReleaseRenderTextureLock();
+            }
+            catch (Exception e)
+            {
+                SetLastError(e);
+                return -1;
+            }
+
+            return 1;
         }
 
         #endregion 
@@ -246,17 +293,18 @@ namespace UnityBlenderBridge
         public static int AddMeshObjectToScene(
             int objectId, 
             [MarshalAs(UnmanagedType.LPStr)] string displayName, 
-            InteropMatrix4x4 transform
+            InteropMatrix4x4 transform,
+            [MarshalAs(UnmanagedType.LPStr)] string material
         ) {
-            InteropLogger.Debug($"Adding mesh {displayName} ({objectId}) to the scene");
+            InteropLogger.Debug($"Adding mesh <displayName={displayName}, objectId={objectId}, material={material}>");
 
             try
             {
                 var obj = new SceneObject(objectId, displayName, SceneObjectType.Mesh);
-                obj.SetTransform(transform);
-                Bridge.Scene.AddObject(obj);
+                obj.Transform = transform;
+                obj.Material = material;
 
-                Bridge.SendEntity(RpcRequest.AddObjectToScene, obj);
+                Bridge.AddObject(obj);
                 return 1;
             }
             catch (Exception e)
@@ -266,13 +314,22 @@ namespace UnityBlenderBridge
             }
         }
 
+        /// <summary>
+        /// Update <see cref="InteropSceneObject.transform" /> and notify Unity
+        /// </summary>
+        /// <param name="objectId"></param>
+        /// <param name="transform"></param>
+        /// <param name="material"></param>
+        /// <returns></returns>
         [DllExport]
-        public static int SetObjectTransform(int objectId, InteropMatrix4x4 transform)
-        {
+        public static int SetObjectTransform(
+            int objectId, 
+            InteropMatrix4x4 transform
+        ) {
             try
             {
-                var obj = Bridge.Scene.GetObject(objectId);
-                obj.SetTransform(transform);
+                var obj = Bridge.GetObject(objectId);
+                obj.Transform = transform;
 
                 Bridge.SendEntity(RpcRequest.UpdateSceneObject, obj);
                 return 1;
@@ -284,6 +341,37 @@ namespace UnityBlenderBridge
             }
         }
         
+        /// <summary>
+        /// Update <see cref="InteropSceneObject.material" /> and notify Unity
+        /// </summary>
+        /// <param name="objectId"></param>
+        /// <param name="transform"></param>
+        /// <param name="material"></param>
+        /// <returns></returns>
+        [DllExport]
+        public static int SetObjectMaterial(
+            int objectId, 
+            [MarshalAs(UnmanagedType.LPStr)] string material
+        ) {
+            try
+            {
+                var obj = Bridge.GetObject(objectId);
+
+                if (material != obj.Material)
+                {
+                    obj.Material = material;
+                    Bridge.SendEntity(RpcRequest.UpdateSceneObject, obj);
+                }
+               
+                return 1;
+            }
+            catch (Exception e)
+            {
+                SetLastError(e);
+                return -1;
+            }
+        }
+
         [DllExport]
         public static int RemoveObjectFromScene(int objectId)
         {
@@ -291,8 +379,7 @@ namespace UnityBlenderBridge
 
             try
             {
-                var obj = Bridge.Scene.RemoveObject(objectId);
-                Bridge.SendEntity(RpcRequest.RemoveObjectFromScene, obj);
+                Bridge.RemoveObject(objectId);
                 return 1;
             }
             catch (Exception e)
@@ -330,7 +417,7 @@ namespace UnityBlenderBridge
 
             try
             {
-                var obj = Bridge.Scene.GetObject(objectId);
+                var obj = Bridge.GetObject(objectId);
 
                 obj.CopyFromMVerts(vertices);
                 obj.CopyFromMLoops(loops);
@@ -376,7 +463,7 @@ namespace UnityBlenderBridge
 
             try
             {
-                var obj = Bridge.Scene.GetObject(objectId);
+                var obj = Bridge.GetObject(objectId);
 
                 obj.CopyFromMLoopTris(loopTris);
 
