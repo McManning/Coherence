@@ -9,7 +9,7 @@ Load up a Unity scene and connect to Blender to sync your Blender scene directly
 ## Use Cases
 
 - Leverage the full suite of Blender tools for level editing within Unity
-- WYSIWYG shader workflow for those more estoteric rendering pipelines (e.g. custom URPs)
+- WYSIWYG shader workflow for those more esoteric rendering pipelines (e.g. custom URPs)
 - Quicker iteration during Unity's play mode (e.g. making adjustments while testing in VR)
 
 ## Work in Progress
