@@ -4,6 +4,8 @@ Load up a Unity scene and connect to Blender to sync your Blender scene directly
 
 ![Coherence Demo](Documentation~/demo.gif)
 
+(For additional videos, check out [https://twitter.com/cmcmanning](https://twitter.com/cmcmanning))
+
 ## Use Cases
 
 - Leverage the full suite of Blender tools for level editing within Unity
