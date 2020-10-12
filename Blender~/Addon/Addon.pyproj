@@ -30,7 +30,6 @@
     <Compile Include="core\properties.py" />
     <Compile Include="core\utils.py" />
     <Compile Include="core\__init__.py" />
-    <Compile Include="old__init__.py" />
     <Compile Include="test.py" />
     <Compile Include="util\debug.py" />
     <Compile Include="util\registry.py" />
