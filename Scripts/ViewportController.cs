@@ -8,18 +8,19 @@ namespace Coherence
 {
     /// <summary>
     /// Controller to sync a Unity Camera with a Blender Viewport.
-    /// 
+    ///
     /// On render updates, this will provide the SyncManager with
     /// new RGB24 pixel data to feed back to Blender.
     /// </summary>
+    [ExecuteAlways]
     public class ViewportController : MonoBehaviour
     {
         /// <summary>
         /// Identifier to match this viewport with a Blender viewport
         /// </summary>
-        public int ID 
-        { 
-            get { return InteropData.id; } 
+        public int ID
+        {
+            get { return InteropData.id; }
         }
 
         public InteropViewport InteropData { get; private set; }
@@ -43,8 +44,8 @@ namespace Coherence
         private void OnEnable()
         {
             cam = GetComponent<Camera>();
-        
-            if (cam == null) 
+
+            if (cam == null)
             {
                 cam = gameObject.AddComponent<Camera>();
             }
@@ -54,7 +55,7 @@ namespace Coherence
         {
             if (tex != null)
             {
-                Destroy(tex);
+                DestroyImmediate(tex);
                 tex = null;
             }
 
@@ -68,7 +69,7 @@ namespace Coherence
         }
 
         /// <summary>
-        /// Setup a RenderTexture to match the viewport and 
+        /// Setup a RenderTexture to match the viewport and
         /// match the Camera component to Blender's view
         /// </summary>
         /// <param name="camera"></param>
@@ -89,55 +90,55 @@ namespace Coherence
                 }
 
                 rt = new RenderTexture(
-                    camera.width, 
-                    camera.height, 
+                    camera.width,
+                    camera.height,
                     16, RenderTextureFormat.ARGB32
                 );
                 rt.Create();
 
                 cam.targetTexture = rt;
-            
+
                 tex = new Texture2D(
                     camera.width,
-                    camera.height, 
-                    TextureFormat.RGB24, 
+                    camera.height,
+                    TextureFormat.RGB24,
                     false
                 );
-            
+
                 Profiler.EndSample();
             }
 
-            // TODO: Camera view matching magic. 
+            // TODO: Camera view matching magic.
             // This is the hard part :^)
-        
-        
-            // Blender is z-up - swap z/y everywhere 
+
+
+            // Blender is z-up - swap z/y everywhere
             // TODO: But they could also change the up axis manually...
          /*   InteropMatrix4x4 t = camera.matrix;
-        
+
             Vector3 forward;
             forward.x = t.m02;
             forward.y = t.m22;
             forward.z = t.m12;
- 
+
             Vector3 up;
             up.x = t.m01;
             up.y = t.m21;
             up.z = t.m11;
-        
+
             transform.position = Vector3.zero;
 
             transform.rotation = Quaternion.LookRotation(forward, up);
             transform.Translate(new Vector3(t.m03, t.m13, t.m23), Space.Self);
          */
-        
+
             var p = new Vector3(camera.position.x, camera.position.z, camera.position.y);
             var f = new Vector3(camera.forward.x, camera.forward.z, camera.forward.y);
             var u = new Vector3(camera.up.x, camera.up.z, camera.up.y);
 
             transform.position = p;
             transform.rotation = Quaternion.LookRotation(f, u);
-        
+
             // horizontal field of view = 2 atan(0.5 width / focallength)
 
             // 2*atan(0.5 * 1586 / 50)
@@ -148,12 +149,12 @@ namespace Coherence
             cam.gateFit = Camera.GateFitMode.Fill;
             cam.sensorSize = new Vector2(72, 72); // Matched via trial and error.
             // TODO: Actual value from Blender somehow?
-        
+
         }
 
         /// <summary>
         /// Return array of pixels in <c>RGB24</c> format.
-        /// 
+        ///
         /// This is only executed if we have room in the pixelProducer
         /// buffer in the SyncManager
         /// </summary>
@@ -164,7 +165,7 @@ namespace Coherence
 
             var prevRT = RenderTexture.active;
             var rt = cam.targetTexture;
-        
+
             RenderTexture.active = cam.targetTexture;
 
             tex.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
@@ -173,9 +174,9 @@ namespace Coherence
             var data = tex.GetRawTextureData();
 
             RenderTexture.active = prevRT;
-        
+
             Profiler.EndSample();
-        
+
             return data;
         }
 

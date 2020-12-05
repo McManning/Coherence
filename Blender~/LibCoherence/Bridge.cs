@@ -1,7 +1,8 @@
-﻿using SharedMemory;
+﻿
 using System;
 using System.Collections.Generic;
-using System.Linq;
+using System.Linq; // TODO: Drop Linq usage
+using SharedMemory;
 
 namespace Coherence
 {
@@ -12,33 +13,26 @@ namespace Coherence
     /// </summary>
     class Bridge : IDisposable
     {
-        // Let's assume a fixed size for now. Will make it more intelligent later.
-        // But since we're splitting out scene objects into multiple messages now instead
-        // of a single message with everything - the size is now a restriction of chunk data.
-        // It is also technically a restriction to any array-based messages, such as visible
-        // objects in a viewport and mesh data (until message splitting is implemented)
-        const int MAX_MESSAGE_SIZE = 1 * 1024 * 1024;
+        const string VIEWPORT_IMAGE_BUFFER = "_UnityViewportImage";
+        const string UNITY_MESSAGES_BUFFER = "_UnityMessages";
+        const string BLENDER_MESSAGES_BUFFER = "_BlenderMessages";
 
-        const string VIEWPORT_IMAGE_BUFFER_ID = "UnityViewportImage";
-
-        const string MESSAGE_PRODUCER_ID = "BlenderMessages";
-        const string MESSAGE_CONSUMER_ID = "UnityMessages";
-    
         public bool IsConnected { get; private set; }
-    
+
         /// <summary>
         /// How long to wait for a readable node to become available
         /// </summary>
         const int READ_WAIT = 1;
 
         Dictionary<int, Viewport> Viewports { get; set; }
-    
+
         Dictionary<int, SceneObject> Objects { get; set; }
 
+        InteropBlenderState blenderState;
         InteropUnityState unityState;
 
         CircularBuffer pixelsConsumer;
-    
+
         InteropMessenger messages;
 
         public Dictionary<RpcRequest, MessageHandler> handlers;
@@ -48,7 +42,13 @@ namespace Coherence
             Viewports = new Dictionary<int, Viewport>();
             Objects = new Dictionary<int, SceneObject>();
 
-            handlers = new Dictionary<RpcRequest, MessageHandler>();
+            // Message handlers for everything that comes from Unity
+            handlers = new Dictionary<RpcRequest, MessageHandler>
+            {
+                [RpcRequest.Connect] = OnConnect,
+                [RpcRequest.Disconnect] = OnDisconnect,
+                [RpcRequest.UpdateUnityState] = OnUpdateUnityState,
+            };
         }
 
         ~Bridge()
@@ -58,6 +58,14 @@ namespace Coherence
 
         public void Dispose()
         {
+            // Notify Unity of a disconnect if possible
+            // TODO: Is this safe in the destructor? May not be.
+            if (IsConnected)
+            {
+                messages.WriteDisconnect();
+                IsConnected = false;
+            }
+
             pixelsConsumer?.Dispose();
             pixelsConsumer = null;
 
@@ -75,63 +83,78 @@ namespace Coherence
         #region Unity IO Management
 
         /// <summary>
-        /// Initialize a shared memory space between Blender and Unity
+        /// Connect to a shared memory space hosted by Unity and sync scene data
         /// </summary>
-        public void Start()
+        /// <param name="connectionName">Common name for the shared memory space between Blender and Unity</param>
+        public bool Start(string connectionName)
         {
-            // Header + 3 bytes per pixel.
-            // This caps out at a specific viewport texture size because we need
-            // a fixed buffer size to allocate - even if the individual viewport
-            // images coming back from Unity are smaller.
-            var size = FastStructure.SizeOf<InteropRenderHeader>() + (
-                Viewport.MAX_VIEWPORT_WIDTH * Viewport.MAX_VIEWPORT_HEIGHT * 3
-            );
+            try
+            {
+                InteropLogger.Debug($"Connecting to `{connectionName + VIEWPORT_IMAGE_BUFFER}`");
 
-            // Buffer for render data coming from Unity (consume-only)
-            pixelsConsumer = new CircularBuffer(VIEWPORT_IMAGE_BUFFER_ID, 2, size);
+                // Buffer for render data coming from Unity (consume-only)
+                pixelsConsumer = new CircularBuffer(connectionName + VIEWPORT_IMAGE_BUFFER);
 
-            // Two-way channel between Blender and Unity
-            messages = new InteropMessenger();
-            messages.ConnectAsMaster(MESSAGE_CONSUMER_ID, MESSAGE_PRODUCER_ID, MAX_MESSAGE_SIZE);
+                InteropLogger.Debug($"Connecting to `{connectionName + UNITY_MESSAGES_BUFFER}` and `{connectionName + BLENDER_MESSAGES_BUFFER}`");
 
-            // Message handlers 
-            handlers[RpcRequest.Connect] = OnConnect;
-            handlers[RpcRequest.Disconnect] = OnDisconnect;
-            handlers[RpcRequest.UpdateUnityState] = OnUpdateUnityState;
+                // Two-way channel between Blender and Unity
+                messages = new InteropMessenger();
+                messages.ConnectAsSlave(
+                    connectionName + UNITY_MESSAGES_BUFFER,
+                    connectionName + BLENDER_MESSAGES_BUFFER
+                );
+            }
+            catch (System.IO.FileNotFoundException)
+            {
+                // Shared memory space is not valid - Unity may not have started it.
+                // This is an error that should be gracefully handled by the UI.
+                return false;
+            }
+
+            // Send an initial connect message to let Unity know we're in
+            messages.Queue(RpcRequest.Connect, "", ref blenderState);
+
+            return true;
         }
-    
+
+        /// <summary>
+        /// Dispose shared memory and shutdown communication to Unity
+        /// </summary>
         public void Shutdown()
         {
             IsConnected = false;
             messages?.WriteDisconnect();
 
-            pixelsConsumer?.Dispose();
-            pixelsConsumer = null;
-
             messages?.Dispose();
             messages = null;
 
-            // Release our copy of synced scene objects. Next time the Python 
+            pixelsConsumer?.Dispose();
+            pixelsConsumer = null;
+
+            // Release our copy of synced scene objects. Next time the Python
             // addon starts up the connection, it should load in objects to sync.
             Objects.Clear();
         }
-    
+
         /// <summary>
         /// Send queued messages and read new messages and render texture data from Unity
         /// </summary>
         internal void Update()
         {
-            messages.ProcessQueue();
-            ConsumeMessage();
+            if (messages != null)
+            {
+                messages.ProcessOutboundQueue();
+                ConsumeMessage();
+            }
         }
 
         /// <summary>
-        /// Read from the viewport image buffer and copy 
+        /// Read from the viewport image buffer and copy
         /// pixel data into the appropriate viewport.
         /// </summary>
         internal void ConsumePixels()
         {
-            if (pixelsConsumer.ShuttingDown)
+            if (pixelsConsumer == null || pixelsConsumer.ShuttingDown)
             {
                 return;
             }
@@ -149,13 +172,13 @@ namespace Coherence
 
                 var viewport = Viewports[header.viewportId];
                 var pixelDataSize = viewport.ReadPixelData(header, ptr + headerSize);
-            
+
                 return headerSize + pixelDataSize;
             }, READ_WAIT);
         }
 
         /// <summary>
-        /// Consume a single message off the read queue. 
+        /// Consume a single message off the read queue.
         /// </summary>
         internal void ConsumeMessage()
         {
@@ -170,9 +193,9 @@ namespace Coherence
                 return handlers[header.type](target, ptr);
             });
         }
-    
+
         /// <summary>
-        /// Send an <see cref="RpcRequest"/> with target <see cref="IInteropSerializable{T}.Name"/> 
+        /// Send an <see cref="RpcRequest"/> with target <see cref="IInteropSerializable{T}.Name"/>
         /// of <paramref name="entity"/> and a <typeparamref name="T"/> payload.
         /// </summary>
         /// <typeparam name="T"></typeparam>
@@ -204,9 +227,9 @@ namespace Coherence
             {
                 return;
             }
-        
+
             // TODO: Zero length array support. Makes sense in some use cases
-            // but not others (e.g. don't send RpcRequest.UpdateUVs if there 
+            // but not others (e.g. don't send RpcRequest.UpdateUVs if there
             // are no UVs to send)
             if (data == null || data.Length < 1)
             {
@@ -229,7 +252,7 @@ namespace Coherence
             {
                 return;
             }
-        
+
             SendArray(RpcRequest.UpdateVertices, obj.Name, obj.Vertices, true);
             SendArray(RpcRequest.UpdateTriangles, obj.Name, obj.Triangles, true);
             SendArray(RpcRequest.UpdateNormals, obj.Name, obj.Normals, true);
@@ -238,17 +261,11 @@ namespace Coherence
 
         }
 
-        #endregion 
-
-        #region Unity Message Handlers
-    
-        private int OnConnect(string target, IntPtr ptr)
+        /// <summary>
+        /// Send <b>everything</b> we have to Unity - viewports, objects, mesh data, etc.
+        /// </summary>
+        private void SendAllSceneData()
         {
-            unityState = FastStructure.PtrToStructure<InteropUnityState>(ptr);
-            IsConnected = true;
-
-            InteropLogger.Debug($"{target} - {unityState.version} connected. Flavor Blasting.");
-        
             // Send all objects currently in the scene
             foreach (var obj in Objects)
             {
@@ -262,20 +279,34 @@ namespace Coherence
 
                 SendEntity(RpcRequest.AddViewport, viewport);
                 SendArray(
-                    RpcRequest.UpdateVisibleObjects, 
-                    viewport.Name, 
-                    viewport.VisibleObjectIds, 
+                    RpcRequest.UpdateVisibleObjects,
+                    viewport.Name,
+                    viewport.VisibleObjectIds,
                     false
                 );
             }
 
             // THEN send current mesh data for all objects with meshes.
-            // We do this last so that we can ensure Unity is completely setup and 
+            // We do this last so that we can ensure Unity is completely setup and
             // ready to start accepting large data chunks.
             foreach (var obj in Objects)
             {
                 SendAllMeshData(obj.Value);
             }
+        }
+
+        #endregion
+
+        #region Unity Message Handlers
+
+        private int OnConnect(string target, IntPtr ptr)
+        {
+            unityState = FastStructure.PtrToStructure<InteropUnityState>(ptr);
+            IsConnected = true;
+
+            InteropLogger.Debug($"{target} - {unityState.version} connected. Flavor Blasting.");
+
+            SendAllSceneData();
 
             return FastStructure.SizeOf<InteropUnityState>();
         }
@@ -292,10 +323,7 @@ namespace Coherence
         private int OnUpdateUnityState(string target, IntPtr ptr)
         {
             unityState = FastStructure.PtrToStructure<InteropUnityState>(ptr);
-            IsConnected = true;
 
-            InteropLogger.Debug($"Unity state update");
-        
             return FastStructure.SizeOf<InteropUnityState>();
         }
 
@@ -343,9 +371,9 @@ namespace Coherence
         internal void RemoveViewport(int id)
         {
             var viewport = Viewports[id];
-        
+
             SendEntity(RpcRequest.RemoveViewport, viewport);
-        
+
             Viewports.Remove(id);
             viewport.Dispose();
         }

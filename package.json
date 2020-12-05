@@ -1,18 +1,19 @@
 {
-    "name": "com.github.mcmanning.coherence",
-    "displayName": "Coherence",
-    "version": "0.1.0",
-    "unity": "2019.3",
-    "description": "Scene syncing between Blender and Unity.",
-    "type": "tool",
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/McManning/Coherence",
-        "revision": ""
-    },
-    "author": {
-        "name": "Chase McManning",
-        "email": "cmcmanning@gmail.com",
-        "url": "https://github.com/McManning"
-    }
+  "name": "com.github.mcmanning.coherence",
+  "displayName": "Coherence",
+  "version": "0.1.0",
+  "unity": "2019.3",
+  "description": "Scene syncing between Blender and Unity.",
+  "type": "tool",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/McManning/Coherence",
+    "revision": ""
+  },
+  "author": {
+    "name": "Chase McManning",
+    "email": "cmcmanning@gmail.com",
+    "url": "https://github.com/McManning"
+  },
+  "hideInEditor": false
 }

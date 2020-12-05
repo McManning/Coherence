@@ -7,6 +7,7 @@ using UnityEngine.Profiling;
 using UnityEngine.Profiling.Memory.Experimental;
 using UnityEngine.Rendering;
 using SharedMemory;
+using UnityEditor;
 
 namespace Coherence
 {
@@ -14,119 +15,241 @@ namespace Coherence
     /// Handles communication between Blender and Unity and passes
     /// the appropriate data to subcomponents for internal processing.
     /// </summary>
+    [ExecuteAlways]
     public class SyncManager : MonoBehaviour
     {
-        const int SYNC_API_VERSION = 1;
+        const string VIEWPORT_IMAGE_BUFFER = "_UnityViewportImage";
+        const string UNITY_MESSAGES_BUFFER = "_UnityMessages";
+        const string BLENDER_MESSAGES_BUFFER = "_BlenderMessages";
 
-        const string VIEWPORT_IMAGE_BUFFER_ID = "UnityViewportImage";
-
-        // Pay close attention - these are flipped from the Bridge DLL's constants. 
-        const string MESSAGE_PRODUCER_ID = "UnityMessages";
-        const string MESSAGE_CONSUMER_ID = "BlenderMessages";
-    
         /// <summary>
         /// How long to wait for a writable node to become available (milliseconds)
-        /// 
-        /// This directly affects Unity's framerate. 
+        ///
+        /// This directly affects Unity's framerate.
         /// </summary>
         const int WRITE_WAIT = 0;
 
+        /// <summary>
+        /// Do we have shared memory allocated and ready to listen for Blender connections
+        /// </summary>
+        public bool IsSetup { get; private set; }
+
+        /// <summary>
+        /// Is an instance of Blender connected to our shared memory
+        /// </summary>
         public bool IsConnected { get; private set; }
-
-        [Tooltip(
-            "Camera prefab to instantiate for each synced Blender viewport.\n\n" + 
-            "Transform and projection will be automatically updated to " + 
-            "match Blender's viewport settings."
-        )] public GameObject viewportCameraPrefab;
-
-        [Tooltip(
-            "GO prefab to instantiate for each synced Blender object.\n\n" +
-            "Additional components may be added to the object based on its type " +
-            "within Blender - e.g. adding Mesh Renderers"
-        )]  public GameObject sceneObjectPrefab;
 
         /// <summary>
         /// Shared memory we write RenderTexture pixel data into
         /// </summary>
         CircularBuffer pixelsProducer;
-    
+
         InteropMessenger messages;
 
         /// <summary>
         /// Viewport controller to match Blender's viewport configuration
         /// </summary>
-        OrderedDictionary viewports;
-    
+        OrderedDictionary viewports = new OrderedDictionary();
+
         Dictionary<string, ObjectController> objects = new Dictionary<string, ObjectController>();
 
         /// <summary>
-        /// Current index in <see cref="viewports"/> to use for  
+        /// Current index in <see cref="viewports"/> to use for
         /// sending a render texture to Blender
         /// </summary>
         int viewportIndex;
 
-        SceneManager scene;
         GameObject viewportsContainer;
         GameObject objectsContainer;
-    
+
         /// <summary>
-        /// State information reported to Blender on connect
+        /// Current state information of Unity
         /// </summary>
         InteropUnityState unityState;
 
-        // Start is called before the first frame update
-        private void OnEnable()
-        {
-            viewports = new OrderedDictionary();
+        /// <summary>
+        /// Most recent state information received from Blender
+        /// </summary>
+        InteropBlenderState blenderState;
 
-            unityState = new InteropUnityState
-            {
-                version = SYNC_API_VERSION
-            };
-        }
-    
-        private void OnDisable()
+        /// <summary>
+        /// Connect to the shared memory hosted by Blender and send an initial hello.
+        ///
+        /// Upon failure, this disconnects us.
+        /// </summary>
+        /// <returns></returns>
+        public bool Setup()
         {
+            if (IsSetup)
+            {
+                return true;
+            }
+
+            Debug.Log("Setting up shared memory space");
+
+            var settings = CoherenceSettings.Instance;
+            var name = settings.bufferName;
+
+            try
+            {
+                messages = new InteropMessenger();
+
+                messages.ConnectAsMaster(
+                    name + BLENDER_MESSAGES_BUFFER,
+                    name + UNITY_MESSAGES_BUFFER,
+                    settings.pixelsNodeCount,
+                    settings.PixelsNodeSizeBytes
+                );
+            }
+            catch (Exception e)
+            {
+                // TODO: This is an IOException - which isn't as useful as
+                // a FileNotFoundException that we'd get from Blender's side of things.
+                // We could parse out the string to customize the error (e.g. instructions
+                // on turning off Blender's side of things) but... feels hacky?
+                Debug.LogError($"Failed to setup messaging: {e}");
+                throw;
+            }
+
+            try
+            {
+                pixelsProducer = new CircularBuffer(
+                    name + VIEWPORT_IMAGE_BUFFER,
+                    settings.nodeCount,
+                    settings.NodeSizeBytes
+                );
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Failed to setup pixels producer: {e}");
+                throw;
+            }
+
+            AssemblyReloadEvents.beforeAssemblyReload += OnBeforeAssemblyReload;
+            EditorApplication.update += OnEditorUpdate;
+
+            IsSetup = true;
+            return true;
+        }
+
+        /// <summary>
+        /// Destroy the shared memory space and temporary scene objects
+        /// </summary>
+        public void Teardown()
+        {
+            AssemblyReloadEvents.beforeAssemblyReload -= OnBeforeAssemblyReload;
+            EditorApplication.update -= OnEditorUpdate;
+
+            // Notify Blender if we're shutting down from the Unity side
             if (IsConnected)
             {
                 messages.WriteDisconnect();
                 OnDisconnectFromBlender();
             }
+            else
+            {
+                // Still clear if we're not connected - we might've torn down
+                // the connection uncleanly and have some persisted data to clean up.
+                Clear();
+            }
+
+            IsSetup = false;
+
+            Debug.Log("Tearing down shared memory space");
+
+            // Dispose shared memory
+            messages?.Dispose();
+            messages = null;
+
+            pixelsProducer?.Dispose();
+            pixelsProducer = null;
         }
-    
-        private void Update()
+
+        /// <summary>
+        /// Send Blender updated state/settings information from Unity
+        /// </summary>
+        public void SendUnityState()
         {
             if (IsConnected)
             {
-                // SendRequestToBlender(RpcRequest.SyncBlenderState);
-                messages.ProcessQueue();
-                ConsumeMessages();
-
-                PublishNextRenderTexture();
-            }
-
-            // This is our equivalent to a "Connect" button in the UI for now.
-            if (Input.GetKeyDown(KeyCode.Space))
-            {
-                if (!IsConnected)
-                {
-                    SetupConnection();
-                }
-                else
-                {
-                    messages.Queue(RpcRequest.UpdateUnityState, Application.version, ref unityState);
-                    // SendRequestWithDataToBlender(RpcRequest.UpdateUnityState, ref unityState);
-                }
+                messages.Queue(RpcRequest.UpdateUnityState, Application.unityVersion, ref unityState);
             }
         }
 
         /// <summary>
+        /// Push/pull messages between Blender and publish new viewport render textures when available.
+        /// </summary>
+        public void Sync()
+        {
+            if (IsSetup)
+            {
+                messages.ProcessOutboundQueue();
+                ConsumeMessages();
+            }
+
+            if (IsConnected)
+            {
+                PublishNextRenderTexture();
+            }
+        }
+
+        private void OnDisable()
+        {
+            Teardown();
+        }
+
+        private void OnEditorUpdate()
+        {
+            // In editor, process alongside editor updates
+            if (!Application.isPlaying)
+            {
+                Sync();
+            }
+        }
+
+        private void Update()
+        {
+            // In play mode, process alongside the typical Update()
+            if (Application.isPlaying)
+            {
+                Sync();
+            }
+
+            // This is our equivalent to a "Connect" button in the UI for now.
+            /*if (Input.GetKeyDown(KeyCode.Space))
+            {
+                Connect();
+            } */
+        }
+
+        /// <summary>
+        /// Clear state and scene object caches to their defaults
+        /// </summary>
+        private void Clear()
+        {
+            if (objectsContainer != null)
+            {
+                DestroyImmediate(objectsContainer);
+                objectsContainer = null;
+            }
+
+            if (viewportsContainer != null)
+            {
+                DestroyImmediate(viewportsContainer);
+                viewportsContainer = null;
+            }
+
+            viewports.Clear();
+            objects.Clear();
+        }
+
+        /// <summary>
         /// Publish the RT of the next viewport in the dictionary.
-        /// 
+        ///
         /// <para>
-        ///     We do this to ensure that every viewport has a chance of writing 
-        ///     to the circular buffer - in case there isn't enough room to write 
-        ///     all the viewports in one frame. 
+        ///     We do this to ensure that every viewport has a chance of writing
+        ///     to the circular buffer - in case there isn't enough room to write
+        ///     all the viewports in one frame.
         /// </para>
         /// </summary>
         private void PublishNextRenderTexture()
@@ -159,7 +282,8 @@ namespace Coherence
                 viewportsContainer = new GameObject("Blender Viewports");
             }
 
-            var go = (viewportCameraPrefab) ? Instantiate(viewportCameraPrefab) : new GameObject();
+            var prefab = CoherenceSettings.Instance.viewportCameraPrefab;
+            var go = prefab ? Instantiate(prefab.gameObject) : new GameObject();
 
             go.name = $"Viewport {name}";
             go.transform.parent = viewportsContainer.transform;
@@ -187,7 +311,7 @@ namespace Coherence
             // Reset viewport iterator, in case this causes us to go out of range
             viewportIndex = 0;
         }
-    
+
         private ObjectController GetObject(string name)
         {
             if (!objects.ContainsKey(name))
@@ -197,15 +321,16 @@ namespace Coherence
 
             return objects[name];
         }
-    
+
         private ObjectController AddObject(string name, InteropSceneObject iso)
         {
             if (objectsContainer == null)
             {
                 objectsContainer = new GameObject("Blender Objects");
             }
-        
-            var go = (sceneObjectPrefab) ? Instantiate(sceneObjectPrefab) : new GameObject();
+
+            var prefab = CoherenceSettings.Instance.sceneObjectPrefab;
+            var go = prefab ? Instantiate(prefab) : new GameObject();
 
             go.name = $"{name} (ID: {iso.id})";
             go.transform.parent = objectsContainer.transform;
@@ -230,92 +355,59 @@ namespace Coherence
             Destroy(instance.gameObject);
             objects.Remove(name);
         }
-    
+
         private void OnConnectToBlender()
         {
-            if (viewportsContainer == null)
-            {
-                viewportsContainer = new GameObject("Blender Viewports");
-            }
+            Debug.Log("Connected to Blender");
 
-            if (scene == null)
-            {
-                var go = new GameObject("Blender Scene");
-                scene = go.AddComponent<SceneManager>();
-            }
+            IsConnected = true;
+
+            // Send our state/settings to Blender to sync up
+            messages.Queue(RpcRequest.Connect, Application.unityVersion, ref unityState);
         }
 
         /// <summary>
-        /// Close all shared memory buffers with Blender
+        /// Cleanup any lingering blender data from the scene (viewport cameras, meshes, etc)
         /// </summary>
         private void OnDisconnectFromBlender()
         {
             Debug.Log("Disconnected from Blender");
             IsConnected = false;
 
-            pixelsProducer?.Dispose();
-            pixelsProducer = null;
-        
-            messages?.Dispose();
-            messages = null;
+            // Clear any messages still queued to send
+            messages.ClearQueue();
 
-            if (scene != null)
-            {
-                Destroy(scene.gameObject);
-                scene = null;
-            }
+            // Reset Blender state information
+            blenderState = new InteropBlenderState();
 
-            if (viewportsContainer != null)
-            {
-                Destroy(viewportsContainer);
-                viewportsContainer = null;
-            }
+            // Clear the scene of any synced data from Blender
+            Clear();
         }
 
         /// <summary>
-        /// Connect to the shared memory hosted by Blender and send an initial hello.
-        /// 
-        /// Upon failure, this disconnects us. 
+        /// Make sure we teardown our connection on reload to avoid an invalid state.
+        ///
+        /// Hopefully (eventually) we can support keeping the connection alive during reloads.
+        /// But right now there's too many uncertainties to do that safely.
         /// </summary>
-        /// <returns></returns>
-        bool SetupConnection()
+        private void OnBeforeAssemblyReload()
         {
-            if (IsConnected)
-            {
-                return true;
-            }
-
-            Debug.Log("Establishing new connection");
-
-            try 
-            {
-                pixelsProducer = new CircularBuffer(VIEWPORT_IMAGE_BUFFER_ID);
-
-                messages = new InteropMessenger();
-                messages.ConnectAsSlave(MESSAGE_CONSUMER_ID, MESSAGE_PRODUCER_ID);
-            
-                IsConnected = true;
-
-                messages.Queue(RpcRequest.Connect, Application.unityVersion, ref unityState);
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"Failed to setup RPC Buffer: {e.Message}");
-                OnDisconnectFromBlender();
-                throw;
-            }
-
-            return true;
+            Debug.LogWarning("Tearing down Coherence shared memory space due to assembly reload");
+            Teardown();
         }
 
+        /// <summary>
+        /// Handle any messages coming from Blender
+        /// </summary>
         private void ConsumeMessages()
         {
-            if (!SetupConnection())
-            {
-                Debug.LogWarning("Cannot consume messages - No connection");
-            }
-        
             Profiler.BeginSample("Consume Message");
+
+            var disconnected = false;
+
+            // TODO: Some messages should be skipped if !IsConnected.
+            // Otherwise we may get a bad state. E.g. we see a disconnect
+            // from Blender and THEN some other viewport/object data messages.
 
             messages.Read((target, header, ptr) =>
             {
@@ -324,17 +416,21 @@ namespace Coherence
                 switch (header.type)
                 {
                     case RpcRequest.Connect:
+                        blenderState = FastStructure.PtrToStructure<InteropBlenderState>(ptr);
                         OnConnectToBlender();
                         break;
+                    case RpcRequest.UpdateBlenderState:
+                        blenderState = FastStructure.PtrToStructure<InteropBlenderState>(ptr);
+                        break;
                     case RpcRequest.Disconnect:
-                        // Don't call OnDisconnectFromBlender() from within 
+                        // Don't call OnDisconnectFromBlender() from within
                         // the read handler - we want to release the read node
                         // safely first before disposing the connection.
-                        IsConnected = false;
+                        disconnected = true;
                         break;
                     case RpcRequest.AddViewport:
                         AddViewport(
-                            target, 
+                            target,
                             FastStructure.PtrToStructure<InteropViewport>(ptr)
                         );
                         break;
@@ -388,11 +484,13 @@ namespace Coherence
                         break;
                 }
 
-                return 0; // TODO: :\
+                // TODO: Necessary to count bytes? We won't read anything off this
+                // buffer at this point so it's safe to drop the whole thing.
+                return 0;
             });
 
-            // If we disconnected during the read, notify.
-            if (!IsConnected)
+            // Handle any disconnects that may have occured during the read
+            if (disconnected)
             {
                 OnDisconnectFromBlender();
             }
@@ -402,22 +500,22 @@ namespace Coherence
 
         /// <summary>
         /// Copy the RenderTexture data from the ViewportController into shared memory with Blender.
-        /// 
+        ///
         /// <para>
-        ///     The <paramref name="pixelsRGB24Func"/> callback is executed IFF we have room in the 
+        ///     The <paramref name="pixelsRGB24Func"/> callback is executed IFF we have room in the
         ///     buffer to write - letting us skip the heavy pixel copy operations if the consumer
         ///     is backed up in processing data.
         /// </para>
         /// </summary>
         internal void PublishRenderTexture(ViewportController viewport, Func<byte[]> pixelsRGB24Func)
         {
-            if (!SetupConnection())
+            if (!IsConnected)
             {
                 Debug.LogWarning("Cannot send RT - No connection");
             }
 
             Profiler.BeginSample("Write wait on pixelsProducer");
-        
+
             int bytesWritten = pixelsProducer.Write((ptr) => {
 
                 // If we have a node we can write on, actually do the heavy lifting
@@ -441,7 +539,7 @@ namespace Coherence
                 // Copy render image data into shared memory
                 FastStructure.WriteBytes(ptr + headerSize, pixelsRGB24, 0, pixelsRGB24.Length);
 
-                InteropLogger.Debug($"Writing {pixelsRGB24.Length} bytes with meta {header.width} x {header.height} and pix 0 is " + 
+                InteropLogger.Debug($"Writing {pixelsRGB24.Length} bytes with meta {header.width} x {header.height} and pix 0 is " +
                     $"{pixelsRGB24[0]}, {pixelsRGB24[1]}, {pixelsRGB24[2]}"
                 );
 
@@ -454,7 +552,7 @@ namespace Coherence
             {
                 Debug.LogWarning("pixelsProducer buffer is backed up. Skipped write.");
             }*/
-        
+
             Profiler.EndSample();
         }
     }

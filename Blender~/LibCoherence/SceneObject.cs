@@ -1,9 +1,5 @@
-﻿
-using SharedMemory;
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Runtime.InteropServices;
-using System.Text;
 
 namespace Coherence
 {
@@ -18,14 +14,14 @@ namespace Coherence
         internal InteropSceneObject data;
 
         public string Name { get; set; }
-    
+
         /// <summary>
         /// Name of the active material for this object
         /// </summary>
-        internal string Material 
-        { 
+        internal string Material
+        {
             get { return data.material; }
-            set { data.material = value; } 
+            set { data.material = value; }
         }
 
         internal InteropMatrix4x4 Transform
@@ -34,29 +30,29 @@ namespace Coherence
             set { data.transform = value; }
         }
 
-        internal uint[] Triangles 
-        { 
-            get { return triangles; } 
+        internal uint[] Triangles
+        {
+            get { return triangles; }
         }
-    
+
         private uint[] triangles;
 
         internal InteropVector3[] Vertices
-        { 
+        {
             get { return vertices; }
         }
-    
+
         private InteropVector3[] vertices;
 
         internal InteropVector3[] Normals
-        { 
-            get { return normals; } 
+        {
+            get { return normals; }
         }
-    
+
         private InteropVector3[] normals;
 
         internal InteropBoneWeight[] BoneWeights { get; set; }
-    
+
         private Dictionary<int, InteropVector2[]> uvLayers;
         private MLoop[] cachedLoops;
 
@@ -73,7 +69,7 @@ namespace Coherence
 
             uvLayers = new Dictionary<int, InteropVector2[]>();
         }
-    
+
         /// <summary>
         /// Retrieve a specific UV layer
         /// </summary>
@@ -88,7 +84,7 @@ namespace Coherence
 
             return null;
         }
-    
+
         /// <summary>
         /// Copy an <see cref="MLoop"/> array into managed memory for vertex lookups
         /// aligned with other MLoop* structures.
@@ -106,7 +102,7 @@ namespace Coherence
             }
 
             Array.Copy(loops, cachedLoops, loops.Length);
-    
+
             InteropLogger.Debug($"Copy {loops.Length} loops");
         }
 
@@ -129,20 +125,20 @@ namespace Coherence
 
             Array.Resize(ref vertices, count);
             Array.Resize(ref normals, count);
-        
+
             // We're copying the data instead of sending directly into shared memory
             // because we cannot guarantee that:
             //  1.  shared memory will be available for write when this is called
-            //  2.  the source MVert array hasn't been reallocated once shared 
+            //  2.  the source MVert array hasn't been reallocated once shared
             //      memory *is* available for write
 
-            // TODO: "Smart" dirtying. 
+            // TODO: "Smart" dirtying.
             // If verts don't change, don't flag for updates.
-            // Or if verts change, only update a region of the verts. 
+            // Or if verts change, only update a region of the verts.
             // Could do a BeginChangeCheck() ... EndChangeCheck() with
-            // a bool retval if changes happened. 
+            // a bool retval if changes happened.
 
-            // The idea is to do as much work as possible locally within 
+            // The idea is to do as much work as possible locally within
             // Blender to transmit the smallest deltas to Unity.
 
             // On a resize - this is just everything.
@@ -156,7 +152,7 @@ namespace Coherence
                 var no = verts[i].no;
 
                 var newVert = new InteropVector3(co[0], co[1], co[2]);
-            
+
                 // Normals need to be cast from short -> float
                 var newNorm = new InteropVector3(no[0] / 32767f, no[1] / 32767f, no[2] / 32767f);
 
@@ -176,7 +172,7 @@ namespace Coherence
                 // Console.WriteLine($" - v={vertices[i]}, n={normals[i]}");
 
                 // Other issue is that changes may affect index 0, 1, and 1000, 1001 for a quad.
-                // Or a change has shifted vertices around in the array due to some sort of 
+                // Or a change has shifted vertices around in the array due to some sort of
                 // esoteric Blender operator. So to play it safe, we just update the whole array
                 // until it can be guaranteed that we can identify an accurate slice of updates.
             }
@@ -189,11 +185,11 @@ namespace Coherence
 
         /// <summary>
         /// Copy an <see cref="MLoopTri"/> array into <see cref="Triangles"/>
-        /// 
+        ///
         /// <para>
-        ///     You <b>must</b> ensure <see cref="cachedLoops"/> is up to date via 
-        ///     <see cref="CopyFromMVerts(MVert[])"/> before performing this 
-        ///     operation to ensure that vertices can be mapped to. 
+        ///     You <b>must</b> ensure <see cref="cachedLoops"/> is up to date via
+        ///     <see cref="CopyFromMVerts(MVert[])"/> before performing this
+        ///     operation to ensure that vertices can be mapped to.
         /// </para>
         /// </summary>
         /// <param name="loopTris"></param>
@@ -208,32 +204,32 @@ namespace Coherence
             Array.Resize(ref triangles, count);
 
             // Triangle indices are re-mapped from MLoop vertex index
-            // to the source vertex index using cachedLoops. 
+            // to the source vertex index using cachedLoops.
             for (int i = 0; i < loopTris.Length; i++)
             {
                 var loop = loopTris[i];
                 var j = i * 3;
 
-                // TODO: Can this be any faster? This indirect lookup sucks, 
+                // TODO: Can this be any faster? This indirect lookup sucks,
                 // but might be the best we can do with the way Blender
                 // organizes data.
                 triangles[j] = cachedLoops[loop.tri[0]].v;
                 triangles[j + 1] = cachedLoops[loop.tri[1]].v;
                 triangles[j + 2] = cachedLoops[loop.tri[2]].v;
-            
+
                 // Console.WriteLine($" - {triangles[j]}, {triangles[j + 1]},  {triangles[j + 2]}");
             }
 
             InteropLogger.Debug($"Copied {triangles.Length} triangle indices");
         }
-    
+
         /// <summary>
         /// Copy an <see cref="MLoopUV"/> array for <see cref="GetUV(int)"/>.
-        /// 
+        ///
         /// <para>
-        ///     You <b>must</b> ensure <see cref="cachedLoops"/> is up to date via 
-        ///     <see cref="CopyFromMVerts(MVert[])"/> before performing this 
-        ///     operation to ensure that vertices can be mapped to. 
+        ///     You <b>must</b> ensure <see cref="cachedLoops"/> is up to date via
+        ///     <see cref="CopyFromMVerts(MVert[])"/> before performing this
+        ///     operation to ensure that vertices can be mapped to.
         /// </para>
         /// </summary>
         /// <param name="layer"></param>
@@ -249,10 +245,10 @@ namespace Coherence
 
             Array.Resize(ref uv, count);
             uvLayers[layer] = uv;
-        
+
             for (int i = 0; i < loopUVs.Length; i++)
             {
-                // Note that this currently does not support 
+                // Note that this currently does not support
                 // different UVs in the same layer for the same vertex
                 // since we crush them down and don't try to split verts.
                 // TODO: Improve on this.

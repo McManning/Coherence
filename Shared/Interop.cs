@@ -26,39 +26,44 @@ namespace Coherence
 
     public enum RpcRequest : byte
     {
-        #region Requests from Unity
-
         /// <summary>
-        /// Send Unity state information on first connect.
-        /// 
+        /// Sent by Blender the first time it connects to the shared memory space,
+        /// then sent by Unity in response to Blender's Connect request.
+        ///
         /// <para>
-        ///     Payload: <see cref="InteropUnityState"/>
+        ///     Payload: <see cref="InteropBlenderState"/> from Blender
+        ///     or a <see cref="InteropUnityState"/> from Unity.
         /// </para>
         /// </summary>
-        Connect = 1, // Payload: UnityState
-    
+        Connect = 1,
+
         /// <summary>
-        /// Notify Blender of shutdown.
+        /// Notify Blender/Unity of an expected disconnect.
         /// </summary>
         Disconnect,
 
         /// <summary>
-        /// Notify Blender of an updated state.
-        /// 
+        /// Get updated information about Unity's current state and settings
+        ///
         /// <para>
         ///     Payload: <see cref="InteropUnityState"/>
         /// </para>
         /// </summary>
         UpdateUnityState,
 
-        #endregion 
-
-        #region Requests from Blender
+        /// <summary>
+        /// Get updated information about Blender's current state and settings
+        ///
+        /// <para>
+        ///     Payload: <see cref="InteropBlenderState"/>
+        /// </para>
+        /// </summary>
+        UpdateBlenderState,
 
         /// <summary>
-        /// Notify Unity that a new <see cref="InteropViewport"/> 
+        /// Notify Unity that a new <see cref="InteropViewport"/>
         /// has been created in Blender.
-        /// 
+        ///
         /// <para>
         ///     Payload: <see cref="InteropViewport"/>
         /// </para>
@@ -66,19 +71,19 @@ namespace Coherence
         AddViewport,
 
         /// <summary>
-        /// Notify Unity that a <see cref="InteropViewport"/> 
+        /// Notify Unity that a <see cref="InteropViewport"/>
         /// has been removed from Blender.
-        /// 
+        ///
         /// <para>
-        ///     Payload: <see cref="InteropViewport"/> 
+        ///     Payload: <see cref="InteropViewport"/>
         /// </para>
         /// </summary>
         RemoveViewport,
-    
+
         /// <summary>
         /// Notify Unity of an updated <see cref="InteropViewport"/>
         /// and visibility list.
-        /// 
+        ///
         /// <para>
         ///     Payload: <see cref="InteropViewport"/>
         /// </para>
@@ -87,16 +92,16 @@ namespace Coherence
 
         /// <summary>
         /// Notify Unity of what object IDs are visible in a given viewport
-        /// 
+        ///
         /// <para>
         ///     Payload: <see cref="int"/>[]
         /// </para>
         /// </summary>
         UpdateVisibleObjects,
-    
+
         /// <summary>
         /// Notify Unity of an updated <see cref="InteropScene"/>.
-        /// 
+        ///
         /// <para>
         ///     Payload: <see cref="InteropScene"/>
         /// </para>
@@ -106,19 +111,19 @@ namespace Coherence
         /// <summary>
         /// Notify Unity that a <see cref="InteropSceneObject"/>
         /// has been added to the scene.
-        /// 
+        ///
         /// <para>
-        ///     Payload: <see cref="InteropSceneObject"/> 
+        ///     Payload: <see cref="InteropSceneObject"/>
         /// </para>
         /// </summary>
         AddObjectToScene,
 
         /// <summary>
-        /// Notify Unity that a <see cref="InteropSceneObject"/> 
+        /// Notify Unity that a <see cref="InteropSceneObject"/>
         /// has been removed from the scene.
-        /// 
+        ///
         /// <para>
-        ///     Payload: <see cref="InteropSceneObject"/> 
+        ///     Payload: <see cref="InteropSceneObject"/>
         /// </para>
         /// </summary>
         RemoveObjectFromScene,
@@ -126,43 +131,43 @@ namespace Coherence
         /// <summary>
         /// Notify Unity that a <see cref="InteropSceneObject"/>
         /// has been updated in the scene (new transform, metadata, etc).
-        /// 
+        ///
         /// <para>
-        ///     Payload: <see cref="InteropSceneObject"/> 
+        ///     Payload: <see cref="InteropSceneObject"/>
         /// </para>
         /// </summary>
         UpdateSceneObject,
 
         /// <summary>
         /// Notify Unity that a range of object vertices have been modified.
-        /// 
+        ///
         /// <para>
         ///     Payload: <see cref="InteropVector3"/>[]
         /// </para>
         /// </summary>
         UpdateVertices,
-    
+
         /// <summary>
         /// Notify Unity that a range of object vertices have been modified.
-        /// 
+        ///
         /// <para>
         ///     Payload: <see cref="int"/>[]
         /// </para>
         /// </summary>
         UpdateTriangles,
-    
+
         /// <summary>
         /// Notify Unity that a range of vertex normals have been modified.
-        /// 
+        ///
         /// <para>
         ///     Payload: <see cref="InteropVector3"/>[]
         /// </para>
         /// </summary>
         UpdateNormals,
-    
+
         /// <summary>
         /// Notify Unity that a range of object UVs have been modified.
-        /// 
+        ///
         /// <para>
         ///     Payload: <see cref="InteropVector2"/>[]
         /// </para>
@@ -170,16 +175,14 @@ namespace Coherence
         UpdateUVs,
 
         /// <summary>
-        /// Notify Unity that the active material name for a 
+        /// Notify Unity that the active material name for a
         /// <see cref="InteropSceneObject"/> has changed.
-        /// 
+        ///
         /// <para>
         ///     Payload: Material name as <see cref="byte"/>[]
         /// </para>
         /// </summary>
         UpdateMaterial,
-
-        #endregion 
     }
 
     public enum RpcResponse : byte
@@ -205,7 +208,7 @@ namespace Coherence
         /// Number of elements in the array, if an array of data
         /// </summary>
         public int count;
-    
+
         public override int GetHashCode()
         {
             return base.GetHashCode(); // TODO: Impl.
@@ -213,15 +216,15 @@ namespace Coherence
 
         public override bool Equals(object obj)
         {
-            return obj is InteropMessageHeader o 
-                && o.type == type 
+            return obj is InteropMessageHeader o
+                && o.type == type
                 && o.index == index
                 && o.count == count;
         }
     }
 
     /// <summary>
-    /// Overall state as reported by Unity
+    /// Settings set by Unity and sent to Blender
     /// </summary>
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct InteropUnityState
@@ -237,9 +240,27 @@ namespace Coherence
     }
 
     /// <summary>
+    /// Misc information about Blender's current state (settings, version, etc).
+    ///
+    /// This message is sent to Unity on first connect and periodically thereafter.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct InteropBlenderState
+    {
+        // [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        // public string version;
+
+        /// <summary>
+        /// Plugin version used by Blender
+        /// </summary>
+        public int version;
+
+    }
+
+    /// <summary>
     /// State information for a Blender viewport.
-    /// 
-    /// Each active viewport in Blender using the RenderEngine may 
+    ///
+    /// Each active viewport in Blender using the RenderEngine may
     /// send its own BlenderState. Scene objects are shared between
     /// all viewports but visibility may change between viewports.
     /// </summary>
@@ -248,7 +269,7 @@ namespace Coherence
     {
         /// <summary>
         /// Unique identifier for this viewport.
-        /// 
+        ///
         /// Slightly redundant for name, but used for the pixels
         /// consumer/producer to easily map pixel data to a viewport.
         /// </summary>
@@ -259,7 +280,7 @@ namespace Coherence
         /// </summary>
         public InteropCamera camera;
     }
-   
+
     /// <summary>
     /// Current viewport camera state (transform, matrices, etc)
     /// </summary>
@@ -285,8 +306,8 @@ namespace Coherence
 
         public override bool Equals(object obj)
         {
-            return obj is InteropCamera cam 
-                && cam.width == width 
+            return obj is InteropCamera cam
+                && cam.width == width
                 && cam.height == height
                 && cam.lens == lens
                 && cam.position.Approx(position)
@@ -294,12 +315,12 @@ namespace Coherence
                 && cam.up.Approx(up);
         }
     }
-    
+
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct InteropMatrix4x4
     {
         // Layout matches UnityEngine.Matrix4x4... maybe?
-        // This might be better to organize our way and 
+        // This might be better to organize our way and
         // manually map to a unity Matrix4x4 on the other side.
         public float m00;
         public float m33;
@@ -339,11 +360,11 @@ namespace Coherence
 
     /// <summary>
     /// Fixed length (63 byte + \0) string that can be packed into an interop struct.
-    /// 
+    ///
     /// <para>
     ///     This exists to add string support to <see cref="FastStructure" />
     ///     and safely pack strings within other structs in shared memory.
-    ///     
+    ///
     ///     Can be implicitly cast to and from <see cref="string"/>.
     /// </para>
     /// </summary>
@@ -366,22 +387,26 @@ namespace Coherence
             {
                 fixed (sbyte* s = buffer)
                 {
-                    var str = new string(s); // , 0, 64, Encoding.ASCII);
-                    InteropLogger.Debug($"Unpack string '{str}'");
-                    return str;
+                    return new string(s); // , 0, 64, Encoding.ASCII);
                 }
             }
             set
             {
                 fixed (sbyte* s = buffer)
                 {
+                    if (value == null)
+                    {
+                        *s = 0;
+                        return;
+                    }
+
                     if (value.Length > 63)
                     {
                         throw new OverflowException(
                             $"String `{value}` is too large to pack into an InteropString64"
                         );
                     }
-                
+
                     int i = 0;
                     foreach (char c in value)
                     {
@@ -390,7 +415,6 @@ namespace Coherence
                         if (i >= 63) break;
                     }
                     *(s + i) = 0;
-                    InteropLogger.Debug($"Pack string '{value}' zeroed at {i}");
                 }
             }
         }
@@ -461,7 +485,7 @@ namespace Coherence
         public float x;
         public float y;
         public float z;
-    
+
         public static InteropVector3 operator +(InteropVector3 a, InteropVector3 b)
         {
             return new InteropVector3(a.x + b.x, a.y + b.y, a.z + b.z);
@@ -480,7 +504,7 @@ namespace Coherence
         {
             return $"({x}, {y}, {z})";
         }
-    
+
         public override int GetHashCode()
         {
             return base.GetHashCode();
@@ -497,7 +521,7 @@ namespace Coherence
     {
         public float x;
         public float y;
-    
+
         public InteropVector2(float[] xy)
         {
             this.x = xy[0];
@@ -516,7 +540,7 @@ namespace Coherence
         {
             return $"({x}, {y})";
         }
-    
+
         public override int GetHashCode()
         {
             return base.GetHashCode();
@@ -564,11 +588,11 @@ namespace Coherence
         public int height;
 
         // TODO: Format stuff would go here. (RGBA/ARGB/32/F/etc)
-        // For now we assume it's just InteropColor24[] 
+        // For now we assume it's just InteropColor24[]
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    public struct RenderTextureData
+    public struct RenderTextureData // TODO: InteropViewportTexture?
     {
         public static RenderTextureData Invalid = new RenderTextureData
         {
@@ -577,7 +601,7 @@ namespace Coherence
             height = 0,
             pixels = IntPtr.Zero
         };
-    
+
         public int viewportId;
         public int width;
         public int height;
@@ -608,38 +632,38 @@ namespace Coherence
         [Conditional("DEBUG")]
         public static void Debug(string message)
         {
-        #if UNITY_EDITOR 
+        #if UNITY_EDITOR
             UnityEngine.Debug.Log(message);
-        #else 
+        #else
             Console.WriteLine(message);
-        #endif 
+        #endif
         }
 
         public static void Warning(string message)
         {
         #if UNITY_EDITOR
             UnityEngine.Debug.LogWarning(message);
-        #else 
+        #else
             Console.WriteLine("WARNING: " + message);
-        #endif 
+        #endif
         }
 
         public static void Error(string message)
         {
         #if UNITY_EDITOR
             UnityEngine.Debug.LogError(message);
-        #else 
+        #else
             Console.WriteLine("ERROR: " + message);
-        #endif 
+        #endif
         }
     }
 
     /// <summary>
     /// Simplified verison of RpcBuffer that:
-    /// 
+    ///
     /// A. Doesn't care about response matching
     /// B. Doesn't run in async tasks (for Unity support)
-    /// C. Doesn't split messages 
+    /// C. Doesn't split messages
     /// </summary>
     public class InteropMessenger : IDisposable
     {
@@ -656,10 +680,10 @@ namespace Coherence
 
         Queue<InteropMessage> outboundQueue;
 
-        public void ConnectAsMaster(string consumerId, string producerId, int nodeBufferSize)
+        public void ConnectAsMaster(string consumerId, string producerId, int nodeCount, int nodeBufferSize)
         {
-            messageProducer = new CircularBuffer(producerId, 10, nodeBufferSize);
-            messageConsumer = new CircularBuffer(consumerId, 10, nodeBufferSize);
+            messageProducer = new CircularBuffer(producerId, nodeCount, nodeBufferSize);
+            messageConsumer = new CircularBuffer(consumerId, nodeCount, nodeBufferSize);
             outboundQueue = new Queue<InteropMessage>();
         }
 
@@ -669,7 +693,7 @@ namespace Coherence
             messageConsumer = new CircularBuffer(consumerId);
             outboundQueue = new Queue<InteropMessage>();
         }
-    
+
         public void Dispose()
         {
             outboundQueue?.Clear();
@@ -712,7 +736,7 @@ namespace Coherence
 
             var payload = FastStructure.ToBytes(ref data);
 
-            // If it's already queued, replace the payload 
+            // If it's already queued, replace the payload
             var queued = FindQueuedMessage(target, ref header);
             if (queued != null)
             {
@@ -729,7 +753,7 @@ namespace Coherence
 
             return false;
         }
-    
+
         private InteropMessage FindQueuedMessage(string target, ref InteropMessageHeader header)
         {
             foreach (var message in outboundQueue)
@@ -744,10 +768,10 @@ namespace Coherence
         }
 
         /// <summary>
-        /// Queue an outbound message containing one or more <typeparamref name="T"/> values. 
-        /// 
+        /// Queue an outbound message containing one or more <typeparamref name="T"/> values.
+        ///
         /// <para>
-        ///     If we cannot fit the entire dataset into a single message, and 
+        ///     If we cannot fit the entire dataset into a single message, and
         ///     <paramref name="allowSplitMessages"/> is true then the payload will
         ///     be split into multiple messages, each with a distinct
         ///     <see cref="InteropMessageHeader.index"/> and <see cref="InteropMessageHeader.count"/>
@@ -775,19 +799,19 @@ namespace Coherence
                 index = 0,
                 count = data.Length
             };
-        
+
             // TODO: If the source array size changes - find queued won't be correct.
 
             // We assume ReplaceOrQueue because of the below TODO - multiple queued arrays
             // would be pointing to the same data anyway.
-        
-            // If it's already queued, we don't need to do anything. 
+
+            // If it's already queued, we don't need to do anything.
             var queued = FindQueuedMessage(target, ref header);
             if (queued != null)
             {
                 return true;
             }
-        
+
             outboundQueue.Enqueue(new InteropMessage
             {
                 target = target,
@@ -799,10 +823,10 @@ namespace Coherence
                     }
                     // TODO: My concern here would be what happens if the buffer changes before this is sent?
                     // This would send the updated buffer - BUT that probably wouldn't be a problem because
-                    // we're trying to send the most recent data at all times anyway, right? 
+                    // we're trying to send the most recent data at all times anyway, right?
                     // Even if it's sitting in queue for a while.
 
-                    // Also seems like this should be an implicit QueueOrReplace - because if multiple 
+                    // Also seems like this should be an implicit QueueOrReplace - because if multiple
                     // queued messsages point to the same array - they're going to send the same array data.
 
                     // Could leave this up to the QueueArray caller - passing in this Func<...>
@@ -814,7 +838,7 @@ namespace Coherence
 
             return false;
         }
-    
+
         /*
         private void Queue(InteropMessageHeader header, byte[] payload)
         {
@@ -853,7 +877,7 @@ namespace Coherence
             var queued = FindQueuedMessage(header);
             if (queued != null)
             {
-                queued.header = header; 
+                queued.header = header;
                 queued.payload = payload;
                 queued.producer = null;
                 return;
@@ -879,7 +903,7 @@ namespace Coherence
 
         /// <summary>
         /// Read from the queue into the consumer callable.
-        /// 
+        ///
         /// <paramref name="consumer"/> is expected to return the number of bytes
         /// consumed, sans the header.
         /// </summary>
@@ -898,20 +922,20 @@ namespace Coherence
                 if (targetSize > 0)
                 {
                     byte[] target = new byte[targetSize];
-            
+
                     FastStructure.ReadBytes(target, ptr + bytesRead, 0, targetSize);
                     targetName = Encoding.UTF8.GetString(target);
                     bytesRead += targetSize;
                 }
-            
+
                 // Read message header
                 var headerSize = FastStructure.SizeOf<InteropMessageHeader>();
                 var header = FastStructure.PtrToStructure<InteropMessageHeader>(ptr + bytesRead);
                 bytesRead += headerSize;
-            
+
                 // Call consumer to handle the rest of the payload
                 bytesRead += consumer(targetName, header, ptr + bytesRead);
-            
+
                 InteropLogger.Debug($"Consume {bytesRead} bytes - {header.type} for {targetName}");
 
                 return bytesRead;
@@ -923,8 +947,8 @@ namespace Coherence
         /// </summary>
         public void WriteDisconnect()
         {
-            // Wait a good amount of time before sending a disconnect to 
-            // give us a better chance at firing it off. 
+            // Wait a good amount of time before sending a disconnect to
+            // give us a better chance at firing it off.
             int bytesWritten = messageProducer.Write((ptr) =>
             {
                 var message = new InteropMessage()
@@ -945,7 +969,7 @@ namespace Coherence
         }
 
         /// <summary>
-        /// Write <paramref name="message"/> into the next available 
+        /// Write <paramref name="message"/> into the next available
         /// node's buffer at <paramref name="ptr"/>.
         /// </summary>
         /// <param name="message"></param>
@@ -966,14 +990,14 @@ namespace Coherence
                 FastStructure.WriteBytes(ptr + bytesWritten, target, 0, targetLen);
                 bytesWritten += targetLen;
             }
-        
+
             // Write the message header
             var headerSize = FastStructure.SizeOf<InteropMessageHeader>();
             var header = message.header;
 
             FastStructure.StructureToPtr(ref header, ptr + bytesWritten);
             bytesWritten += headerSize;
-            
+
             // If there's a custom producer, execute it for writing the payload
             if (message.producer != null)
             {
@@ -986,7 +1010,7 @@ namespace Coherence
                 FastStructure.WriteBytes(ptr + bytesWritten, message.payload, 0, message.payload.Length);
                 bytesWritten += message.payload.Length;
             }
-            
+
             InteropLogger.Debug($"Produce {bytesWritten} bytes - {header.type} for {message.target}");
 
             return bytesWritten;
@@ -995,13 +1019,13 @@ namespace Coherence
         /// <summary>
         /// Process queued messages and write if possible
         /// </summary>
-        public void ProcessQueue()
+        public void ProcessOutboundQueue()
         {
             if (outboundQueue.Count() < 1)
             {
                 return;
             }
-        
+
             InteropLogger.Debug($" * {outboundQueue.Count()} queued messages");
 
             // Only dequeue a message once we have an available node for writing

@@ -1,9 +1,9 @@
 
-import os 
+import os
 import time
 from ctypes import *
 
-bridge = cdll.LoadLibrary(os.path.abspath('Bridge.dll'))
+bridge = cdll.LoadLibrary(os.path.abspath('../LibCoherence/bin/Debug/LibCoherence.dll'))
 
 class InteropMatrix4x4(Structure):
     _fields_ = [
@@ -40,6 +40,8 @@ class InteropVector3(Structure):
 
 class InteropCamera(Structure):
     _fields_ = [
+        ('width', c_int),
+        ('height', c_int),
         ('lens', c_float),
         ('position', InteropVector3),
         ('forward', InteropVector3),
@@ -65,11 +67,11 @@ def identity():
 
 def to_interop_int_array(arr):
     """Convert the array of ints to an interop type for C# int[]
-    
+
     Parameter:
         arr (int[])
-    
-    Returns: 
+
+    Returns:
         c_int*
     """
     result = (c_int*len(arr))()
@@ -91,12 +93,12 @@ def test_consume_render_texture():
     bridge.ConsumeRenderTextures()
 
     rt = bridge.GetRenderTexture(1)
-    
+
     if rt.width > 0 and rt.height > 0 and rt.frame > prev_frame:
 
         if rt.width != prev_width or rt.height != prev_height:
             print('RESIZE')
-            prev_width = rt.width 
+            prev_width = rt.width
             prev_height = rt.height
 
         print(rt.viewportId, rt.width, rt.height, rt.frame, rt.pixels, cast(rt.pixels, c_void_p).value)
@@ -104,9 +106,7 @@ def test_consume_render_texture():
         for i in range(0, 10 * 3, 3):
             print('- {}, {}, {}'.format(rt.pixels[i], rt.pixels[i+1], rt.pixels[i+2]))
 
-def run():
-    bridge.Start()
-
+def add_mock_scene():
     # Add mesh tests
     name = create_string_buffer("Foo bar".encode())
     bridge.AddMeshObjectToScene(10, name, identity())
@@ -120,12 +120,12 @@ def run():
     visible_ids = [10, 100]
     visible_ids_ptr = (c_int * len(visible_ids))(*visible_ids)
     bridge.SetVisibleObjects(1, visible_ids_ptr, len(visible_ids))
-    
+
     position = InteropVector3()
     position.x = 0
     position.y = 0
     position.z = 0
-    
+
     # Blender is Z up
     up = InteropVector3()
     up.x = 0
@@ -140,23 +140,48 @@ def run():
     bridge.SetViewportCamera.argtypes = (c_uint, InteropCamera)
 
     camera = InteropCamera()
+    camera.width = 800
+    camera.height = 600
     camera.lens = 50.0
     camera.position = position
-    camera.forward = forward 
+    camera.forward = forward
     camera.up = up
 
     bridge.SetViewportCamera(1, camera)
 
-    running = True 
+def connect():
+    """Run a connect retry loop until we can connect successfully to Unity"""
+    conn = create_string_buffer("Coherence".encode())
+
+    while True:
+        response = bridge.Start(conn)
+        if response == 0:
+            print('No shared memory space - start unity first. Retrying in 3 seconds')
+            time.sleep(3)
+        elif response == -1:
+            print('ERROR WOO!')
+            exit()
+        else: # Connected
+            break
+
+def run():
+    running = True
     try:
         while running:
             time.sleep(1.0 / 60.0)
             bridge.Update()
             test_consume_render_texture()
 
+            # Bad timing here. IsConnected doesn't happen until Unity responds
+            # with a .Connect which means we gotta wait...
+            # if not bridge.IsConnectedToUnity():
+            #    print('Got a disconnect from Unity')
+            #    return
+
     except KeyboardInterrupt:
         print('Shutting down')
         bridge.Shutdown()
+
 
 def experimental():
 
@@ -188,13 +213,15 @@ def experimental():
 
 
 if __name__ == '__main__':
-    version = bridge.Version()
-    if version != 14:
-        raise Exception('Could not query Bridge version. DLL might be borked')
-    
-    print(version)
+    fourteen = bridge.Fourteen()
+    if fourteen != 14:
+        raise Exception('Could not query Bridge.Fourteen. DLL might be borked')
 
+    print(fourteen)
+
+    add_mock_scene()
+
+    connect()
     run()
 
 # Viewport camera would just be a raw ass matrix, right?
-    

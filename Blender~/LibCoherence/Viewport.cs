@@ -1,33 +1,18 @@
 ﻿
 using System;
-using SharedMemory;
-using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
+using SharedMemory;
 
 namespace Coherence
 {
     /// <summary>
     /// Data management for a Blender viewport.
-    /// 
+    ///
     /// Handles serialization of the data into a format consumable by Unity.
     /// </summary>
     class Viewport : IDisposable, IInteropSerializable<InteropViewport>
     {
-        /// <summary>
-        /// Maximum width of a viewport, in pixels. 
-        /// 
-        /// Required for setting a fixed buffer size for pixel data.
-        /// </summary>
-        public const int MAX_VIEWPORT_WIDTH = 1920;
-    
-        /// <summary>
-        /// Maximum height of a viewport, in pixels. 
-        /// 
-        /// Required for setting a fixed buffer size for pixel data.
-        /// </summary>
-        public const int MAX_VIEWPORT_HEIGHT = 1080;
-    
         public string Name { get { return $"Viewport #{data.id}"; }}
 
         /// <summary>
@@ -69,12 +54,12 @@ namespace Coherence
         {
             Dispose();
         }
-    
+
         public void Dispose()
         {
             ReleasePixelBuffer();
         }
-    
+
         public void SetVisibleObjects(int[] ids)
         {
             VisibleObjectIds = ids;
@@ -100,7 +85,7 @@ namespace Coherence
         internal int ReadPixelData(InteropRenderHeader header, IntPtr intPtr)
         {
             var pixelArraySize = header.width * header.height * 3;
-        
+
             lock (renderTextureLock)
             {
                 if (Pixels == IntPtr.Zero)
@@ -133,11 +118,6 @@ namespace Coherence
                 // TODO: .. anything?
             }
 
-            if (camera.width > MAX_VIEWPORT_WIDTH || camera.height > MAX_VIEWPORT_HEIGHT)
-            {
-                throw new Exception($"Camera dimensions cannot exceed {MAX_VIEWPORT_WIDTH} x {MAX_VIEWPORT_HEIGHT}");
-            }
-        
             data.camera = camera;
         }
 
@@ -156,7 +136,7 @@ namespace Coherence
         internal RenderTextureData GetRenderTextureAndLock()
         {
             // We lock here and unlock in a separate thread.
-            // This is so that Python can safely lock while retrieving, 
+            // This is so that Python can safely lock while retrieving,
             // do work, and call ReleaseRenderTextureLock once it's done.
 
             Monitor.Enter(renderTextureLock);
