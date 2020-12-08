@@ -19,6 +19,9 @@ class DllExportAttribute : Attribute
 
 namespace Coherence
 {
+    /// <summary>
+    /// API exposed the Python addon for Blender.
+    /// </summary>
     class Program
     {
         public static Bridge Bridge { get; } = new Bridge();
@@ -60,12 +63,13 @@ namespace Coherence
         /// </summary>
         /// <param name="connectionName">Common name for the shared memory space between Blender and Unity</param>
         [DllExport]
-        public static int Start(
-            [MarshalAs(UnmanagedType.LPStr)] string connectionName
+        public static int Connect(
+            [MarshalAs(UnmanagedType.LPStr)] string connectionName,
+            [MarshalAs(UnmanagedType.LPStr)] string versionInfo
         ) {
             try
             {
-                if (Bridge.Start(connectionName))
+                if (Bridge.Connect(connectionName, versionInfo))
                 {
                     return 1;
                 }
@@ -84,11 +88,31 @@ namespace Coherence
         /// Dispose shared memory and shutdown communication to Unity
         /// </summary>
         [DllExport]
-        public static int Shutdown()
+        public static int Disconnect()
         {
             try
             {
-                Bridge.Shutdown();
+                Bridge.Disconnect();
+                return 1;
+            }
+            catch (Exception e)
+            {
+                SetLastError(e);
+                return -1;
+            }
+        }
+
+        /// <summary>
+        /// Clear all cached data from the bridge (scene objects, viewports, etc).
+        ///
+        /// This should NOT be called while connected.
+        /// </summary>
+        [DllExport]
+        public static int Clear()
+        {
+            try
+            {
+                Bridge.Clear();
                 return 1;
             }
             catch (Exception e)
@@ -119,7 +143,13 @@ namespace Coherence
         [DllExport]
         public static bool IsConnectedToUnity()
         {
-            return Bridge.IsConnected;
+            return Bridge.IsConnectedToUnity;
+        }
+
+        [DllExport]
+        public static bool IsConnectedToSharedMemory()
+        {
+            return Bridge.IsConnectedToSharedMemory;
         }
 
         #endregion

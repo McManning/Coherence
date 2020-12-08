@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq; // TODO: Drop Linq usage
+using System.Runtime.ExceptionServices;
 using SharedMemory;
 
 namespace Coherence
@@ -17,12 +18,21 @@ namespace Coherence
         const string UNITY_MESSAGES_BUFFER = "_UnityMessages";
         const string BLENDER_MESSAGES_BUFFER = "_BlenderMessages";
 
-        public bool IsConnected { get; private set; }
+        public bool IsConnectedToSharedMemory { get; private set; }
+
+        public bool IsConnectedToUnity { get; private set; }
 
         /// <summary>
         /// How long to wait for a readable node to become available
         /// </summary>
         const int READ_WAIT = 1;
+
+        /// <summary>
+        /// How long after <see cref="lastUpdateFromUnity"/> to consider
+        /// Unity crashed and disconnect automatically. This should
+        /// be longer than the ping rate from Unity.
+        /// </summary>
+        const int TIMEOUT_SECONDS = 10000;
 
         Dictionary<int, Viewport> Viewports { get; set; }
 
@@ -32,10 +42,19 @@ namespace Coherence
         InteropUnityState unityState;
 
         CircularBuffer pixelsConsumer;
-
         InteropMessenger messages;
 
-        public Dictionary<RpcRequest, MessageHandler> handlers;
+        Dictionary<RpcRequest, MessageHandler> handlers;
+
+        /// <summary>
+        /// Last time we got an update from Unity's side.
+        ///
+        /// <para>
+        ///     Used for automatically disconnecting in case Unity crashes
+        ///     and doesn't send a proper <see cref="RpcRequest.Disconnect"/>
+        /// </para>
+        /// </summary>
+        DateTime lastUpdateFromUnity;
 
         public Bridge()
         {
@@ -58,26 +77,8 @@ namespace Coherence
 
         public void Dispose()
         {
-            // Notify Unity of a disconnect if possible
-            // TODO: Is this safe in the destructor? May not be.
-            if (IsConnected)
-            {
-                messages.WriteDisconnect();
-                IsConnected = false;
-            }
-
-            pixelsConsumer?.Dispose();
-            pixelsConsumer = null;
-
-            messages?.Dispose();
-            messages = null;
-
-            foreach (var viewport in Viewports)
-            {
-                viewport.Value.Dispose();
-            }
-
-            Viewports.Clear();
+            Disconnect();
+            Clear();
         }
 
         #region Unity IO Management
@@ -86,8 +87,13 @@ namespace Coherence
         /// Connect to a shared memory space hosted by Unity and sync scene data
         /// </summary>
         /// <param name="connectionName">Common name for the shared memory space between Blender and Unity</param>
-        public bool Start(string connectionName)
+        public bool Connect(string connectionName, string versionInfo)
         {
+            blenderState = new InteropBlenderState
+            {
+                version = versionInfo
+            };
+
             try
             {
                 InteropLogger.Debug($"Connecting to `{connectionName + VIEWPORT_IMAGE_BUFFER}`");
@@ -108,43 +114,84 @@ namespace Coherence
             {
                 // Shared memory space is not valid - Unity may not have started it.
                 // This is an error that should be gracefully handled by the UI.
+                IsConnectedToSharedMemory = false;
                 return false;
             }
 
+            IsConnectedToSharedMemory = true;
+
             // Send an initial connect message to let Unity know we're in
-            messages.Queue(RpcRequest.Connect, "", ref blenderState);
+            messages.Queue(RpcRequest.Connect, versionInfo, ref blenderState);
 
             return true;
         }
 
         /// <summary>
-        /// Dispose shared memory and shutdown communication to Unity
+        /// Dispose shared memory and shutdown communication to Unity.
+        ///
+        /// Anything from Unity's side would get cleaned up.
         /// </summary>
-        public void Shutdown()
+        public void Disconnect()
         {
-            IsConnected = false;
             messages?.WriteDisconnect();
+
+            IsConnectedToUnity = false;
+            IsConnectedToSharedMemory = false;
 
             messages?.Dispose();
             messages = null;
 
             pixelsConsumer?.Dispose();
             pixelsConsumer = null;
+        }
 
-            // Release our copy of synced scene objects. Next time the Python
-            // addon starts up the connection, it should load in objects to sync.
+        /// <summary>
+        /// Clear all cached data from the bridge (scene objects, viewports, etc).
+        ///
+        /// This should NOT be called while connected.
+        /// </summary>
+        public void Clear()
+        {
             Objects.Clear();
+
+            // Safely dispose all the viewport data before dereferencing
+            foreach (var viewport in Viewports)
+            {
+                viewport.Value.Dispose();
+            }
+
+            Viewports.Clear();
         }
 
         /// <summary>
         /// Send queued messages and read new messages and render texture data from Unity
         /// </summary>
+        [HandleProcessCorruptedStateExceptions]
         internal void Update()
         {
-            if (messages != null)
+            try
             {
-                messages.ProcessOutboundQueue();
-                ConsumeMessage();
+                if (messages != null)
+                {
+                    messages.ProcessOutboundQueue();
+                    ConsumeMessage();
+                    CheckForTimeout();
+                }
+            }
+            catch (AccessViolationException)
+            {
+                // We run into an access violation when Unity disposes the
+                // shared memory buffer but Blender is still trying to do IO with it.
+                // So we explicitly catch this case and gracefully disconnect.
+                // See: https://docs.microsoft.com/en-us/dotnet/api/system.runtime.exceptionservices.handleprocesscorruptedstateexceptionsattribute#remarks
+
+                // TODO: IDEALLY - this should happen closer to the IO with the shared memory buffer,
+                // as doing it here might catch access violations elsewhere in the library that weren't
+                // intended since this method essentially wraps EVERYTHING.
+                // Possibly @ RpcMessenger.Read/Write? Or deeper in CircularBuffer.Read/Write.
+                // Actual exception for Read was thrown within CircularBuffer.ReturnNode
+                InteropLogger.Error($"Access Violation doing IO to the shared memory - disconnecting");
+                Disconnect();
             }
         }
 
@@ -180,10 +227,12 @@ namespace Coherence
         /// <summary>
         /// Consume a single message off the read queue.
         /// </summary>
-        internal void ConsumeMessage()
+        private void ConsumeMessage()
         {
             messages.Read((target, header, ptr) =>
             {
+                lastUpdateFromUnity = DateTime.Now;
+
                 if (!handlers.ContainsKey(header.type))
                 {
                     InteropLogger.Warning($"Unhandled request type {header.type} for {target}");
@@ -203,7 +252,7 @@ namespace Coherence
         /// <param name="entity"></param>
         internal void SendEntity<T>(RpcRequest type, IInteropSerializable<T> entity) where T : struct
         {
-            if (!IsConnected)
+            if (!IsConnectedToSharedMemory)
             {
                 return;
             }
@@ -223,7 +272,7 @@ namespace Coherence
         /// <param name="allowSplitMessages"></param>
         internal void SendArray<T>(RpcRequest type, string target, T[] data, bool allowSplitMessages) where T : struct
         {
-            if (!IsConnected)
+            if (!IsConnectedToSharedMemory)
             {
                 return;
             }
@@ -246,9 +295,9 @@ namespace Coherence
         /// Send <b>all</b> available mesh data (vertices, triangles, normals, UVs, etc) to Unity
         /// </summary>
         /// <param name="obj"></param>
-        internal void SendAllMeshData(SceneObject obj)
+        private void SendAllMeshData(SceneObject obj)
         {
-            if (!IsConnected)
+            if (!IsConnectedToSharedMemory)
             {
                 return;
             }
@@ -295,6 +344,22 @@ namespace Coherence
             }
         }
 
+        /// <summary>
+        /// Determine if we should close the connection automatically in
+        /// assumption that Unity has crashed.
+        /// </summary>
+        private void CheckForTimeout()
+        {
+            var elapsed = DateTime.Now - lastUpdateFromUnity;
+            if (elapsed.Seconds < TIMEOUT_SECONDS)
+            {
+                return;
+            }
+
+            // If we've timed out, close the connection and cleanup.
+
+        }
+
         #endregion
 
         #region Unity Message Handlers
@@ -302,7 +367,7 @@ namespace Coherence
         private int OnConnect(string target, IntPtr ptr)
         {
             unityState = FastStructure.PtrToStructure<InteropUnityState>(ptr);
-            IsConnected = true;
+            IsConnectedToUnity = true;
 
             InteropLogger.Debug($"{target} - {unityState.version} connected. Flavor Blasting.");
 
@@ -313,10 +378,20 @@ namespace Coherence
 
         private int OnDisconnect(string target, IntPtr ptr)
         {
-            IsConnected = false;
-            messages.ClearQueue();
-
             InteropLogger.Debug("Unity disconnected");
+
+            // Disconnect from invalidated shared memory since Unity was the owner
+            Disconnect();
+
+            // Based on Unity's side of things - we may never even see this message.
+            // If unity sends out a Disconnect and then immediately disposes the
+            // shared memory - we won't be able to read the disconnect and instead
+            // just get an access violation on the next read of shared memory
+            // (which is caught in Update() and calls Disconnect() anyway).
+            // If there was some delay though between Unity sending a Disconnect
+            // and memory cleanup, then we can safely catch it here and disconnect
+            // ourselves while avoiding a potential access violation.
+
             return 0;
         }
 
