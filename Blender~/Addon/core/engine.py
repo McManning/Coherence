@@ -10,7 +10,7 @@ from bgl import *
 from gpu_extras.batch import batch_for_shader
 from mathutils import Vector, Matrix, Quaternion
 from math import cos
-from copy import copy 
+from copy import copy
 from weakref import WeakValueDictionary
 import threading
 
@@ -51,8 +51,8 @@ from .interop import *
 from util.registry import autoregister
 
 @autoregister
-class FooRenderEngine(bpy.types.RenderEngine):
-    bl_idname = "foo_renderer"
+class CoherenceRenderEngine(bpy.types.RenderEngine):
+    bl_idname = "coherence_renderer"
     bl_label = "Unity Renderer"
     bl_use_preview = False
 
@@ -68,17 +68,17 @@ class FooRenderEngine(bpy.types.RenderEngine):
     viewport_id: int
 
     # GLSL texture bind code
-    bindcode: int 
+    bindcode: int
 
     def __init__(self):
-        """Called when a new render engine instance is created. 
+        """Called when a new render engine instance is created.
 
         Note that multiple instances can exist @ once, e.g. a viewport and final render
         """
         log('Init RenderEngine at {}'.format(id(self)))
 
         self.visible_ids = []
-        
+
         self.shader = gpu.shader.from_builtin('2D_IMAGE')
         self.batch = batch_for_shader(self.shader, 'TRI_FAN', {
             'pos': ((0, 0), (100, 0), (100, 100), (0, 100)),
@@ -94,13 +94,13 @@ class FooRenderEngine(bpy.types.RenderEngine):
         self.texture_width = 0
         self.texture_height = 0
         self.texture_frame = -1
-        
+
         self.camera = InteropCamera()
         self.camera.width = 100
         self.camera.height = 100
-        
+
         bridge_driver().add_viewport(self)
- 
+
     def __del__(self):
         log('Shutdown RenderEngine at {}'.format(id(self)))
 
@@ -115,7 +115,7 @@ class FooRenderEngine(bpy.types.RenderEngine):
         """Handle final render (F12) and material preview window renders"""
         # Not relevant here - since we're working in viewport/realtime
         pass
-    
+
     def view_update(self, context, depsgraph):
         """Called when a scene or 3D viewport changes"""
         # Update our list of objects visible to this viewport
@@ -123,7 +123,7 @@ class FooRenderEngine(bpy.types.RenderEngine):
         for obj in depsgraph.scene.objects:
             if not obj.visible_get():
                 continue
-            
+
             uid = get_object_uid(obj)
             visible_ids.append(uid)
 
@@ -142,7 +142,7 @@ class FooRenderEngine(bpy.types.RenderEngine):
         """
         lib = bridge_driver().lib
         lib.SetViewportCamera(self.viewport_id, self.camera)
-        
+
         # # Poll for a new render texture image and upload
         # # to the GPU once we acquire a lock on the texture buffer
         # rt = lib.GetRenderTexture(self.viewport_id)
@@ -152,7 +152,7 @@ class FooRenderEngine(bpy.types.RenderEngine):
         #     debug('[MAIN] Get lock')
         #     # Send updated camera data
         #     lib.SetViewportCamera(self.viewport_id, self.camera)
-            
+
         #     # Upload RT to the GPU if it's valid
         #     self.update_render_texture(rt)
         #     debug('[MAIN] Done working, release lock')
@@ -186,7 +186,7 @@ class FooRenderEngine(bpy.types.RenderEngine):
             return
 
         create_new = False
-        
+
         # If we haven't created a resource ID yet, do so now.
         if self.bindcode == -1:
             buf = Buffer(GL_INT, 1)
@@ -198,13 +198,13 @@ class FooRenderEngine(bpy.types.RenderEngine):
         # If the render texture resizes, we'll need to reallocate
         if width != self.texture_width or height != self.texture_height:
             create_new = True
-                
+
         glActiveTexture(GL_TEXTURE0) # TODO: Needed?
         glBindTexture(GL_TEXTURE_2D, self.bindcode)
 
         if create_new:
             debug('glTexImage2D using {} x {} at {}'.format(width, height, pixels))
-            
+
             # TODO: Would be nice if I didn't have to match pixel resolution here.
             # Use an alternate shader that doesn't need this?
             self.batch = batch_for_shader(self.shader, 'TRI_FAN', {
@@ -214,35 +214,35 @@ class FooRenderEngine(bpy.types.RenderEngine):
 
             # GL_BGRA is preferred on Windows according to https://www.khronos.org/opengl/wiki/Common_Mistakes#Slow_pixel_transfer_performance
             # Additionally - we're doing 24 BPP to avoid transferring the alpha channel (upper bound 2 MB per frame)
-            # but that'll also probably be a slowdown when uploading. Need to benchmark both solutions. And maybe 
+            # but that'll also probably be a slowdown when uploading. Need to benchmark both solutions. And maybe
             # eventually pack multiple viewport outputs to the same render texture.
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, pixels)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
-            
+
         else: # We can just write pixels into the existing space
             # debug('glTexSubImage2D using {} x {} at {}'.format(width, height, pixels))
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels)
 
         # Track to compare to the next read
-        self.texture_width = width 
-        self.texture_height = height 
+        self.texture_width = width
+        self.texture_height = height
         self.texture_frame = frame
 
     def on_changed_visible_ids(self, visible_ids):
         """Notify the bridge that the visibility list has changed
-        
+
         Parameters:
             visible_ids (List[int])
         """
         debug('BRIDGE: Update Visible ID List {}'.format(visible_ids))
         self.visible_ids = visible_ids
-        
+
         visible_ids_ptr = (c_int * len(visible_ids))(*visible_ids)
         bridge_driver().lib.SetVisibleObjects(
-            self.viewport_id, 
+            self.viewport_id,
             visible_ids_ptr,
             len(visible_ids)
         )
@@ -262,7 +262,7 @@ class FooRenderEngine(bpy.types.RenderEngine):
         self.camera.forward = to_interop_vector3(region3d.view_rotation @ Vector((0.0, 0.0, -1.0)))
         self.camera.up = to_interop_vector3(region3d.view_rotation @ Vector((0.0, 1.0, 0.0)))
 
-        self.camera.width = region.width 
+        self.camera.width = region.width
         self.camera.height = region.height
 
         # debug('lens', space.lens)
@@ -280,7 +280,7 @@ class FooRenderEngine(bpy.types.RenderEngine):
 
     # def stress_test_texture(self):
     #     # TEST: Works
-    #     width = self.camera.width 
+    #     width = self.camera.width
     #     height = self.camera.height
 
     #     # the fact that this isn't showing (1, 1, 1) means I have another issue.
@@ -320,9 +320,9 @@ class FooRenderEngine(bpy.types.RenderEngine):
         # debug('[RENDER] start')
         self.update_viewport_camera(context)
         self.update_render_texture()
-        
+
         # glEnable(GL_DEPTH_TEST)
-        
+
         if self.connected and self.bindcode != -1:
             self.bind_display_space_shader(scene)
             self.shader.bind()
@@ -348,10 +348,10 @@ class FooRenderEngine(bpy.types.RenderEngine):
         # # it's in the process of being uploaded in the main thread
         # with self.lock:
         #     debug('[RENDER] get lock')
-        #     # Camera updates need to happen in the render thread since we 
+        #     # Camera updates need to happen in the render thread since we
         #     # don't get notified of changes through view_update()
-            # self.update_viewport_camera(context) 
-        
+            # self.update_viewport_camera(context)
+
         #     # if self.bindcode != -1:
         #     #     glActiveTexture(GL_TEXTURE0)
         #     #     glBindTexture(GL_TEXTURE_2D, self.bindcode)
@@ -360,7 +360,7 @@ class FooRenderEngine(bpy.types.RenderEngine):
         #     # self.batch.draw(self.shader)
 
             # debug('[RENDER] release lock')
-        
+
 
         # glDisable(GL_BLEND)
         # debug('[RENDER] end')

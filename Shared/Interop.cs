@@ -247,14 +247,10 @@ namespace Coherence
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct InteropBlenderState
     {
-        // [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
-        // public string version;
-
         /// <summary>
-        /// Plugin version used by Blender
+        /// Blender version information
         /// </summary>
-        public int version;
-
+        public InteropString64 version;
     }
 
     /// <summary>
@@ -936,7 +932,7 @@ namespace Coherence
                 // Call consumer to handle the rest of the payload
                 bytesRead += consumer(targetName, header, ptr + bytesRead);
 
-                InteropLogger.Debug($"Consume {bytesRead} bytes - {header.type} for {targetName}");
+                // InteropLogger.Debug($"Consume {bytesRead} bytes - {header.type} for `{targetName}`");
 
                 return bytesRead;
             }, 5);
@@ -1011,7 +1007,7 @@ namespace Coherence
                 bytesWritten += message.payload.Length;
             }
 
-            InteropLogger.Debug($"Produce {bytesWritten} bytes - {header.type} for {message.target}");
+            // InteropLogger.Debug($"Produce {bytesWritten} bytes - {header.type} for `{message.target}`");
 
             return bytesWritten;
         }
@@ -1026,7 +1022,10 @@ namespace Coherence
                 return;
             }
 
-            InteropLogger.Debug($" * {outboundQueue.Count()} queued messages");
+            if (outboundQueue.Count() > 10)
+            {
+                InteropLogger.Warning($"Outbound queue is at {outboundQueue.Count()} messages");
+            }
 
             // Only dequeue a message once we have an available node for writing
             int bytesWritten = messageProducer.Write((ptr) =>

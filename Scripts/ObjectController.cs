@@ -3,6 +3,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using UnityEditor;
 using UnityEngine;
 
 namespace Coherence
@@ -30,19 +31,13 @@ namespace Coherence
 
         bool isDirty;
 
-        public void LateUpdate()
+        public void Sync()
         {
-            // After the Update() cycle where we potentially replace regions of
-            // our mesh data, check if we need to copy this data back into Unity.
-            // This lets us avoid the copy op multiple times in the same Update()
-            // in case the Sync manager reads multiple chunks at once.
             if (isDirty)
             {
                 isDirty = false;
                 UpdateMesh();
             }
-
-            // TODO: Deal with in-editor events since LateUpdate() doesn't run.
         }
 
         /// <summary>
@@ -119,6 +114,7 @@ namespace Coherence
 
         void SetMaterial(string name)
         {
+            // TODO: Smarter path lookup and mapping
             string path = $"Materials/{name}";
 
             var material = Resources.Load<Material>(path);
@@ -245,7 +241,13 @@ namespace Coherence
 
             // uv#, colors, etc.
 
-            mesh.MarkModified();
+            // mesh.MarkModified();
+
+            // In editor mode - if the editor doesn't have focus then the mesh won't be updated.
+            // So we force upload to the GPU once we have everything ready. We also maintain
+            // local copies of mesh data to be updated by Blender whenever new data comes in.
+            // (so we don't free up, say, UVs, and then not have that buffer when re-applying from Blender)
+            mesh.UploadMeshData(false);
         }
 
         internal void OnUpdateVertexRange(int index, int count)

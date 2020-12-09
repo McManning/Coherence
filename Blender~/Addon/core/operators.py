@@ -10,22 +10,22 @@ from util.registry import autoregister
 @autoregister
 class SetupBridgeOperator(bpy.types.Operator):
     """Tooltip"""
-    bl_idname = 'scene.setup_bridge'
-    bl_label = 'Start Unity Bridge'
- 
+    bl_idname = 'scene.toggle_coherence'
+    bl_label = 'Toggle Coherence'
+
     @classmethod
     def poll(cls, context):
         return context.active_object is not None
- 
+
     def execute(self, context):
         bridge = bridge_driver()
 
-        if not bridge.is_ready():
-            bridge.setup(context.scene)
-            self.__class__.bl_label = 'Stop Unity Bridge'
+        if not bridge.is_running():
+            bridge.start()
+            self.__class__.bl_label = 'Stop Coherence'
         else:
-            bridge.teardown()
-            self.__class__.bl_label = 'Start Unity Bridge'
+            bridge.stop()
+            self.__class__.bl_label = 'Start Coherence'
 
         return { 'FINISHED' }
 
@@ -34,14 +34,14 @@ class ForceResizeOperator(bpy.types.Operator):
     """Tooltip"""
     bl_idname = 'scene.force_resize'
     bl_label = 'Force Viewport Resize'
- 
+
     @classmethod
     def poll(cls, context):
         return context.active_object is not None
- 
+
     def execute(self, context):
         bridge = bridge_driver()
-        region = context.region 
+        region = context.region
 
         for v in bridge.viewports.items():
             v[1].on_change_dimensions(region.width, region.height)
@@ -51,7 +51,7 @@ class ForceResizeOperator(bpy.types.Operator):
 
 # class BridgeTimerOperator(bpy.types.Operator):
 #     """
-#         Wonky way of performing a timer that also 
+#         Wonky way of performing a timer that also
 #         can also flag the viewport as dirty every execution
 #     """
 #     bl_idname = "wm.bridge_timer_operator"

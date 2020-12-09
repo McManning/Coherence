@@ -20,7 +20,7 @@ from util.registry import autoregister
 def change_sync_texture(self, context):
     """
     Parameters:
-        self (FooMaterialSettings)
+        self (CoherenceMaterialSettings)
         context (bpy.types.Context)
     """
     img = self.sync_texture # bpy.types.Image
@@ -29,7 +29,7 @@ def change_sync_texture(self, context):
 
 
 def update_sync_material_name(self, context):
-    mat = context.material 
+    mat = context.material
     uid = get_material_uid(mat)
 
     if self.use_override_name:
@@ -41,7 +41,7 @@ def update_sync_material_name(self, context):
 
 
 def update_sync_texture_settings(self, context):
-    mat = context.material 
+    mat = context.material
     uid = get_material_uid(mat)
 
     if self.use_override_name:
@@ -55,51 +55,57 @@ def update_sync_texture_settings(self, context):
         print('DISABLE/SKIP Texture2D sync for uid={}, name={}'.format(uid, name))
 
 @autoregister
-class FooSceneSettings(PropertyGroup):
+class CoherenceSceneSettings(PropertyGroup):
     """Collection of user configurable settings for the renderer"""
 
-    clear_color: FloatVectorProperty(  
+    connection_name: StringProperty(
+        name='Unity Connection Name',
+        default='Coherence',
+        description='This name must match the connection name in Unity\'s Coherence Settings window'
+    )
+
+    clear_color: FloatVectorProperty(
         name='Clear Color',
         subtype='COLOR',
         default=(0.15, 0.15, 0.15),
         min=0.0, max=1.0,
         description='Background color of the scene'
     )
-    
+
     @classmethod
     def register(cls):
-        bpy.types.Scene.foo = PointerProperty(
-            name='Foo Renderer Settings',
+        bpy.types.Scene.coherence = PointerProperty(
+            name='Coherence Renderer Settings',
             description='',
             type=cls
         )
-        
+
     @classmethod
     def unregister(cls):
-        del bpy.types.Scene.foo
+        del bpy.types.Scene.coherence
 
 @autoregister
-class FooObjectSettings(PropertyGroup):
+class CoherenceObjectSettings(PropertyGroup):
     # bridge_id: IntProperty(
     #     name='Bridge ID',
     #     default=-1,
     #     description='Unique ID used by the bridge DLL'
     # )
-    
+
     @classmethod
     def register(cls):
-        bpy.types.Object.foo = PointerProperty(
-            name='Foo Object Settings',
+        bpy.types.Object.coherence = PointerProperty(
+            name='Coherence Object Settings',
             description='',
             type=cls
         )
-        
+
     @classmethod
     def unregister(cls):
-        del bpy.types.Object.foo
+        del bpy.types.Object.coherence
 
 @autoregister
-class FooMaterialSettings(PropertyGroup):
+class CoherenceMaterialSettings(PropertyGroup):
     use_override_name: BoolProperty(
         name='Use custom Unity Material name',
         update=update_sync_material_name
@@ -123,7 +129,7 @@ class FooMaterialSettings(PropertyGroup):
         update=change_sync_texture
         # TODO: This type reference may not work when loading the plugin.
         # bpy.types isn't available when instantiating plugins, so this'll
-        # most likely fail. Need some sort of late-load behavior here. 
+        # most likely fail. Need some sort of late-load behavior here.
     )
 
     sync_texture_map: EnumProperty(
@@ -131,7 +137,7 @@ class FooMaterialSettings(PropertyGroup):
         items=[
             # Default for custom material shaders
             ('_MainTex', 'Main Tex', '', 1),
-            
+
             #  URP property names
             ('_BaseMap', 'Base Map', '', 2),
             ('_BumpMap', 'Bump Map', '', 3),
@@ -160,12 +166,12 @@ class FooMaterialSettings(PropertyGroup):
 
     @classmethod
     def register(cls):
-        bpy.types.Material.foo = PointerProperty(
-            name='Foo Material Settings',
+        bpy.types.Material.coherence = PointerProperty(
+            name='Coherence Material Settings',
             description='',
             type=cls
         )
-    
+
     @classmethod
     def unregister(cls):
-        del bpy.types.Material.foo
+        del bpy.types.Material.coherence

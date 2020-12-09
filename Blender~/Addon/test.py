@@ -1,4 +1,27 @@
+"""
+MVP for integrations with Python code and the Coherence DLL.
 
+At any point, Blender can add/remove scene data to be tracked by the DLL.
+At any point, Blender can add/remove viewports to be tracked by the DLL.
+
+While not connected to Unity, we can call .Connect('sharedMemoryName') periodically until
+it works and we're connected to Unity.
+
+While connected to Unity, we can call .Update() periodically to pump the message queue
+between Blender and Unity.
+
+Tracked scene objects and viewports updated in the DLL will be synced to Unity whenever
+the DLL is connected to Unity.
+
+Once Unity disconnects - via a safe disconnect or a timeout (crash, etc) - Blender
+will release shared memory and go into a not connected state.
+
+Once .Shutdown() is called - DLL will clear all tracked objects / viewports and
+disconnect from Unity if connected.
+
+.Shutdown() (followed by a .Connect) should happen whenever we load a new scene in Blender.
+
+"""
 import os
 import time
 from ctypes import *
@@ -84,6 +107,22 @@ prev_frame = -1
 prev_width = 0
 prev_height = 0
 
+CONNECTION_NAME = create_string_buffer("Coherence".encode())
+VERSION_INFO = create_string_buffer("Test Runner 0.1".encode())
+
+def on_connected_to_shared_memory():
+    print('Connected to shared memory')
+    # Send initial dump of scene data to the bridge if not already
+
+def on_connected_to_unity():
+    print('Unity connected')
+    # Send whatever needs to be sent AFTER initial handshake
+
+def on_disconnected_from_unity():
+    print('Unity disconnected')
+    bridge.Clear()
+    # Do whatever cleanup is needed
+
 def test_consume_render_texture():
     global prev_frame, prev_width, prev_height
 
@@ -149,39 +188,45 @@ def add_mock_scene():
 
     bridge.SetViewportCamera(1, camera)
 
-def connect():
-    """Run a connect retry loop until we can connect successfully to Unity"""
-    conn = create_string_buffer("Coherence".encode())
+def event_loop():
+    if bridge.IsConnectedToUnity():
+        # Send typical IO between Blender and Unity
+        time.sleep(1.0 / 60.0)
+        bridge.Update()
 
-    while True:
-        response = bridge.Start(conn)
-        if response == 0:
-            print('No shared memory space - start unity first. Retrying in 3 seconds')
-            time.sleep(3)
-        elif response == -1:
-            print('ERROR WOO!')
-            exit()
-        else: # Connected
-            break
+        # test_consume_render_texture()
+
+        # During an update we lost connection.
+        if not bridge.IsConnectedToUnity():
+            on_disconnected_from_unity()
+    else:
+        # Attempt to connect to shared memory if not already
+        if not bridge.IsConnectedToSharedMemory():
+            response = bridge.Connect(CONNECTION_NAME, VERSION_INFO)
+            if response == 1:
+                on_connected_to_shared_memory()
+            elif response == -1:
+                print('UNKNOWN ERROR WOO!')
+                exit()
+            else: # the space doesn't exist. Delay longer until it does.
+                time.sleep(5)
+
+        # Poll for a confirmation from Unity until we get one.
+        bridge.Update()
+        time.sleep(0.1)
+
+        if bridge.IsConnectedToUnity():
+            on_connected_to_unity()
 
 def run():
     running = True
     try:
         while running:
-            time.sleep(1.0 / 60.0)
-            bridge.Update()
-            test_consume_render_texture()
-
-            # Bad timing here. IsConnected doesn't happen until Unity responds
-            # with a .Connect which means we gotta wait...
-            # if not bridge.IsConnectedToUnity():
-            #    print('Got a disconnect from Unity')
-            #    return
+            event_loop()
 
     except KeyboardInterrupt:
         print('Shutting down')
-        bridge.Shutdown()
-
+        bridge.Disconnect()
 
 def experimental():
 
@@ -221,7 +266,6 @@ if __name__ == '__main__':
 
     add_mock_scene()
 
-    connect()
     run()
 
 # Viewport camera would just be a raw ass matrix, right?

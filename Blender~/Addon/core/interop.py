@@ -95,7 +95,7 @@ def to_interop_matrix4x4(mat):
 
 def to_interop_vector3(vec):
     """Convert a Blender Vector to an interop type for C#
-    
+
     Parameters:
         vec (mathutils.Vector)
 
@@ -110,7 +110,7 @@ def to_interop_vector3(vec):
 
 def to_interop_vector2(vec):
     """Convert a Blender Vector to an interop type for C#
-    
+
     Parameters:
         vec (mathutils.Vector)
 
@@ -124,11 +124,11 @@ def to_interop_vector2(vec):
 
 def to_interop_int_array(arr):
     """Convert the array of ints to an interop type for C# int[]
-    
+
     Parameters:
         arr (int[])
-    
-    Returns: 
+
+    Returns:
         c_int*
     """
     result = (c_int*len(arr))()

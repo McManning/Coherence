@@ -168,6 +168,9 @@ namespace Coherence
 
             RenderTexture.active = cam.targetTexture;
 
+            // Force a camera render into the RT
+            cam.Render();
+
             tex.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
             tex.Apply(); // TODO: Necessary?
 

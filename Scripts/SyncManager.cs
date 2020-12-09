@@ -97,8 +97,8 @@ namespace Coherence
                 messages.ConnectAsMaster(
                     name + BLENDER_MESSAGES_BUFFER,
                     name + UNITY_MESSAGES_BUFFER,
-                    settings.pixelsNodeCount,
-                    settings.PixelsNodeSizeBytes
+                    settings.nodeCount,
+                    settings.NodeSizeBytes
                 );
             }
             catch (Exception e)
@@ -115,8 +115,8 @@ namespace Coherence
             {
                 pixelsProducer = new CircularBuffer(
                     name + VIEWPORT_IMAGE_BUFFER,
-                    settings.nodeCount,
-                    settings.NodeSizeBytes
+                    settings.pixelsNodeCount,
+                    settings.PixelsNodeSizeBytes
                 );
             }
             catch (Exception e)
@@ -166,7 +166,8 @@ namespace Coherence
         }
 
         /// <summary>
-        /// Send Blender updated state/settings information from Unity
+        /// Send Blender updated state/settings information from Unity.
+        /// We expect an <see cref="RpcRequest.UpdateBlenderState"/> in response.
         /// </summary>
         public void SendUnityState()
         {
@@ -189,7 +190,19 @@ namespace Coherence
 
             if (IsConnected)
             {
+                // Messages from Blender will typically affect the scene view
+                // (camera movement, object movement, new mesh data, etc).
+                // While running in editor mode we don't typically see these
+                // repaint - so we'll need to force a redraw of scene views.
+                SceneView.RepaintAll();
+
                 PublishNextRenderTexture();
+            }
+
+            // Propagate Sync to every tracked object (updates their mesh data, etc)
+            foreach (var obj in objects.Values)
+            {
+                obj.Sync();
             }
         }
 
@@ -305,7 +318,7 @@ namespace Coherence
 
             var viewport = viewports[name] as ViewportController;
 
-            Destroy(viewport.gameObject);
+            DestroyImmediate(viewport.gameObject);
             viewports.Remove(name);
 
             // Reset viewport iterator, in case this causes us to go out of range
@@ -352,7 +365,7 @@ namespace Coherence
 
             var instance = objects[name];
 
-            Destroy(instance.gameObject);
+            DestroyImmediate(instance.gameObject);
             objects.Remove(name);
         }
 
@@ -539,9 +552,9 @@ namespace Coherence
                 // Copy render image data into shared memory
                 FastStructure.WriteBytes(ptr + headerSize, pixelsRGB24, 0, pixelsRGB24.Length);
 
-                InteropLogger.Debug($"Writing {pixelsRGB24.Length} bytes with meta {header.width} x {header.height} and pix 0 is " +
+                /*InteropLogger.Debug($"Writing {pixelsRGB24.Length} bytes with meta {header.width} x {header.height} and pix 0 is " +
                     $"{pixelsRGB24[0]}, {pixelsRGB24[1]}, {pixelsRGB24[2]}"
-                );
+                );*/
 
                 Profiler.EndSample();
                 return headerSize + pixelsRGB24.Length;

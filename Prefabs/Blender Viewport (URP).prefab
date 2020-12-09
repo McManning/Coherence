@@ -12,7 +12,7 @@ GameObject:
   - component: {fileID: 3711986496265174372}
   - component: {fileID: 4925879287267888538}
   m_Layer: 0
-  m_Name: Blender Viewport
+  m_Name: Blender Viewport (URP)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
