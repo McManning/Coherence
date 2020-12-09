@@ -444,7 +444,8 @@ namespace Coherence
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct InteropSceneObject
     {
-        public int id;
+        public InteropString64 name;
+
         public SceneObjectType type;
         public InteropMatrix4x4 transform;
 

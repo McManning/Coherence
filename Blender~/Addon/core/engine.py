@@ -119,21 +119,21 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
     def view_update(self, context, depsgraph):
         """Called when a scene or 3D viewport changes"""
         # Update our list of objects visible to this viewport
-        visible_ids = []
-        for obj in depsgraph.scene.objects:
-            if not obj.visible_get():
-                continue
-
-            uid = get_object_uid(obj)
-            visible_ids.append(uid)
+        # visible_ids = []
+        # for obj in depsgraph.scene.objects:
+        #    if not obj.visible_get():
+        #        continue
+        #
+        #   uid = get_object_uid(obj)
+        #   visible_ids.append(uid)
 
         # Track bridge's connection status to determine how this VP renders
         self.connected = bridge_driver().is_connected()
 
         # Only notify for a change if the list was modified
-        visible_ids.sort()
-        if visible_ids != self.visible_ids:
-            self.on_changed_visible_ids(visible_ids)
+        #visible_ids.sort()
+        #if visible_ids != self.visible_ids:
+        #    self.on_changed_visible_ids(visible_ids)
 
     def on_update(self):
         """
@@ -238,14 +238,17 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
             visible_ids (List[int])
         """
         debug('BRIDGE: Update Visible ID List {}'.format(visible_ids))
-        self.visible_ids = visible_ids
 
-        visible_ids_ptr = (c_int * len(visible_ids))(*visible_ids)
-        bridge_driver().lib.SetVisibleObjects(
-            self.viewport_id,
-            visible_ids_ptr,
-            len(visible_ids)
-        )
+        # TODO: Reimplement using object names
+
+        #self.visible_ids = visible_ids
+
+        #visible_ids_ptr = (c_int * len(visible_ids))(*visible_ids)
+        #bridge_driver().lib.SetVisibleObjects(
+        #    self.viewport_id,
+        #    visible_ids_ptr,
+        #    len(visible_ids)
+        #)
 
     def update_viewport_camera(self, context):
         """Update the current InteropCamera instance from the render thread context

@@ -292,13 +292,14 @@ namespace Coherence
         {
             if (viewportsContainer == null)
             {
-                viewportsContainer = new GameObject("Blender Viewports");
+                viewportsContainer = new GameObject("Viewports");
+                viewportsContainer.transform.parent = transform;
             }
 
             var prefab = CoherenceSettings.Instance.viewportCameraPrefab;
             var go = prefab ? Instantiate(prefab.gameObject) : new GameObject();
 
-            go.name = $"Viewport {name}";
+            go.name = name;
             go.transform.parent = viewportsContainer.transform;
 
             var controller = go.AddComponent<ViewportController>();
@@ -339,13 +340,14 @@ namespace Coherence
         {
             if (objectsContainer == null)
             {
-                objectsContainer = new GameObject("Blender Objects");
+                objectsContainer = new GameObject("Objects");
+                objectsContainer.transform.parent = transform;
             }
 
             var prefab = CoherenceSettings.Instance.sceneObjectPrefab;
             var go = prefab ? Instantiate(prefab) : new GameObject();
 
-            go.name = $"{name} (ID: {iso.id})";
+            go.name = name;
             go.transform.parent = objectsContainer.transform;
 
             var controller = go.AddComponent<ObjectController>();

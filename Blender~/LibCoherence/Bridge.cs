@@ -36,7 +36,7 @@ namespace Coherence
 
         Dictionary<int, Viewport> Viewports { get; set; }
 
-        Dictionary<int, SceneObject> Objects { get; set; }
+        Dictionary<string, SceneObject> Objects { get; set; }
 
         InteropBlenderState blenderState;
         InteropUnityState unityState;
@@ -59,7 +59,7 @@ namespace Coherence
         public Bridge()
         {
             Viewports = new Dictionary<int, Viewport>();
-            Objects = new Dictionary<int, SceneObject>();
+            Objects = new Dictionary<string, SceneObject>();
 
             // Message handlers for everything that comes from Unity
             handlers = new Dictionary<RpcRequest, MessageHandler>
@@ -430,13 +430,9 @@ namespace Coherence
             }
 
             var viewport = new Viewport(id);
-
-            // Assume everything is visible upon creation
-            viewport.SetVisibleObjects(Objects.Keys.ToArray());
             Viewports[id] = viewport;
 
             SendEntity(RpcRequest.AddViewport, viewport);
-            SendArray(RpcRequest.UpdateVisibleObjects, viewport.Name, viewport.VisibleObjectIds, false);
         }
 
         /// <summary>
@@ -457,38 +453,38 @@ namespace Coherence
 
         #region Object Management
 
-        public SceneObject GetObject(int id)
+        public SceneObject GetObject(string name)
         {
-            if (!Objects.ContainsKey(id))
+            if (!Objects.ContainsKey(name))
             {
-                throw new Exception($"Object {id} does not exist in the scene");
+                throw new Exception($"Object `{name}` does not exist in the scene");
             }
 
-            return Objects[id];
+            return Objects[name];
         }
 
         public void AddObject(SceneObject obj)
         {
-            if (Objects.ContainsKey(obj.data.id))
+            if (Objects.ContainsKey(obj.Name))
             {
-                throw new Exception($"Object {obj.data.id} already exists in the scene");
+                throw new Exception($"Object `{obj.Name}` already exists in the scene");
             }
 
-            Objects[obj.data.id] = obj;
+            Objects[obj.Name] = obj;
 
             SendEntity(RpcRequest.AddObjectToScene, obj);
         }
 
-        public void RemoveObject(int id)
+        public void RemoveObject(string name)
         {
-            if (!Objects.ContainsKey(id))
+            if (!Objects.ContainsKey(name))
             {
-                throw new Exception($"Object {id} does not exist in the scene");
+                throw new Exception($"Object `{name}` does not exist in the scene");
             }
 
-            var obj = Objects[id];
+            var obj = Objects[name];
             SendEntity(RpcRequest.RemoveObjectFromScene, obj);
-            Objects.Remove(id);
+            Objects.Remove(name);
         }
 
         #endregion

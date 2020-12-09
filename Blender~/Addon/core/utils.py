@@ -1,4 +1,21 @@
 
+from ctypes import create_string_buffer
+
+__string_buffer_cache = dict()
+
+def get_string_buffer(value: str):
+    """Use a cache to reuse C string buffers wherever possible"""
+    global __string_buffer_cache
+
+    # TODO: Is this any faster than just create_string_buffer?
+    # timeit plz.
+    try:
+        return __string_buffer_cache[value]
+    except KeyError:
+        buf = create_string_buffer(value.encode())
+        __string_buffer_cache[value] = buf
+        return buf
+
 def generate_unique_id():
     """Create a unique Uint32 bridge ID for the object"""
     # TODO: collision handling and all that.

@@ -16,11 +16,6 @@ namespace Coherence
         /// </summary>
         public InteropSceneObject Data { get; set; }
 
-        /// <summary>
-        /// Number of viewports that can see this object
-        /// </summary>
-        public int ViewportCount { get; set; }
-
         internal int[] triangles;
         internal Vector3[] vertices;
         internal Vector3[] normals;
@@ -100,7 +95,7 @@ namespace Coherence
 
             if (obj.type == SceneObjectType.Mesh && mesh == null)
             {
-                AddMesh($"Blender Mesh #{obj.id}");
+                AddMesh($"Blender Mesh `{obj.name}`");
             }
 
             // Material name change

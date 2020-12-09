@@ -336,16 +336,15 @@ namespace Coherence
 
         [DllExport]
         public static int AddMeshObjectToScene(
-            int objectId,
-            [MarshalAs(UnmanagedType.LPStr)] string displayName,
+            [MarshalAs(UnmanagedType.LPStr)] string name,
             InteropMatrix4x4 transform,
             [MarshalAs(UnmanagedType.LPStr)] string material
         ) {
-            InteropLogger.Debug($"Adding mesh <displayName={displayName}, objectId={objectId}, material={material}>");
+            InteropLogger.Debug($"Adding mesh <name={name}, material={material}>");
 
             try
             {
-                var obj = new SceneObject(objectId, displayName, SceneObjectType.Mesh);
+                var obj = new SceneObject(name, SceneObjectType.Mesh);
                 obj.Transform = transform;
                 obj.Material = material;
 
@@ -362,18 +361,14 @@ namespace Coherence
         /// <summary>
         /// Update <see cref="InteropSceneObject.transform" /> and notify Unity
         /// </summary>
-        /// <param name="objectId"></param>
-        /// <param name="transform"></param>
-        /// <param name="material"></param>
-        /// <returns></returns>
         [DllExport]
         public static int SetObjectTransform(
-            int objectId,
+            [MarshalAs(UnmanagedType.LPStr)] string name,
             InteropMatrix4x4 transform
         ) {
             try
             {
-                var obj = Bridge.GetObject(objectId);
+                var obj = Bridge.GetObject(name);
                 obj.Transform = transform;
 
                 Bridge.SendEntity(RpcRequest.UpdateSceneObject, obj);
@@ -395,12 +390,12 @@ namespace Coherence
         /// <returns></returns>
         [DllExport]
         public static int SetObjectMaterial(
-            int objectId,
+            [MarshalAs(UnmanagedType.LPStr)] string name,
             [MarshalAs(UnmanagedType.LPStr)] string material
         ) {
             try
             {
-                var obj = Bridge.GetObject(objectId);
+                var obj = Bridge.GetObject(name);
 
                 if (material != obj.Material)
                 {
@@ -418,13 +413,14 @@ namespace Coherence
         }
 
         [DllExport]
-        public static int RemoveObjectFromScene(int objectId)
-        {
-            InteropLogger.Debug($"Removing object {objectId} from the scene");
+        public static int RemoveObjectFromScene(
+            [MarshalAs(UnmanagedType.LPStr)] string name
+        ) {
+            InteropLogger.Debug($"Removing object {name} from the scene");
 
             try
             {
-                Bridge.RemoveObject(objectId);
+                Bridge.RemoveObject(name);
                 return 1;
             }
             catch (Exception e)
@@ -451,18 +447,18 @@ namespace Coherence
         [DllExport]
         public static int CopyVertices(
         #pragma warning disable IDE0060 // Remove unused parameter
-            int objectId,
+            [MarshalAs(UnmanagedType.LPStr)] string name,
             [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 2)] MLoop[] loops,
             uint loopCount,
             [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 4)] MVert[] vertices,
             uint verticesCount
         #pragma warning restore IDE0060 // Remove unused parameter
         ) {
-            InteropLogger.Debug($"Copy {loops.Length} loops and {vertices.Length} vertices for {objectId}");
+            InteropLogger.Debug($"Copy {loops.Length} loops and {vertices.Length} vertices for `{name}`");
 
             try
             {
-                var obj = Bridge.GetObject(objectId);
+                var obj = Bridge.GetObject(name);
 
                 obj.CopyFromMVerts(vertices);
                 obj.CopyFromMLoops(loops);
@@ -499,16 +495,16 @@ namespace Coherence
         [DllExport]
         public static int CopyLoopTriangles(
         #pragma warning disable IDE0060 // Remove unused parameter
-            int objectId,
+            [MarshalAs(UnmanagedType.LPStr)] string name,
             [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 2)] MLoopTri[] loopTris,
             uint loopTrisCount
         #pragma warning restore IDE0060 // Remove unused parameter
         ) {
-            InteropLogger.Debug($"Copy {loopTris.Length} loop triangles for {objectId}");
+            InteropLogger.Debug($"Copy {loopTris.Length} loop triangles for `{name}`");
 
             try
             {
-                var obj = Bridge.GetObject(objectId);
+                var obj = Bridge.GetObject(name);
 
                 obj.CopyFromMLoopTris(loopTris);
 

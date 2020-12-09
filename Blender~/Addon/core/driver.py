@@ -40,7 +40,8 @@ from .utils import (
     error,
     is_supported_object,
     get_object_uid,
-    get_material_unity_name
+    get_material_unity_name,
+    get_string_buffer
 )
 
 from .interop import *
@@ -48,7 +49,6 @@ from .interop import *
 class BridgeDriver:
     """Respond to scene object changes and handle messaging through the Unity bridge"""
 
-    object_ids = set()
     running = False
     lib = None
     connection_name: str = None
@@ -58,6 +58,9 @@ class BridgeDriver:
     # Weakref is used so that we don't hold onto RenderEngine references
     # since Blender uses __del__ to release them after use
     viewports = WeakValueDictionary()
+
+    # Tracked object names already synced to the DLL
+    objects = set()
 
     def __init__(self):
         # TODO: Better path lookup. I'm using a junction point in Blender
@@ -76,8 +79,8 @@ class BridgeDriver:
         self.lib.Disconnect.restype = c_int
         self.lib.Clear.restype = c_int
         self.lib.SetViewportCamera.argtypes = (c_int, InteropCamera)
-        self.lib.CopyVertices.argtypes = (c_int, c_void_p, c_uint, c_void_p, c_uint)
-        self.lib.CopyLoopTriangles.argtypes = (c_int, c_void_p, c_uint)
+        self.lib.CopyVertices.argtypes = (c_void_p, c_void_p, c_uint, c_void_p, c_uint)
+        self.lib.CopyLoopTriangles.argtypes = (c_void_p, c_void_p, c_uint)
         self.lib.GetRenderTexture.argtypes = (c_uint, )
         self.lib.GetRenderTexture.restype = RenderTextureData
 
@@ -262,30 +265,31 @@ class BridgeDriver:
                 error(sys.exc_info()[0])
 
     def sync_tracked_objects(self, scene, depsgraph):
-        """Add/remove objects from the bridge to match the scene
+        """Add/remove objects from the bridge to match the scene.
+
+        Objects may be added/removed in case of undo, rename, etc.
 
         Parameters:
             scene (bpy.types.Scene)
             depsgraph (bpy.types.Depsgraph)
         """
-        current_ids = set()
+        current = set() # Set of tracked object names
 
         # Check for added objects
         for obj in scene.objects:
             if is_supported_object(obj):
-                uid = get_object_uid(obj)
-                if uid not in self.object_ids:
+                if obj.name not in self.objects:
                     self.on_add_object(obj, depsgraph)
 
-                current_ids.add(uid)
+                current.add(obj.name)
 
         # Check for removed objects
-        removed_ids = self.object_ids - current_ids
-        for uid in removed_ids:
-            self.on_remove_object(uid)
+        removed = self.objects - current
+        for name in removed:
+            self.on_remove_object(name)
 
         # Update current tracked list
-        self.object_ids = current_ids
+        self.objects = current
 
     def on_depsgraph_update(self, scene, depsgraph):
         """Sync the bridge with the scene's dependency graph on each update
@@ -323,32 +327,32 @@ class BridgeDriver:
             obj (bpy.types.Object):             The object that was added to the scene
             depsgraph (bpy.types.Depsgraph):    Dependency graph to use for generating a final mesh
         """
-        uid = get_object_uid(obj)
         mat_name = get_material_unity_name(obj.active_material)
 
-        debug('on_add_object - name={}, uid={}'.format(obj.name, uid))
+        debug('on_add_object - name={}, mat_name={}'.format(obj.name, mat_name))
+
+        # TODO: Other object types
 
         self.lib.AddMeshObjectToScene(
-            uid,
-            create_string_buffer(obj.name.encode()),
+            get_string_buffer(obj.name),
             to_interop_matrix4x4(obj.matrix_world),
-            create_string_buffer(mat_name.encode())
+            get_string_buffer(mat_name)
         )
 
         # Send up initial geometry as well
         self.on_update_geometry(obj, depsgraph)
 
-    def on_remove_object(self, uid):
+    def on_remove_object(self, name):
         """Notify the bridge that the object has been removed from the scene
 
         Parameters:
-            uid (int): Unique Object ID shared with the Bridge
+            name (str): Unique object name shared with the Bridge
         """
-        if uid < 0: return
+        debug('on_remove_object - name={}'.format(name))
 
-        debug('on_remove_object - uid={}'.format(uid))
-
-        self.lib.RemoveObjectFromScene(uid)
+        self.lib.RemoveObjectFromScene(
+            get_string_buffer(name)
+        )
 
     def on_update_transform(self, obj):
         """Notify the bridge that the object has been transformed in the scene
@@ -356,29 +360,12 @@ class BridgeDriver:
         Parameters:
             obj (bpy.types.Object): The object that was updated
         """
-        uid = get_object_uid(obj)
-
-        debug('on_update_transform - name={}, uid={}'.format(obj.name, uid))
+        debug('on_update_transform - name={}'.format(obj.name))
 
         self.lib.SetObjectTransform(
-            uid,
+            get_string_buffer(obj.name),
             to_interop_matrix4x4(obj.matrix_world)
         )
-
-    def on_update_object_material(self, obj):
-        """Pass an object's material reference to the bridge
-
-        Parameters:
-            obj (bpy.types.Object):             The object that was updated
-        """
-        uid = get_object_uid(obj)
-
-        debug('on_update_object_material - name={}, uid={}'.format(obj.name, uid))
-
-        name = get_material_unity_name(obj.active_material)
-        name_buf = create_string_buffer(name.encode())
-
-        self.lib.SetObjectMaterial(uid, name_buf)
 
     def on_update_geometry(self, obj, depsgraph):
         """Notify the bridge that object geometry has changed
@@ -387,10 +374,9 @@ class BridgeDriver:
             obj (bpy.types.Object):             The object that was updated
             depsgraph (bpy.types.Depsgraph):    Dependency graph to use for generating a final mesh
         """
-        uid = get_object_uid(obj)
+        debug('on_update_geometry - name={}'.format(obj.name))
 
-        debug('on_update_geometry - name={}, uid={}'.format(obj.name, uid))
-
+        name_buf = get_string_buffer(obj.name)
         eval_obj = obj.evaluated_get(depsgraph)
         mesh = eval_obj.to_mesh()
 
@@ -401,7 +387,7 @@ class BridgeDriver:
         # while loops align with loop_triangles
         debug('on_update_geometry - loops_len={}'.format(len(mesh.loops)))
         self.lib.CopyVertices(
-            uid,
+            name_buf,
             mesh.loops[0].as_pointer(),
             len(mesh.loops),
             mesh.vertices[0].as_pointer(),
@@ -410,12 +396,31 @@ class BridgeDriver:
 
         debug('on_update_geometry - loop_triangles_len={} '.format(len(mesh.loop_triangles)))
         self.lib.CopyLoopTriangles(
-            uid,
+            name_buf,
             mesh.loop_triangles[0].as_pointer(),
             len(mesh.loop_triangles)
         )
 
+        # TODO: UVs?
+
         eval_obj.to_mesh_clear()
+
+    def on_update_object_material(self, obj):
+        """Pass an object's material reference to the bridge
+
+        Parameters:
+            obj (bpy.types.Object):             The object that was updated
+        """
+        debug('on_update_object_material - name={}'.format(obj.name))
+
+        mat_name_buf = get_string_buffer(
+            get_material_unity_name(obj.active_material)
+        )
+
+        self.lib.SetObjectMaterial(
+            get_string_buffer(obj.name),
+            mat_name_buf
+        )
 
     def on_update_material(self, mat):
         """
@@ -425,15 +430,19 @@ class BridgeDriver:
         """
         debug('on_update_material - name={}'.format(mat.name))
 
-        name = get_material_unity_name(mat)
-        name_buf = create_string_buffer(name.encode())
+        mat_name_buf = get_string_buffer(
+            get_material_unity_name(mat)
+        )
 
         # TODO: This may pass in objects that aren't tracked yet by the bridge.
         # Is that fine? (Probably safe to ignore errors for these)
+        # Could also iterate self.objects here and pull each from bpy.data.objects
         for obj in bpy.context.scene.objects:
             if obj.active_material:
-                uid = get_object_uid(obj)
-                self.lib.SetObjectMaterial(uid, name_buf)
+                self.lib.SetObjectMaterial(
+                    get_string_buffer(obj.name),
+                    mat_name_buf
+                )
 
 
 def bridge_driver() -> BridgeDriver:

@@ -56,13 +56,13 @@ namespace Coherence
         private Dictionary<int, InteropVector2[]> uvLayers;
         private MLoop[] cachedLoops;
 
-        internal SceneObject(int id, string name, SceneObjectType type)
+        internal SceneObject(string name, SceneObjectType type)
         {
             Name = name;
 
             data = new InteropSceneObject
             {
-                id = id,
+                name = name,
                 type = type,
                 material = "Default"
             };
