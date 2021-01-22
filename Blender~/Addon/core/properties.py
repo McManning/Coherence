@@ -17,9 +17,13 @@ from bpy.types import (
 
 from util.registry import autoregister
 
+from .driver import (
+    bridge_driver
+)
+
 def change_sync_texture(self, context):
     """
-    Parameters:
+    Args:
         self (CoherenceMaterialSettings)
         context (bpy.types.Context)
     """
@@ -27,32 +31,24 @@ def change_sync_texture(self, context):
 
     print('CHANGE Texture2D Sync image={}'.format(img))
 
-
-def update_sync_material_name(self, context):
-    mat = context.material
-    uid = get_material_uid(mat)
-
-    if self.use_override_name:
-        name = self.override_name
-    else:
-        name = mat.name
-
-    print('UPDATE Material sync for uid={}, name={}'.format(uid, name))
-
-
 def update_sync_texture_settings(self, context):
     mat = context.material
     uid = get_material_uid(mat)
 
-    if self.use_override_name:
-        name = self.override_name
-    else:
-        name = mat.name
+    name = mat.name
 
     if self.use_sync_texture:
         print('UPDATE Texture2D sync for uid={}, name={}'.format(uid, name))
     else:
         print('DISABLE/SKIP Texture2D sync for uid={}, name={}'.format(uid, name))
+
+def update_object_properties(self, context):
+    """
+    Args:
+        self (CoherenceObjectSettings)
+        context (bpy.types.Context)
+    """
+    bridge_driver().on_update_properties(context.object)
 
 @autoregister
 class CoherenceSceneSettings(PropertyGroup):
@@ -85,17 +81,28 @@ class CoherenceSceneSettings(PropertyGroup):
         del bpy.types.Scene.coherence
 
 @autoregister
-class CoherenceObjectSettings(PropertyGroup):
-    # bridge_id: IntProperty(
-    #     name='Bridge ID',
-    #     default=-1,
-    #     description='Unique ID used by the bridge DLL'
-    # )
+class CoherenceObjectProperties(PropertyGroup):
+    display_mode: EnumProperty(
+        name='Unity Display Mode',
+        description='Technique used to render this object within Unity',
+        items=[
+            # Enum items match ObjectDisplayMode in C#
+            # First value will be cast to an int when passed to the bridge
+            ('0', 'Material', '', 0),
+            ('1', 'Normals', 'Show vertex normals in Unity', 1),
+            ('2', 'Vertex Colors', 'Show vertex colors in Unity', 2),
+            ('3', 'UV Checker', 'Show UV values in Unity', 3),
+            ('4', 'UV2 Checker', 'Show UV2 values in Unity', 4),
+            ('5', 'UV3 Checker', 'Show UV3 values in Unity', 5),
+            ('6', 'UV4 Checker', 'Show UV4 values in Unity', 6),
+        ],
+        update=update_object_properties
+    )
 
     @classmethod
     def register(cls):
         bpy.types.Object.coherence = PointerProperty(
-            name='Coherence Object Settings',
+            name='Coherence Settings',
             description='',
             type=cls
         )
@@ -106,16 +113,6 @@ class CoherenceObjectSettings(PropertyGroup):
 
 @autoregister
 class CoherenceMaterialSettings(PropertyGroup):
-    use_override_name: BoolProperty(
-        name='Use custom Unity Material name',
-        update=update_sync_material_name
-    )
-
-    override_name: StringProperty(
-        name='Unity Material Name',
-        update=update_sync_material_name
-    )
-
     use_sync_texture: BoolProperty(
         name='Use Texture Syncing',
         description='Sync a Texture2D channel in the Unity Material with an editable Blender Image',

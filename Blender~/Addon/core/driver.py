@@ -49,10 +49,13 @@ from .interop import *
 class BridgeDriver:
     """Respond to scene object changes and handle messaging through the Unity bridge"""
 
+    METABALLS_OBJECT_NAME = get_string_buffer("__Metaballs")
+
     running = False
     lib = None
     connection_name: str = None
     blender_version: str = None
+    has_metaballs: bool = False
 
     # Mapping between viewport IDs and RenderEngine instances.
     # Weakref is used so that we don't hold onto RenderEngine references
@@ -81,6 +84,19 @@ class BridgeDriver:
         self.lib.SetViewportCamera.argtypes = (c_int, InteropCamera)
         self.lib.CopyVertices.argtypes = (c_void_p, c_void_p, c_uint, c_void_p, c_uint)
         self.lib.CopyLoopTriangles.argtypes = (c_void_p, c_void_p, c_uint)
+        self.lib.CopyMeshData.argtypes = (
+            c_void_p,   # name
+            c_uint,     # loopCount
+            c_void_p,   # loops
+            c_uint,     # trianglesCount
+            c_void_p,   # loopTris
+            c_uint,     # verticesCount
+            c_void_p,   # verts
+            c_void_p,   # loopUVs
+            c_void_p,   # loopUV2s
+            c_void_p,   # loopUV3s
+            c_void_p,   # loopUV4s
+        )
         self.lib.GetRenderTexture.argtypes = (c_uint, )
         self.lib.GetRenderTexture.restype = RenderTextureData
 
@@ -102,11 +118,14 @@ class BridgeDriver:
             scene (bpy.types.Scene)
         """
         log('Starting the DCC')
-        self.object_ids = set()
 
         self.connection_name = create_string_buffer("Coherence".encode())
         self.blender_version = create_string_buffer(bpy.app.version_string.encode())
         self.running = True
+
+        # Register active viewports
+        for render_engine in self.viewports.values():
+            self.add_viewport(render_engine)
 
         bpy.app.handlers.depsgraph_update_post.append(self.on_depsgraph_update)
         bpy.app.timers.register(self.on_tick)
@@ -117,33 +136,21 @@ class BridgeDriver:
             bpy.context.evaluated_depsgraph_get()
         )
 
-    # def add_all_from_scene(self, scene):
-    #     """Add all objects in the scene to the bridge
-
-    #     Parameters:
-    #         scene (bpy.types.Scene)
-    #     """
-
-    #     # Send add events for all objects currently in the scene
-    #     for obj in scene.objects:
-    #         if is_supported_object(obj):
-    #             self.on_add_object(obj)
-    #             self.object_ids.add(get_object_uid(obj))
-
     def stop(self):
-        """Disconnect from Unity and cleanup sycned objects"""
+        """Disconnect from Unity and cleanup synced objects"""
         log('DCC teardown')
         self.lib.Disconnect()
         self.lib.Clear()
+
+        # Clear local tracking
+        self.objects = set()
+        self.has_metaballs = False
 
         # Turning off `running` will also destroy the `on_tick` timer.
         self.running = False
 
         if self.on_depsgraph_update in depsgraph_update_post:
             depsgraph_update_post.remove(self.on_depsgraph_update)
-
-        # Untrack everything in the scene - we'll have to re-track it all on start() again.
-        self.object_ids = set()
 
     def free_lib(self): # UNUSED
         pass
@@ -188,7 +195,7 @@ class BridgeDriver:
         Returns:
             bool
         """
-        return self.lib.IsConnectedToUnity()
+        return self.running and self.lib.IsConnectedToUnity()
 
     def is_running(self) -> bool:
         """Is the driver actively trying to / is connected to Unity
@@ -274,6 +281,7 @@ class BridgeDriver:
             depsgraph (bpy.types.Depsgraph)
         """
         current = set() # Set of tracked object names
+        found_metaballs = False
 
         # Check for added objects
         for obj in scene.objects:
@@ -282,11 +290,18 @@ class BridgeDriver:
                     self.on_add_object(obj, depsgraph)
 
                 current.add(obj.name)
+            elif obj.type == 'META':
+                found_metaballs = True
+                if not self.has_metaballs:
+                    self.on_add_metaballs(obj, depsgraph)
 
         # Check for removed objects
         removed = self.objects - current
         for name in removed:
             self.on_remove_object(name)
+
+        if not found_metaballs and self.has_metaballs:
+            self.on_remove_metaballs()
 
         # Update current tracked list
         self.objects = current
@@ -300,30 +315,44 @@ class BridgeDriver:
         """
         debug('on depsgraph update')
 
+        # Only update metaballs as a whole once per tick
+        update_metaballs = False
+        first_metaball = None
+
         self.sync_tracked_objects(scene, depsgraph)
 
         # Check for updates to objects (geometry changes, transform changes, etc)
         for update in depsgraph.updates:
             if type(update.id) == bpy.types.Material:
                 self.on_update_material(update.id)
+            #elif type(update.id) == bpy.types.MetaBall:
+            #    print('metaball update - skip')
+            # doesn't capture transforms
             elif type(update.id) == bpy.types.Object:
                 # Get the real object, not the copy in the update
                 obj = bpy.data.objects.get(update.id.name)
+                if obj.type == 'META':
+                    update_metaballs = True
+                else:
+                    if update.is_updated_transform:
+                        self.on_update_transform(obj)
 
-                if update.is_updated_transform:
-                    self.on_update_transform(obj)
-                elif update.is_updated_geometry:
-                    self.on_update_geometry(obj, depsgraph)
+                    if update.is_updated_geometry:
+                        self.on_update_geometry(obj, depsgraph)
 
-                # A material association can change - which doesn't
-                # trigger a material update but does trigger a
-                # depsgraph update on the parent object.
-                self.on_update_object_material(obj)
+                    # A material association can change - which doesn't
+                    # trigger a material update but does trigger a
+                    # depsgraph update on the parent object.
+                    self.on_update_object_material(obj)
+
+        # A change to any metaball will trigger them all to re-evaluate
+        if update_metaballs:
+            self.on_update_metaballs(scene, depsgraph)
 
     def on_add_object(self, obj, depsgraph):
         """Notify the bridge that the object has been added to the scene
 
-        Parameters:
+        Args:
             obj (bpy.types.Object):             The object that was added to the scene
             depsgraph (bpy.types.Depsgraph):    Dependency graph to use for generating a final mesh
         """
@@ -354,10 +383,40 @@ class BridgeDriver:
             get_string_buffer(name)
         )
 
+    def on_add_metaballs(self, obj, depsgraph):
+        """Update our sync state when metaballs have been first added to the scene.
+
+        We treat all metaballs as a single entity synced with Unity.
+
+        Args:
+            obj (bpy.types.Object): The first metaball object in the scene
+            depsgraph (bpy.types.Depsgraph):    Dependency graph to use for generating a final mesh
+        """
+        self.has_metaballs = True
+        debug('on_add_metaballs')
+
+        mat_name = get_material_unity_name(obj.active_material)
+
+        self.lib.AddMeshObjectToScene(
+            self.METABALLS_OBJECT_NAME,
+            to_interop_matrix4x4(obj.matrix_world),
+            get_string_buffer(mat_name)
+        )
+
+        # Send an initial set of geometry - already done in update I think?
+        # self.on_update_metaballs(obj, depsgraph)
+
+    def on_remove_metaballs(self):
+        """Update our sync state when all metaballs have been removed from the scene"""
+        self.has_metaballs = False
+        debug('on_remove_metaballs')
+
+        self.lib.RemoveObjectFromScene(self.METABALLS_OBJECT_NAME)
+
     def on_update_transform(self, obj):
         """Notify the bridge that the object has been transformed in the scene
 
-        Parameters:
+        Args:
             obj (bpy.types.Object): The object that was updated
         """
         debug('on_update_transform - name={}'.format(obj.name))
@@ -367,10 +426,24 @@ class BridgeDriver:
             to_interop_matrix4x4(obj.matrix_world)
         )
 
+    def on_update_properties(self, obj):
+        """Notify the bridge that additional per-object props have changed
+
+        Args:
+            obj (bpy.types.Object): The object that was updated
+        """
+        debug('on_update_properties - name={}'.format(obj.name))
+
+        self.lib.SetObjectProperties(
+            get_string_buffer(obj.name),
+            int(obj.coherence.display_mode)
+            # ... etc
+        )
+
     def on_update_geometry(self, obj, depsgraph):
         """Notify the bridge that object geometry has changed
 
-        Parameters:
+        Args:
             obj (bpy.types.Object):             The object that was updated
             depsgraph (bpy.types.Depsgraph):    Dependency graph to use for generating a final mesh
         """
@@ -383,33 +456,105 @@ class BridgeDriver:
         # Ensure triangulated faces are available
         mesh.calc_loop_triangles()
 
-        # Need both vertices and loops. Vertices store co/no information per-vertex
-        # while loops align with loop_triangles
-        debug('on_update_geometry - loops_len={}'.format(len(mesh.loops)))
-        self.lib.CopyVertices(
+        # # Need both vertices and loops. Vertices store co/no information per-vertex
+        # # while loops align with loop_triangles
+        # debug('on_update_geometry - loops_len={}'.format(len(mesh.loops)))
+        # self.lib.CopyVertices(
+        #     name_buf,
+        #     mesh.loops[0].as_pointer(),
+        #     len(mesh.loops),
+        #     mesh.vertices[0].as_pointer(),
+        #     len(mesh.vertices)
+        # )
+
+        # debug('on_update_geometry - loop_triangles_len={} '.format(len(mesh.loop_triangles)))
+        # self.lib.CopyLoopTriangles(
+        #     name_buf,
+        #     mesh.loop_triangles[0].as_pointer(),
+        #     len(mesh.loop_triangles)
+        # )
+
+        # A single (optional) vertex color layer can be passed through
+        cols_ptr = None
+        if len(mesh.vertex_colors) > 0 and len(mesh.vertex_colors[0].data) > 0:
+            cols_ptr = mesh.vertex_colors[0].data[0].as_pointer()
+
+        # Up to 4 (optional) UV layers can be passed through
+        uv_ptr = [None] * 4
+        for layer in range(len(mesh.uv_layers)):
+            if len(mesh.uv_layers[layer].data) > 0:
+                uv_ptr[layer] = mesh.uv_layers[layer].data[0].as_pointer()
+
+        self.lib.CopyMeshData(
             name_buf,
-            mesh.loops[0].as_pointer(),
             len(mesh.loops),
-            mesh.vertices[0].as_pointer(),
-            len(mesh.vertices)
-        )
-
-        debug('on_update_geometry - loop_triangles_len={} '.format(len(mesh.loop_triangles)))
-        self.lib.CopyLoopTriangles(
-            name_buf,
+            mesh.loops[0].as_pointer(),
+            len(mesh.loop_triangles),
             mesh.loop_triangles[0].as_pointer(),
-            len(mesh.loop_triangles)
+            len(mesh.vertices),
+            mesh.vertices[0].as_pointer(),
+            cols_ptr,
+            uv_ptr[0],
+            uv_ptr[1],
+            uv_ptr[2],
+            uv_ptr[3]
         )
 
-        # TODO: UVs?
+        eval_obj.to_mesh_clear()
+
+    def on_update_metaballs(self, scene, depsgraph):
+        """Rebuild geometry from metaballs in the scene and send to Unity
+
+        Args:
+            scene (bpy.types.Scene):
+            depsgraph (bpy.types.Depsgraph):    Dependency graph to use for generating a final mesh
+        """
+        # We use the first found in the scene as the root
+        obj = None
+        for obj in scene.objects:
+            if obj.type == 'META':
+                break
+
+        debug('on_update_metaballs obj={}'.format(obj))
+
+        # Get the evaluated post-modifiers mesh
+        eval_obj = obj.evaluated_get(depsgraph)
+        mesh = eval_obj.to_mesh()
+
+        # Ensure triangulated faces are available
+        mesh.calc_loop_triangles()
+
+        # TODO: Don't do this repeately. Only if the root changes transform.
+        # seems to be lagging out the interop.
+        #self.lib.SetObjectTransform(
+        #    self.METABALLS_OBJECT_NAME,
+        #    to_interop_matrix4x4(obj.matrix_world)
+        #)
+
+        self.lib.CopyMeshData(
+            self.METABALLS_OBJECT_NAME,
+            len(mesh.loops),
+            mesh.loops[0].as_pointer(),
+            len(mesh.loop_triangles),
+            mesh.loop_triangles[0].as_pointer(),
+            len(mesh.vertices),
+            mesh.vertices[0].as_pointer(),
+            # Metaballs don't have UV/Vertex Color information,
+            # So we skip all that on upload (cheaper as well)
+            None,
+            None,
+            None,
+            None,
+            None
+        )
 
         eval_obj.to_mesh_clear()
 
     def on_update_object_material(self, obj):
         """Pass an object's material reference to the bridge
 
-        Parameters:
-            obj (bpy.types.Object):             The object that was updated
+        Args:
+            obj (bpy.types.Object): The object that was updated
         """
         debug('on_update_object_material - name={}'.format(obj.name))
 
@@ -424,9 +569,8 @@ class BridgeDriver:
 
     def on_update_material(self, mat):
         """
-        Parameters:
+        Args:
             mat (bpy.types.Material)
-            update (bpy.types.DepsgraphUpdate): Information about ID that was updated
         """
         debug('on_update_material - name={}'.format(mat.name))
 
@@ -451,6 +595,8 @@ def bridge_driver() -> BridgeDriver:
     Returns:
         BridgeDriver
     """
+    # TODO: Not in driver_namespace... not where it belongs.
+    # can just be a singleton on its own via BridgeDriver.instance
     if 'COHERENCE' not in bpy.app.driver_namespace:
         bpy.app.driver_namespace['COHERENCE'] = BridgeDriver()
 

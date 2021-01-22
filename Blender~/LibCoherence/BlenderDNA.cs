@@ -6,7 +6,7 @@ namespace Coherence
 {
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
     public struct ID
-    { 
+    {
         public IntPtr next;
         public IntPtr prev;
         public IntPtr newid;
@@ -16,7 +16,7 @@ namespace Coherence
         public char[] name;
 
         public ushort flag;
-    
+
         public int tag;
         public int us;
         public int icon_id;
@@ -24,7 +24,7 @@ namespace Coherence
 
         public int recalc_up_to_undo_push;
         public int recalc_after_undo_push;
-    
+
         public uint session_uuid;
 
         public IntPtr properties;
@@ -40,7 +40,7 @@ namespace Coherence
     public struct CustomData
     {
         public IntPtr layers;
-    
+
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 47)]
         public int[] typemap;
 
@@ -58,7 +58,7 @@ namespace Coherence
     {
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 3)]
         public float[] co;
-    
+
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 3)]
         public short[] no;
 
@@ -87,8 +87,14 @@ namespace Coherence
     {
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 3)]
         public uint[] tri;
-    
+
         public uint poly;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+    public struct MLoopCol
+    {
+        public byte r, g, b, a;
     }
 
     // This is only really needed for custom split normals.
@@ -103,7 +109,7 @@ namespace Coherence
     {
         public ID id;
 
-        // Animation data 
+        // Animation data
         public IntPtr adt;
 
         // Old animation system, deprecated for 2.5.
@@ -118,7 +124,7 @@ namespace Coherence
         public IntPtr mloopuv;
         public IntPtr mloopcol;
         // END BMESH ONLY
-    
+
         // Legacy face storage (quads & tries only),
         // faces are now stored in Mesh.mpoly & Mesh.mloop arrays.
         public IntPtr mface;
@@ -128,7 +134,7 @@ namespace Coherence
         public IntPtr medge;
         public IntPtr dvert;
 
-        // Array of colors for tessellated faces, must be number of 
+        // Array of colors for tessellated faces, must be number of
         // tessellated faces * 4 in length
         public IntPtr mcol;
         public IntPtr texcomesh;
@@ -154,6 +160,6 @@ namespace Coherence
         public int totloop;
         // END BMESH ONLY
 
-        // ... etc. Not listed as we don't access it. 
+        // ... etc. Not listed as we don't access it.
     }
 }

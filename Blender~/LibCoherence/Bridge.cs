@@ -292,10 +292,10 @@ namespace Coherence
         }
 
         /// <summary>
-        /// Send <b>all</b> available mesh data (vertices, triangles, normals, UVs, etc) to Unity
+        /// Send <b>all</b> current mesh data (vertices, triangles, normals, UVs, etc) to Unity
         /// </summary>
         /// <param name="obj"></param>
-        private void SendAllMeshData(SceneObject obj)
+        internal void SendAllMeshData(SceneObject obj)
         {
             if (!IsConnectedToSharedMemory)
             {
@@ -303,11 +303,23 @@ namespace Coherence
             }
 
             SendArray(RpcRequest.UpdateVertices, obj.Name, obj.Vertices, true);
-            SendArray(RpcRequest.UpdateTriangles, obj.Name, obj.Triangles, true);
             SendArray(RpcRequest.UpdateNormals, obj.Name, obj.Normals, true);
-            SendArray(RpcRequest.UpdateUVs, obj.Name, obj.GetUV(0), true);
-            // ... and so on, per-buffer ...
 
+            // Optional datasets - based on object data
+            if (obj.Colors != null) SendArray(RpcRequest.UpdateVertexColors, obj.Name, obj.Colors, true);
+            if (obj.UV != null) SendArray(RpcRequest.UpdateUV, obj.Name, obj.UV, true);
+            if (obj.UV2 != null) SendArray(RpcRequest.UpdateUV2, obj.Name, obj.UV2, true);
+            if (obj.UV3 != null) SendArray(RpcRequest.UpdateUV3, obj.Name, obj.UV3, true);
+            if (obj.UV4 != null) SendArray(RpcRequest.UpdateUV4, obj.Name, obj.UV4, true);
+
+            // TODO: There needs to be some form of "this buffer is no longer valid"
+            // type of message for all the optional ones - because if we had vertex
+            // colors then deleted them - it'll still exist on Unity's side of things.
+
+            // This could be stateful information on InteropSceneObject
+            // (e.g. booleans on which buffers should be active)
+
+            SendArray(RpcRequest.UpdateTriangles, obj.Name, obj.Triangles, true);
         }
 
         /// <summary>

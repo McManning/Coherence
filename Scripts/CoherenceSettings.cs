@@ -85,8 +85,11 @@ namespace Coherence
     [Serializable]
     public class BlenderMaterialOverride
     {
-        public string blenderMaterialName;
-        public Material material;
+        [Tooltip("Name of the material in Blender to re-map")]
+        public string blenderMaterial;
+
+        [Tooltip("Unity material to use as a replacement")]
+        public Material replacement;
     }
 
     // TODO: Hide all this in the inspector, OR use a custom inspector
@@ -125,6 +128,27 @@ namespace Coherence
         #region Shared Memory
 
         /// <summary>
+        /// Estimate how much of shared memory will be allocated between Unity and Blender given current settings
+        /// </summary>
+        public string CalculateSharedMemoryUsage()
+        {
+            var bufferHeaderSize = FastStructure.SizeOf<SharedHeader>();
+            var messageBufferSize = NodeSizeBytes * nodeCount + bufferHeaderSize;
+            var pixelsBufferSize = pixelsNodeCount * PixelsNodeSizeBytes + bufferHeaderSize;
+
+            var expectedSharedMemorySize = (messageBufferSize + pixelsBufferSize) / 1024.0 / 1024.0;
+            var units = "MB";
+
+            if (expectedSharedMemorySize > 1024)
+            {
+                expectedSharedMemorySize /= 1024.0;
+                units = "GB";
+            }
+
+            return $"{expectedSharedMemorySize:F2} {units}";
+        }
+
+        /// <summary>
         /// Global name of the shared message buffer
         /// </summary>
         public string bufferName = "Coherence";
@@ -132,6 +156,7 @@ namespace Coherence
         /// <summary>
         /// Number of nodes in the shared message buffer
         /// </summary>
+        [Range(2, 20)]
         public int nodeCount = 5;
 
         /// <summary>
@@ -150,6 +175,7 @@ namespace Coherence
         /// <summary>
         /// Number of nodes in the pixel buffer for viewport textures
         /// </summary>
+        [Range(2, 20)]
         public int pixelsNodeCount = 2;
 
         /// <summary>
@@ -170,20 +196,16 @@ namespace Coherence
             }
         }
 
-        /// <summary>
-        /// Maximum width for a viewport camera in Blender.
-        ///
-        /// This helps define the upper bound of the shared pixel data
-        /// between Unity and Blender.
-        /// </summary>
+        [Tooltip(
+            "Maximum width for a viewport camera in Blender.\n\n" +
+            "This helps define the upper bound of the shared pixel buffer"
+        )]
         public int maxViewportWidth = 1920;
 
-        /// <summary>
-        /// Maximum height for a viewport camera in Blender.
-        ///
-        /// This helps define the upper bound of the shared pixel data
-        /// between Unity and Blender.
-        /// </summary>
+        [Tooltip(
+            "Maximum height for a viewport camera in Blender.\n\n" +
+            "This helps define the upper bound of the shared pixel buffer"
+        )]
         public int maxViewportHeight = 1080;
 
         #endregion
@@ -199,11 +221,10 @@ namespace Coherence
         // 1/viewportScale is applied (e.g. 1/4 for 25% smaller texture)
         public int viewportTextureScale = 1;
 
-        /// <summary>
-        /// Camera prefab to instantiate for each synced Blender viewport.
-        /// Transform and projection will be automatically updated to
-        /// match Blender's viewport settings.
-        /// </summary>
+        [Tooltip(
+            "(Optional) - Prefab to use while instantiating cameras for each Blender viewport. \n\n" +
+            "Transform and projecttion will be automatically updated to match Blender's viewport settings."
+        )]
         public Camera viewportCameraPrefab;
 
         /// <summary>
@@ -215,14 +236,20 @@ namespace Coherence
 
         #region Meshes
 
-        /// <summary>
-        /// GO prefab to instantiate for each synced Blender object.
-        ///
-        /// Additional components may be automatically added to the object
-        /// based on its representation within Blender - e.g. adding a MeshRenderer
-        /// </summary>
+        [Tooltip(
+            "(Optional) - Prefab to use while instantiating scene objects for Blender meshes. \n\n" +
+            "Some components will be automatically applied based on its representation within Blender" +
+            " - e.g. adding a MeshRenderer."
+        )]
         public GameObject sceneObjectPrefab;
 
+        [Tooltip("Material to use when a mapping cannot be made between a Blender material and one in Unity")]
+        public Material defaultMaterial;
+
+        [Tooltip("Material to use while using alternative display modes (UV checker, normals, vertex colors, etc)")]
+        public Material displayMaterial;
+
+        [Tooltip("Overrides to automatic mapping between Blender and Unity material names")]
         public BlenderMaterialOverride[] materialOverrides;
 
         #endregion

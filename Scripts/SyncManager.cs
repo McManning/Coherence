@@ -412,28 +412,32 @@ namespace Coherence
         }
 
         /// <summary>
-        /// Handle any messages coming from Blender
+        /// Consume a single message off the interop message queue
         /// </summary>
-        private void ConsumeMessages()
+        /// <returns>Number of bytes read</returns>
+        private int ConsumeMessage()
         {
-            Profiler.BeginSample("Consume Message");
-
             var disconnected = false;
 
-            // TODO: Some messages should be skipped if !IsConnected.
-            // Otherwise we may get a bad state. E.g. we see a disconnect
-            // from Blender and THEN some other viewport/object data messages.
-
-            messages.Read((target, header, ptr) =>
+            var bytesRead = messages.Read((target, header, ptr) =>
             {
                 ObjectController obj;
 
+                // While not connected - only accept connection requests
+                if (!IsConnected)
+                {
+                    if (header.type != RpcRequest.Connect)
+                    {
+                        Debug.LogWarning($"Unhandled request type {header.type} for {target} - expected RpcRequest.Connect");
+                    }
+
+                    blenderState = FastStructure.PtrToStructure<InteropBlenderState>(ptr);
+                    OnConnectToBlender();
+                    return 0;
+                }
+
                 switch (header.type)
                 {
-                    case RpcRequest.Connect:
-                        blenderState = FastStructure.PtrToStructure<InteropBlenderState>(ptr);
-                        OnConnectToBlender();
-                        break;
                     case RpcRequest.UpdateBlenderState:
                         blenderState = FastStructure.PtrToStructure<InteropBlenderState>(ptr);
                         break;
@@ -479,21 +483,54 @@ namespace Coherence
                         );
                         break;
                     case RpcRequest.UpdateTriangles:
-                        obj = GetObject(target);
-                        FastStructure.ReadArray(obj.GetOrCreateTriangleBuffer(), ptr, header.index, header.count);
-                        obj.OnUpdateTriangleRange(header.index, header.count);
+                        GetObject(target)
+                            .triangles
+                            .Resize(header.length)
+                            .Fill(ptr, header.index, header.count);
                         break;
                     case RpcRequest.UpdateVertices:
-                        obj = GetObject(target);
-                        FastStructure.ReadArray(obj.GetOrCreateVertexBuffer(), ptr, header.index, header.count);
-                        obj.OnUpdateVertexRange(header.index, header.count);
+                        GetObject(target)
+                            .vertices
+                            .Resize(header.length)
+                            .Fill(ptr, header.index, header.count);
                         break;
                     case RpcRequest.UpdateNormals:
-                        obj = GetObject(target);
-                        FastStructure.ReadArray(obj.GetOrCreateNormalBuffer(), ptr, header.index, header.count);
-                        obj.OnUpdateNormalRange(header.index, header.count);
+                        GetObject(target)
+                            .normals
+                            .Resize(header.length)
+                            .Fill(ptr, header.index, header.count);
                         break;
-                    // TODO: ... and so on for UV/weights
+                    case RpcRequest.UpdateUV:
+                        GetObject(target)
+                            .uv
+                            .Resize(header.length)
+                            .Fill(ptr, header.index, header.count);
+                        break;
+                    case RpcRequest.UpdateUV2:
+                        GetObject(target)
+                            .uv2
+                            .Resize(header.length)
+                            .Fill(ptr, header.index, header.count);
+                        break;
+                    case RpcRequest.UpdateUV3:
+                        GetObject(target)
+                            .uv3
+                            .Resize(header.length)
+                            .Fill(ptr, header.index, header.count);
+                        break;
+                    case RpcRequest.UpdateUV4:
+                        GetObject(target)
+                            .uv4
+                            .Resize(header.length)
+                            .Fill(ptr, header.index, header.count);
+                        break;
+                    case RpcRequest.UpdateVertexColors:
+                        GetObject(target)
+                            .colors
+                            .Resize(header.length)
+                            .Fill(ptr, header.index, header.count);
+                        break;
+                    // TODO: ... and so on for weights/bones/etc
                     default:
                         Debug.LogWarning($"Unhandled request type {header.type} for {target}");
                         break;
@@ -501,6 +538,7 @@ namespace Coherence
 
                 // TODO: Necessary to count bytes? We won't read anything off this
                 // buffer at this point so it's safe to drop the whole thing.
+                // bytesRead will count the header size (indicating a message *was* read)
                 return 0;
             });
 
@@ -509,6 +547,29 @@ namespace Coherence
             {
                 OnDisconnectFromBlender();
             }
+
+            return bytesRead;
+        }
+
+        /// <summary>
+        /// Read a batch of messages off the message queue from Blender
+        /// </summary>
+        private void ConsumeMessages()
+        {
+            Profiler.BeginSample("Consume Message");
+
+            // Try to pump at least half the queue size of pending messages.
+            // We avoid pumping until the queue is empty in one tick - otherwise
+            // we may end up in a scenario where we put Unity into a locked state
+            // when updates are constantly happening (e.g. during sculpting)
+            int bytesRead;
+            int messagesRead = 0;
+            int maxMessagesToRead = CoherenceSettings.Instance.nodeCount / 2;
+            do
+            {
+                bytesRead = ConsumeMessage();
+            }
+            while (messagesRead < maxMessagesToRead && bytesRead > 0);
 
             Profiler.EndSample();
         }

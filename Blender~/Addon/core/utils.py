@@ -33,12 +33,12 @@ def is_supported_object(obj):
         boolean: True if supported
     """
 
-    if obj.type == 'MESH':
-        return True
+    # TODO: Meta wouldn't work here - we need *one* meta object representation
+    # not per-meta.
 
-    # TODO: Other supported types?
-
-    return False
+    # Anything that can be evaluated to a mesh representation after modifiers.
+    # META is excluded here - as they are dealt with separately.
+    return obj.type in {'MESH', 'CURVE', 'SURFACE', 'FONT' }
 
 def is_renamed(obj):
     """Test if the given object has been renamed at some point.
@@ -95,7 +95,6 @@ def get_objects_with_material(mat):
 def get_material_unity_name(mat) -> str:
     """Retrieve the name of the Material exposed to Unity.
 
-    This can be the default material name or an override.
     If the provided mat is None, a default will be returned.
 
     Parameters:
@@ -107,8 +106,6 @@ def get_material_unity_name(mat) -> str:
 
     if not mat:
         return 'Default'
-    elif mat.coherence.use_override_name and mat.coherence.override_name:
-        return mat.coherence.override_name
 
     return mat.name
 

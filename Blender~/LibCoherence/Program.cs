@@ -1,5 +1,6 @@
 ﻿
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 #if !MOCKING
@@ -281,10 +282,8 @@ namespace Coherence
 
         /// <summary>
         /// Get the render texture data from Unity's last render of the given viewport
-        /// and lock the texture data from writes until UnlockRenderTexture() is called.
+        /// and lock the texture data from writes until <see cref="ReleaseRenderTextureLock(int)"/>.
         /// </summary>
-        /// <param name="viewportId"></param>
-        /// <returns></returns>
         [DllExport]
         public static RenderTextureData GetRenderTexture(int viewportId)
         {
@@ -312,6 +311,9 @@ namespace Coherence
             }
         }
 
+        /// <summary>
+        /// Release the lock on a texture previously retrieved through <see cref="GetRenderTexture(int)"/>
+        /// </summary>
         [DllExport]
         public static int ReleaseRenderTextureLock(int viewportId)
         {
@@ -382,12 +384,38 @@ namespace Coherence
         }
 
         /// <summary>
+        /// Update common object properties and notify Unity.
+        ///
+        /// Might eventually merge in <see cref="SetObjectMaterial(string, string)"/>
+        /// and <see cref="SetObjectTransform(string, InteropMatrix4x4)"/> into this
+        /// since they're all just <see cref="InteropSceneObject"/> fields.
+        /// </summary>
+        [DllExport]
+        public static int SetObjectProperties(
+            [MarshalAs(UnmanagedType.LPStr)] string name,
+            ObjectDisplayMode display
+        ) {
+            try
+            {
+                var obj = Bridge.GetObject(name);
+
+                obj.data.display = display;
+                // TODO: Whatever other nonsense.
+                // Materials?
+
+                Bridge.SendEntity(RpcRequest.UpdateSceneObject, obj);
+                return 1;
+            }
+            catch (Exception e)
+            {
+                SetLastError(e);
+                return -1;
+            }
+        }
+
+        /// <summary>
         /// Update <see cref="InteropSceneObject.material" /> and notify Unity
         /// </summary>
-        /// <param name="objectId"></param>
-        /// <param name="transform"></param>
-        /// <param name="material"></param>
-        /// <returns></returns>
         [DllExport]
         public static int SetObjectMaterial(
             [MarshalAs(UnmanagedType.LPStr)] string name,
@@ -438,12 +466,6 @@ namespace Coherence
         /// Read an array of <see cref="MVert"/> from Blender to push updated
         /// vertex coordinates and normals with Unity.
         /// </summary>
-        /// <param name="objectId"></param>
-        /// <param name="loops"></param>
-        /// <param name="loopCount"></param>
-        /// <param name="vertices"></param>
-        /// <param name="verticesCount"></param>
-        /// <returns></returns>
         [DllExport]
         public static int CopyVertices(
         #pragma warning disable IDE0060 // Remove unused parameter
@@ -463,14 +485,6 @@ namespace Coherence
                 obj.CopyFromMVerts(vertices);
                 obj.CopyFromMLoops(loops);
 
-                // If the vertex count changes, we'll need to push a
-                // change to the object's metadata
-                if (obj.data.vertexCount != obj.Vertices.Length)
-                {
-                    obj.data.vertexCount = obj.Vertices.Length;
-                    Bridge.SendEntity(RpcRequest.UpdateSceneObject, obj);
-                }
-
                 // Followed by changes to the vertex coordinate and normals
                 Bridge.SendArray(RpcRequest.UpdateVertices, obj.Name, obj.Vertices, true);
                 Bridge.SendArray(RpcRequest.UpdateNormals, obj.Name, obj.Normals, true);
@@ -488,10 +502,6 @@ namespace Coherence
         /// Read an array of <see cref="MLoopTri"/> from Blender to push updated
         /// triangle indices to Unity
         /// </summary>
-        /// <param name="objectId"></param>
-        /// <param name="loopTris"></param>
-        /// <param name="loopTrisCount"></param>
-        /// <returns></returns>
         [DllExport]
         public static int CopyLoopTriangles(
         #pragma warning disable IDE0060 // Remove unused parameter
@@ -508,15 +518,84 @@ namespace Coherence
 
                 obj.CopyFromMLoopTris(loopTris);
 
-                // If the vertex count changes, we'll need to push a
-                // change to the object's metadata
-                if (obj.data.triangleCount != obj.Triangles.Length)
-                {
-                    obj.data.triangleCount = obj.Triangles.Length;
-                    Bridge.SendEntity(RpcRequest.UpdateSceneObject, obj);
-                }
-
                 Bridge.SendArray(RpcRequest.UpdateTriangles, obj.Name, obj.Triangles, true);
+                return 1;
+            }
+            catch (Exception e)
+            {
+                SetLastError(e);
+                return -1;
+            }
+        }
+
+        /// <summary>
+        /// Perform a copy of <b>all</b> available mesh data to Unity in one go.
+        /// </summary>
+        [DllExport]
+        public static int CopyMeshData(
+            #pragma warning disable IDE0060 // Remove unused parameter
+                [MarshalAs(UnmanagedType.LPStr)] string name,
+                uint loopCount,
+                [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] MLoop[] loops,
+                uint trianglesCount,
+                [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 3)] MLoopTri[] loopTris,
+                uint verticesCount,
+                [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 5)] MVert[] verts,
+                // Only one vertex color layer is supported.
+                [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] MLoopCol[] loopCols,
+                // TODO: More dynamic UV support. Until then - we support up to 4 UV layers.
+                [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] MLoopUV[] loopUVs,
+                [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] MLoopUV[] loopUV2s,
+                [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] MLoopUV[] loopUV3s,
+                [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] MLoopUV[] loopUV4s
+            #pragma warning restore IDE0060 // Remove unused parameter
+        ) {
+            InteropLogger.Debug($"Copy {loops.Length} loops for `{name}`");
+
+            try
+            {
+                var obj = Bridge.GetObject(name);
+
+                // Make a list of lists for included UVs
+                var loopUVLayers = new List<MLoopUV[]>();
+                if (loopUVs != null) loopUVLayers.Add(loopUVs);
+                if (loopUV2s != null) loopUVLayers.Add(loopUV2s);
+                if (loopUV3s != null) loopUVLayers.Add(loopUV3s);
+                if (loopUV4s != null) loopUVLayers.Add(loopUV4s);
+
+                obj.CopyMeshData(
+                    verts,
+                    loops,
+                    loopTris,
+                    loopCols,
+                    loopUVLayers
+                );
+
+                // TODO: Eventually make this just send deltas whenever possible
+                // assuming it's cheaper to calculate the deltas than to just send
+                // large mesh data as a whole.
+
+                // Or - we have a better process in place to identify what changed
+                // based on user action in Blender (e.g. any kind of UV editing operations
+                // on the active UV layer would then just send UV updates for that layer)
+                // and we just send those channels.
+
+                // The risk though is that we optimize vertex count on this end
+                // rather than sending Unity the full loops. So if we tried to
+                // update partial data, there's a lot of headache in determining
+                // whether those changes cause changes in other mesh data
+                // (e.g. by splitting a UV it's now created a new vertex, which then
+                // changes the triangle list and all other buffers, etc etc)
+
+                // Blender cheats this by duplicating data in loops - but that's about
+                // a 4x increase in storage space / transfer size, and work on Unity's
+                // end to still optimize those down while uploading to the GPU.
+
+                // Metaballs and sculpting also kind of throw us for a loop on
+                // this one - so maybe not worth the extra effort.
+
+                // Send ALL the data to Unity.
+                Bridge.SendAllMeshData(obj);
 
                 return 1;
             }

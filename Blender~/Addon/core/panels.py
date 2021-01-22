@@ -78,6 +78,28 @@ class COHERENCE_LIGHT_PT_light(BasePanel):
         self.layout.label(text='Not supported. Use lights within Unity.')
 
 @autoregister
+class COHERENCE_OBJECT_PT_settings(BasePanel):
+    bl_label = 'Coherence Settings'
+    bl_context = 'object'
+
+    @classmethod
+    def poll(cls, context):
+        #if context.active_object and context.active_object.type == 'GPENCIL':
+        #    return False
+
+        return context.object and BasePanel.poll(context)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+
+        settings = context.object.coherence
+
+        col = layout.column(align=True)
+        col.prop(settings, 'display_mode')
+
+@autoregister
 class COHERENCE_MATERIAL_PT_settings(BasePanel):
     bl_label = 'Unity Material Settings'
     bl_context = 'material'
@@ -96,9 +118,9 @@ class COHERENCE_MATERIAL_PT_settings(BasePanel):
 
         col = layout.column()
 
-        col.prop(settings, 'use_override_name')
-        if settings.use_override_name:
-            col.prop(settings, 'override_name')
+        # col.prop(settings, 'use_override_name')
+        # if settings.use_override_name:
+        #    col.prop(settings, 'override_name')
 
 @autoregister
 class COHERENCE_MATERIAL_PT_settings_sync(BasePanel):
@@ -139,13 +161,6 @@ class COHERENCE_MATERIAL_PT_settings_sync(BasePanel):
                 open='image.open',
                 text='Image'
             )
-
-            if settings.use_override_name:
-                name = settings.override_name
-            else:
-                name = mat.name
-
-            col.label(text='Syncing to: {}.{}'.format(name, map_name))
 
 @autoregister
 class COHERENCE_PT_context_material(BasePanel):

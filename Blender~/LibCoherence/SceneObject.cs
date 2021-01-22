@@ -51,6 +51,33 @@ namespace Coherence
 
         private InteropVector3[] normals;
 
+        internal InteropVector2[] UV
+        {
+            get { return uvs.Count > 0 ? uvs[0] : null; }
+        }
+
+        internal InteropVector2[] UV2
+        {
+            get { return uvs.Count > 1 ? uvs[1] : null; }
+        }
+
+        internal InteropVector2[] UV3
+        {
+            get { return uvs.Count > 2 ? uvs[2] : null; }
+        }
+
+        internal InteropVector2[] UV4
+        {
+            get { return uvs.Count > 3 ? uvs[3] : null; }
+        }
+
+        internal InteropColor[] Colors
+        {
+            get { return colors; }
+        }
+
+        private InteropColor[] colors;
+
         internal InteropBoneWeight[] BoneWeights { get; set; }
 
         private Dictionary<int, InteropVector2[]> uvLayers;
@@ -68,21 +95,6 @@ namespace Coherence
             };
 
             uvLayers = new Dictionary<int, InteropVector2[]>();
-        }
-
-        /// <summary>
-        /// Retrieve a specific UV layer
-        /// </summary>
-        /// <param name="index"></param>
-        /// <returns></returns>
-        internal InteropVector2[] GetUV(int layer)
-        {
-            if (uvLayers.ContainsKey(layer))
-            {
-                return uvLayers[layer];
-            }
-
-            return null;
         }
 
         /// <summary>
@@ -265,6 +277,282 @@ namespace Coherence
         public void Deserialize(InteropSceneObject interopData)
         {
             throw new InvalidOperationException();
+        }
+
+        List<InteropVector2[]> uvs;
+
+        /// <summary>
+        /// Reallocate storage space for mesh data - avoiding actual allocations
+        /// and keeping existing data in-place as much as possible
+        /// </summary>
+        /// <param name="vertexCount"></param>
+        /// <param name="triangleCount"></param>
+        /// <param name="uvLayerCount"></param>
+        private void Reallocate(int vertexCount, int triangleCount, int uvLayerCount, bool hasColors)
+        {
+            if (triangles == null)
+            {
+                triangles = new uint[triangleCount * 3];
+            }
+            else
+            {
+                Array.Resize(ref triangles, triangleCount * 3);
+            }
+
+            if (vertices == null)
+            {
+                vertices = new InteropVector3[vertexCount];
+            }
+            else
+            {
+                Array.Resize(ref vertices, vertexCount);
+            }
+
+            if (normals == null)
+            {
+                normals = new InteropVector3[vertexCount];
+            }
+            else
+            {
+                Array.Resize(ref normals, vertexCount);
+            }
+
+            if (hasColors)
+            {
+                if (colors == null)
+                {
+                    colors = new InteropColor[vertexCount];
+                }
+                else
+                {
+                    Array.Resize(ref colors, vertexCount);
+                }
+            }
+            else // Deallocate
+            {
+                colors = null;
+            }
+
+            if (uvs == null)
+            {
+                uvs = new List<InteropVector2[]>();
+            }
+            else if (uvs.Count > uvLayerCount)
+            {
+                // Remove excess UVs
+                uvs.RemoveRange(uvLayerCount, uvs.Count - uvLayerCount);
+            }
+
+            for (int layer = 0; layer < uvLayerCount; layer++)
+            {
+                // Fill the list if we added more UV layers
+                if (uvs.Count <= layer)
+                {
+                    uvs.Add(new InteropVector2[vertexCount]);
+                }
+                else // Ensure there's enough storage space for UV data
+                {
+                    var uv = uvs[layer];
+                    InteropLogger.Debug($"Resize uvs[{layer}] from {uv.Length} to {vertexCount}");
+
+                    Array.Resize(ref uv, vertexCount);
+                    uvs[layer] = uv;
+
+                    InteropLogger.Debug($"Post resize: {uvs[layer].Length}");
+
+                }
+            }
+        }
+
+        /// <summary>
+        /// Copy all mesh data from Blender in one go and optimize down as much as possible.
+        /// </summary>
+        /// <remarks>
+        ///     Reference: LuxCoreRender/LuxCore::Scene_DefineBlenderMesh
+        ///     for the logic dealing with split normals / UVs / etc.
+        /// </remarks>
+        /// <param name="verts"></param>
+        /// <param name="loops"></param>
+        /// <param name="loopTris"></param>
+        /// <param name="loopUVs"></param>
+        /// <param name="loopCols"></param>
+        internal void CopyMeshData(
+            MVert[] verts,
+            MLoop[] loops,
+            MLoopTri[] loopTris,
+            MLoopCol[] loopCols,
+            List<MLoopUV[]> loopUVs
+        ) {
+            // In the case of split vertices - this'll resize DOWN
+            // and then resize UP again for split vertices.
+
+            Reallocate(verts.Length, loopTris.Length, loopUVs.Count, loopCols != null);
+
+            var colorScale = 1f / 255f;
+            var normalScale = 1f / 32767f;
+
+            // Copy in vertex coordinates and normals
+            for (int i = 0; i < verts.Length; i++)
+            {
+                var co = verts[i].co;
+                var no = verts[i].no;
+
+                vertices[i] = new InteropVector3(co[0], co[1], co[2]);
+
+                // Normals need to be cast from short -> float from Blender
+                normals[i] = new InteropVector3(
+                    no[0] * normalScale,
+                    no[1] * normalScale,
+                    no[2] * normalScale
+                );
+            }
+
+            // Copy UV layers
+            for (int layer = 0; layer < loopUVs.Count; layer++)
+            {
+                var uvLayer = uvs[layer];
+                for (uint i = 0; i < loopUVs[layer].Length; i++)
+                {
+                    var vertIndex = loops[i].v;
+
+                    // This will overwrite itself for shared vertices - that's fine.
+                    // We'll be handling split UVs when reading in triangle data.
+                    uvLayer[vertIndex] = new InteropVector2(
+                        loopUVs[layer][i].uv
+                    );
+                }
+            }
+
+            // Copy vertex colors if we got 'em
+            if (loopCols != null)
+            {
+                for (uint i = 0; i < loopCols.Length; i++)
+                {
+                    var vertIndex = loops[i].v;
+                    var col = loopCols[i];
+                    colors[vertIndex] = new InteropColor(
+                        col.r * colorScale,
+                        col.g * colorScale,
+                        col.b * colorScale,
+                        col.a * colorScale
+                    );
+                }
+            }
+
+            // Track what triangle vertices need to be split.
+            // This maps an index in `triangles` to an index in `loops`
+            var splitTris = new Dictionary<uint, uint>();
+
+            // Generate triangle list while identifying any vertices that will need
+            // to be split - due to having split UVs, normals, etc in the loop data.
+            for (uint t = 0; t < loopTris.Length; t++)
+            {
+                for (uint i = 0; i < 3; i++)
+                {
+                    var loopIndex = loopTris[t].tri[i];
+                    var vertIndex = loops[loopIndex].v;
+
+                    var split = false; // Assumes .v is already < verts.Length
+
+                    // TODO: Test differing normals - not applicable
+                    // here as normals are only read in from MVert
+
+                    // Determine if we should make a new vertex for split UVs
+                    for (int layer = 0; layer < loopUVs.Count && !split; layer++)
+                    {
+                        var loopUV = loopUVs[layer][loopIndex].uv;
+                        var vertUV = uvs[layer][vertIndex];
+                        // TODO: Handle floating point errors?
+                        if (loopUV[0] != vertUV.x || loopUV[1] != vertUV.y)
+                        {
+                            split = true;
+                        }
+                    }
+
+                    // If we have vertex colors, check for split colors
+                    if (loopCols != null)
+                    {
+                        var col = loopCols[loopIndex];
+                        var vertCol = colors[vertIndex];
+
+                        // TODO: Handle floating point errors?
+                        if (col.r * colorScale != vertCol.r ||
+                            col.g * colorScale  != vertCol.g ||
+                            col.b * colorScale  != vertCol.b ||
+                            col.a * colorScale  != vertCol.a
+                        ) {
+                            split = true;
+                        }
+                    }
+
+                    triangles[(t * 3) + i] = vertIndex;
+
+                    // Track if we need to split the vertex in the triangle
+                    // to a new one once we've iterated through everything
+                    if (split)
+                    {
+                        splitTris.Add((t * 3) + i, loopIndex);
+                    }
+                }
+            }
+
+            // 7958 + 32245 = 40203
+            // LOOPS are 31488
+
+            // 7958 * 3 = 23874
+            // 15744 loop triangles
+            // 31488 vertex color indices
+
+            // If we have triangle verts to split - apply all at once so there's
+            // only a single re-allocation to our arrays.
+            var totalNewVertices = splitTris.Count;
+            if (totalNewVertices > 0)
+            {
+                InteropLogger.Debug($"Splitting {totalNewVertices} vertices");
+                var newVertIndex = (uint)verts.Length;
+
+                // Reallocate everything to fit the new set of vertices
+                Reallocate(verts.Length + totalNewVertices, loopTris.Length, loopUVs.Count, loopCols != null);
+
+                // Generate new vertices with any split data (normals, UVs, colors, etc)
+                foreach (var tri in splitTris.Keys)
+                {
+                    var prevVertIndex = triangles[tri]; // MVert index
+                    var loopIndex = splitTris[tri]; // MLoop index
+
+                    // Same coordinates as the original vertex
+                    vertices[newVertIndex] = vertices[prevVertIndex];
+
+                    // TODO: If there were split normals, that'd be handled here.
+                    normals[newVertIndex] = normals[prevVertIndex];
+
+                    // Read UVs from loops again to handle any split UVs
+                    for (int layer = 0; layer < loopUVs.Count; layer++)
+                    {
+                        var uv = loopUVs[layer][loopIndex].uv;
+
+                        uvs[layer][newVertIndex] = new InteropVector2(uv);
+                    }
+
+                    // Same deal for vertex colors - copy from the loop
+                    if (loopCols != null)
+                    {
+                        var col = loopCols[loopIndex];
+
+                        // Convert to floating point for Unity
+                        colors[newVertIndex] = new InteropColor(
+                            col.r * colorScale,
+                            col.g * colorScale,
+                            col.b * colorScale,
+                            col.a * colorScale
+                        );
+                    }
+
+                    // And finally update the triangle to point to the new vertex
+                    triangles[tri] = newVertIndex;
+                    newVertIndex++;
+                }
+            }
         }
     }
 }

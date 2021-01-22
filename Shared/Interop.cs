@@ -172,7 +172,43 @@ namespace Coherence
         ///     Payload: <see cref="InteropVector2"/>[]
         /// </para>
         /// </summary>
-        UpdateUVs,
+        UpdateUV,
+
+        /// <summary>
+        /// Notify Unity that a range of object UV2s have been modified.
+        ///
+        /// <para>
+        ///     Payload: <see cref="InteropVector2"/>[]
+        /// </para>
+        /// </summary>
+        UpdateUV2,
+
+        /// <summary>
+        /// Notify Unity that a range of object UV3s have been modified.
+        ///
+        /// <para>
+        ///     Payload: <see cref="InteropVector2"/>[]
+        /// </para>
+        /// </summary>
+        UpdateUV3,
+
+        /// <summary>
+        /// Notify Unity that a range of object UV4s have been modified.
+        ///
+        /// <para>
+        ///     Payload: <see cref="InteropVector2"/>[]
+        /// </para>
+        /// </summary>
+        UpdateUV4,
+
+        /// <summary>
+        /// Notify Unity that a range of vertex colors have been modified.
+        ///
+        /// <para>
+        ///     Payload: <see cref="InteropColor32"/>[]
+        /// </para>
+        /// </summary>
+        UpdateVertexColors,
 
         /// <summary>
         /// Notify Unity that the active material name for a
@@ -205,13 +241,26 @@ namespace Coherence
         public int index;
 
         /// <summary>
-        /// Number of elements in the array, if an array of data
+        /// Total number of elements in the array, if an array of items
+        /// </summary>
+        public int length;
+
+        /// <summary>
+        /// Number of elements in this particular message, if an array of items.
+        ///
+        /// This may differ from <see cref="length"/> if the array
+        /// has been split into multiple smaller messages - or we
+        /// are only sending deltas of an array
         /// </summary>
         public int count;
 
+        // TODO: Some sort of "total array size" for array fragments.
+        // This would let us preallocate the array to before receiving
+        // multiple fragments to fill it (e.g. vertex data)
+
         public override int GetHashCode()
         {
-            return base.GetHashCode(); // TODO: Impl.
+            return base.GetHashCode();
         }
 
         public override bool Equals(object obj)
@@ -219,6 +268,7 @@ namespace Coherence
             return obj is InteropMessageHeader o
                 && o.type == type
                 && o.index == index
+                && o.length == length
                 && o.count == count;
         }
     }
@@ -317,7 +367,7 @@ namespace Coherence
     {
         // Layout matches UnityEngine.Matrix4x4... maybe?
         // This might be better to organize our way and
-        // manually map to a unity Matrix4x4 on the other side.
+        // manually map to a Unity Matrix4x4 on the other side.
         public float m00;
         public float m33;
         public float m23;
@@ -348,10 +398,42 @@ namespace Coherence
         public int objectCount;
     }
 
+    /// <summary>
+    /// Type information for <see cref="InteropSceneObject"/> so Unity
+    ///  knows how to represent the particular Blender object in the scene.
+    /// </summary>
     public enum SceneObjectType
     {
         Mesh = 1,
         Other,
+    }
+
+    /// <summary>
+    /// How to display an object within Unity - controllable from Blender.
+    /// Specific render modes would override all materials for that object.
+    /// </summary>
+    public enum ObjectDisplayMode
+    {
+        /// <summary>Use Unity materials associated with the object (default)</summary>
+        Material = 0,
+
+        /// <summary>Render normal information</summary>
+        Normals,
+
+        /// <summary>Render vertex color information</summary>
+        VertexColors,
+
+        /// <summary>Checker pattern for the UV channel</summary>
+        UV,
+
+        /// <summary>Checker pattern for the UV2 channel</summary>
+        UV2,
+
+        /// <summary>Checker pattern for the UV3 channel</summary>
+        UV3,
+
+        /// <summary>Checker pattern for the UV4 channel</summary>
+        UV4,
     }
 
     /// <summary>
@@ -447,23 +529,57 @@ namespace Coherence
         public InteropString64 name;
 
         public SceneObjectType type;
+
+        /// <summary>
+        /// How to display this object in Unity
+        /// </summary>
+        public ObjectDisplayMode display;
+
+        /// <summary>
+        /// World space transformation
+        /// </summary>
         public InteropMatrix4x4 transform;
-
-        /// <summary>
-        /// Number of <see cref="InteropVector3"/> elements in the vertex array.
-        /// This will also control the size of normal/UV/weight/etc arrays.
-        /// </summary>
-        public int vertexCount;
-
-        /// <summary>
-        /// Number of <see cref="int"/> elements in the triangle array
-        /// </summary>
-        public int triangleCount;
 
         /// <summary>
         /// Name of the material used by this object
         /// </summary>
         public InteropString64 material;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct InteropVector2
+    {
+        public float x;
+        public float y;
+
+        public InteropVector2(float[] xy)
+        {
+            this.x = xy[0];
+            this.y = xy[1];
+        }
+
+        internal bool Approx(InteropVector2 v)
+        {
+            var epsilon = 1e-6f;
+
+            return Math.Abs(x - v.x) < epsilon
+                && Math.Abs(y - v.y) < epsilon;
+        }
+
+        public override string ToString()
+        {
+            return $"({x}, {y})";
+        }
+
+        public override int GetHashCode()
+        {
+            return base.GetHashCode();
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is InteropVector2 vector && Approx(vector);
+        }
     }
 
     /// <summary>
@@ -513,42 +629,6 @@ namespace Coherence
         }
     }
 
-    [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    public struct InteropVector2
-    {
-        public float x;
-        public float y;
-
-        public InteropVector2(float[] xy)
-        {
-            this.x = xy[0];
-            this.y = xy[1];
-        }
-
-        internal bool Approx(InteropVector2 v)
-        {
-            var epsilon = 1e-6f;
-
-            return Math.Abs(x - v.x) < epsilon
-                && Math.Abs(y - v.y) < epsilon;
-        }
-
-        public override string ToString()
-        {
-            return $"({x}, {y})";
-        }
-
-        public override int GetHashCode()
-        {
-            return base.GetHashCode();
-        }
-
-        public override bool Equals(object obj)
-        {
-            return obj is InteropVector2 vector && Approx(vector);
-        }
-    }
-
     /// <summary>
     /// Structure that matches the layout of a UnityEngine.BoneWeight
     /// </summary>
@@ -572,6 +652,26 @@ namespace Coherence
         public byte r;
         public byte g;
         public byte b;
+    }
+
+    /// <summary>
+    /// Floating point color that aligns with <see cref="UnityEngine.Color"/>.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct InteropColor
+    {
+        public InteropColor(float r, float g, float b, float a)
+        {
+            this.r = r;
+            this.g = g;
+            this.b = b;
+            this.a = a;
+        }
+
+        public float r;
+        public float g;
+        public float b;
+        public float a;
     }
 
     /// <summary>
@@ -711,12 +811,14 @@ namespace Coherence
         /// <param name="data"></param>
         public void Queue<T>(RpcRequest type, string target, ref T data) where T : struct
         {
+            InteropLogger.Debug($"    Q-> {target}:{type:F}");
             outboundQueue.Enqueue(new InteropMessage
             {
                 target = target,
                 header = new InteropMessageHeader {
                     type = type,
                     index = 0,
+                    length = 0,
                     count = 0
                 },
                 payload = FastStructure.ToBytes(ref data)
@@ -728,19 +830,27 @@ namespace Coherence
             var header = new InteropMessageHeader {
                 type = type,
                 index = 0,
+                length = 0,
                 count = 0
             };
 
             var payload = FastStructure.ToBytes(ref data);
 
             // If it's already queued, replace the payload
-            var queued = FindQueuedMessage(target, ref header);
+            /*var queued = FindQueuedMessage(target, ref header);
             if (queued != null)
             {
                 queued.payload = payload;
                 return true;
-            }
+            }*/
 
+            // Remove the old one to then queue up one at the end
+            // This ensures messages that are queued up together
+            // remain in their queued order.
+            RemoveQueuedMessage(target, ref header);
+
+
+            InteropLogger.Debug($"    ROQ-> {target}:{header.type:F}");
             outboundQueue.Enqueue(new InteropMessage
             {
                 target = target,
@@ -762,6 +872,20 @@ namespace Coherence
             }
 
             return null;
+        }
+
+        private void RemoveQueuedMessage(string target, ref InteropMessageHeader header)
+        {
+            var replacement = new Queue<InteropMessage>();
+            foreach (var message in outboundQueue)
+            {
+                if (message.target != target || !message.header.Equals(header))
+                {
+                    replacement.Enqueue(message);
+                }
+            }
+
+            outboundQueue = replacement;
         }
 
         /// <summary>
@@ -794,6 +918,7 @@ namespace Coherence
             var header = new InteropMessageHeader {
                 type = type,
                 index = 0,
+                length = data.Length,
                 count = data.Length
             };
 
@@ -803,12 +928,18 @@ namespace Coherence
             // would be pointing to the same data anyway.
 
             // If it's already queued, we don't need to do anything.
-            var queued = FindQueuedMessage(target, ref header);
+            /*var queued = FindQueuedMessage(target, ref header);
             if (queued != null)
             {
                 return true;
-            }
+            }*/
 
+            // Remove the old one to then queue up one at the end
+            // This ensures messages that are queued up together
+            // remain in their queued order.
+            RemoveQueuedMessage(target, ref header);
+
+            InteropLogger.Debug($"    ROQA-> {target}:{type:F}");
             outboundQueue.Enqueue(new InteropMessage
             {
                 target = target,
@@ -905,9 +1036,9 @@ namespace Coherence
         /// consumed, sans the header.
         /// </summary>
         /// <param name="consumer"></param>
-        public void Read(Func<string, InteropMessageHeader, IntPtr, int> consumer)
+        public int Read(Func<string, InteropMessageHeader, IntPtr, int> consumer)
         {
-            int finalBytesRead = messageConsumer.Read((ptr) =>
+            return messageConsumer.Read((ptr) =>
             {
                 int bytesRead = 0;
 
@@ -936,7 +1067,7 @@ namespace Coherence
                 // InteropLogger.Debug($"Consume {bytesRead} bytes - {header.type} for `{targetName}`");
 
                 return bytesRead;
-            }, 5);
+            }, 0);
         }
 
         /// <summary>
@@ -1028,12 +1159,18 @@ namespace Coherence
                 InteropLogger.Warning($"Outbound queue is at {outboundQueue.Count()} messages");
             }
 
-            // Only dequeue a message once we have an available node for writing
-            int bytesWritten = messageProducer.Write((ptr) =>
+            // Pump the queue until we fill the outbound buffer
+            int bytesWritten;
+            do
             {
-                var next = outboundQueue.Dequeue();
-                return WriteMessage(next, ptr);
-            }, 5);
+                // Only dequeue a message once we have an available node for writing
+                bytesWritten = messageProducer.Write((ptr) =>
+                {
+                    var next = outboundQueue.Dequeue();
+                    InteropLogger.Debug($"    W-> {next.target}:{next.header.type:F}");
+                    return WriteMessage(next, ptr);
+                }, 0);
+            } while (bytesWritten > 0 && outboundQueue.Count() > 0);
         }
 
         internal void ClearQueue()

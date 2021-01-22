@@ -234,7 +234,7 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
     def on_changed_visible_ids(self, visible_ids):
         """Notify the bridge that the visibility list has changed
 
-        Parameters:
+        Args:
             visible_ids (List[int])
         """
         debug('BRIDGE: Update Visible ID List {}'.format(visible_ids))
@@ -253,7 +253,7 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
     def update_viewport_camera(self, context):
         """Update the current InteropCamera instance from the render thread context
 
-        Parameters:
+        Args:
             context (bpy.types.Context): Render thread context
         """
         space = context.space_data
@@ -316,35 +316,40 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
 
         lib.ReleaseRenderTextureLock(self.viewport_id)
 
+    def draw_unity_view(self):
+        self.shader.bind()
+
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self.bindcode)
+
+        self.shader.uniform_int('image', 0)
+        self.batch.draw(self.shader)
+
+    def draw_disconnected_view(self):
+        #glClearColor(0, 0, 0, 1.0)
+        #glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+
+        blf.position(0, 15, 30, 0)
+        blf.size(0, 20, 72)
+        blf.color(0, 0.8, 0, 0, 1.0)
+        blf.draw(0, 'Not Connected to Unity')
+
     def view_draw(self, context, depsgraph):
         """Called whenever Blender redraws the 3D viewport"""
         scene = depsgraph.scene
 
-        # debug('[RENDER] start')
-        self.update_viewport_camera(context)
-        self.update_render_texture()
+        self.bind_display_space_shader(scene)
 
-        # glEnable(GL_DEPTH_TEST)
+        if self.connected:
+            self.update_viewport_camera(context)
+            self.update_render_texture()
 
-        if self.connected and self.bindcode != -1:
-            self.bind_display_space_shader(scene)
-            self.shader.bind()
-
-            glActiveTexture(GL_TEXTURE0)
-            glBindTexture(GL_TEXTURE_2D, self.bindcode)
-
-            self.shader.uniform_int('image', 0)
-            self.batch.draw(self.shader)
-
-            self.unbind_display_space_shader()
+            if self.bindcode != -1:
+                self.draw_unity_view()
         elif not self.connected:
-            glClearColor(0, 0, 0, 1.0)
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+            self.draw_disconnected_view()
 
-            blf.position(0, 15, 30, 0)
-            blf.size(0, 20, 72)
-            blf.color(0, 0.8, 0, 0, 1.0)
-            blf.draw(0, 'Not Connected to Unity')
+        self.unbind_display_space_shader()
 
         # # We grab the lock to be able to write the current camera
         # # state as well as avoid reading the render texture while
