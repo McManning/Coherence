@@ -80,7 +80,7 @@ namespace Coherence
         internal readonly ArrayBuffer<Vector3> vertices = new ArrayBuffer<Vector3>();
         internal readonly ArrayBuffer<int> triangles = new ArrayBuffer<int>();
         internal readonly ArrayBuffer<Vector3> normals = new ArrayBuffer<Vector3>();
-        internal readonly ArrayBuffer<Color> colors = new ArrayBuffer<Color>();
+        internal readonly ArrayBuffer<Color32> colors = new ArrayBuffer<Color32>();
         internal readonly ArrayBuffer<Vector2> uv = new ArrayBuffer<Vector2>();
         internal readonly ArrayBuffer<Vector2> uv2 = new ArrayBuffer<Vector2>();
         internal readonly ArrayBuffer<Vector2> uv3 = new ArrayBuffer<Vector2>();
@@ -242,7 +242,7 @@ namespace Coherence
                 mesh.vertices = vertices.Read();
                 mesh.normals = normals.Read();
                 mesh.triangles = triangles.Read();
-                mesh.colors = colors.Read();
+                mesh.colors32 = colors.Read();
                 mesh.uv = uv.Read();
                 mesh.uv2 = uv2.Read();
                 mesh.uv3 = uv3.Read();

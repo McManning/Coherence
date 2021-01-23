@@ -99,6 +99,15 @@ class CoherenceObjectProperties(PropertyGroup):
         update=update_object_properties
     )
 
+    optimize_mesh: BoolProperty(
+        name='Optimize Mesh',
+        description='Optimize (compress) vertex data prior to sending to Unity. ' +
+                    'With this option turned off - full loops will be transmitted which may negatively ' +
+                    'impact performance or lookdev in Unity when compared with an export of the same mesh',
+        default=True,
+        update=update_object_properties
+    )
+
     @classmethod
     def register(cls):
         bpy.types.Object.coherence = PointerProperty(

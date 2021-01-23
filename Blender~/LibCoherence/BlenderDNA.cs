@@ -74,12 +74,23 @@ namespace Coherence
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
-    public struct MLoopUV
+    public struct MLoopUV : IInteropConvertible<InteropVector2>
     {
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 2)]
         public float[] uv;
 
         public int flag;
+
+        public InteropVector2 ToInterop()
+        {
+            return new InteropVector2(uv);
+        }
+
+        public bool Equals(InteropVector2 vec)
+        {
+            return uv[0] == vec.x
+                && uv[1] == vec.y;
+        }
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
@@ -92,9 +103,22 @@ namespace Coherence
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
-    public struct MLoopCol
+    public struct MLoopCol : IInteropConvertible<InteropColor32>
     {
         public byte r, g, b, a;
+
+        public InteropColor32 ToInterop()
+        {
+            return new InteropColor32(r, g, b, a);
+        }
+
+        public bool Equals(InteropColor32 col)
+        {
+            return r == col.r
+                && g == col.g
+                && b == col.b
+                && a == col.a;
+        }
     }
 
     // This is only really needed for custom split normals.

@@ -436,7 +436,8 @@ class BridgeDriver:
 
         self.lib.SetObjectProperties(
             get_string_buffer(obj.name),
-            int(obj.coherence.display_mode)
+            int(obj.coherence.display_mode),
+            int(obj.coherence.optimize_mesh)
             # ... etc
         )
 

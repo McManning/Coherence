@@ -393,13 +393,15 @@ namespace Coherence
         [DllExport]
         public static int SetObjectProperties(
             [MarshalAs(UnmanagedType.LPStr)] string name,
-            ObjectDisplayMode display
+            ObjectDisplayMode display,
+            int optimizeMesh
         ) {
             try
             {
                 var obj = Bridge.GetObject(name);
 
                 obj.data.display = display;
+                obj.optimize = optimizeMesh == 1;
                 // TODO: Whatever other nonsense.
                 // Materials?
 

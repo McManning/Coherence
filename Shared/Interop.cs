@@ -24,6 +24,13 @@ namespace Coherence
         void Deserialize(T interopData);
     }
 
+    public interface IInteropConvertible<T> where T : struct
+    {
+        T ToInterop();
+
+        bool Equals(T interop);
+    }
+
     public enum RpcRequest : byte
     {
         /// <summary>
@@ -595,6 +602,13 @@ namespace Coherence
             this.z = z;
         }
 
+        public InteropVector3(float[] co)
+        {
+            x = co[0];
+            y = co[1];
+            z = co[2];
+        }
+
         public float x;
         public float y;
         public float z;
@@ -655,12 +669,12 @@ namespace Coherence
     }
 
     /// <summary>
-    /// Floating point color that aligns with <see cref="UnityEngine.Color"/>.
+    /// Floating point color that aligns with <see cref="UnityEngine.Color32"/>.
     /// </summary>
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    public struct InteropColor
+    public struct InteropColor32
     {
-        public InteropColor(float r, float g, float b, float a)
+        public InteropColor32(byte r, byte g, byte b, byte a)
         {
             this.r = r;
             this.g = g;
@@ -668,10 +682,10 @@ namespace Coherence
             this.a = a;
         }
 
-        public float r;
-        public float g;
-        public float b;
-        public float a;
+        public byte r;
+        public byte g;
+        public byte b;
+        public byte a;
     }
 
     /// <summary>
