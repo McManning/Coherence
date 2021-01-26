@@ -573,7 +573,7 @@ namespace Coherence
         public InteropVector2(float x, float y)
         {
             this.x = x;
-            this.y = x;
+            this.y = y;
         }
 
         internal bool Approx(InteropVector2 v)
@@ -586,7 +586,7 @@ namespace Coherence
 
         public override string ToString()
         {
-            return $"({x}, {y})";
+            return $"InteropVector2({x}, {y})";
         }
 
         public override int GetHashCode()
@@ -606,6 +606,10 @@ namespace Coherence
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct InteropVector3
     {
+        public float x;
+        public float y;
+        public float z;
+
         public InteropVector3(float x, float y, float z)
         {
             this.x = x;
@@ -619,10 +623,6 @@ namespace Coherence
             y = co[1];
             z = co[2];
         }
-
-        public float x;
-        public float y;
-        public float z;
 
         public static InteropVector3 operator +(InteropVector3 a, InteropVector3 b)
         {
@@ -640,7 +640,7 @@ namespace Coherence
 
         public override string ToString()
         {
-            return $"({x}, {y}, {z})";
+            return $"InteropVector3({x}, {y}, {z})";
         }
 
         public override int GetHashCode()

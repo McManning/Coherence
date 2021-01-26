@@ -82,8 +82,8 @@ class BridgeDriver:
         self.lib.Disconnect.restype = c_int
         self.lib.Clear.restype = c_int
         self.lib.SetViewportCamera.argtypes = (c_int, InteropCamera)
-        self.lib.CopyVertices.argtypes = (c_void_p, c_void_p, c_uint, c_void_p, c_uint)
-        self.lib.CopyLoopTriangles.argtypes = (c_void_p, c_void_p, c_uint)
+        #self.lib.CopyVertices.argtypes = (c_void_p, c_void_p, c_uint, c_void_p, c_uint)
+        #self.lib.CopyLoopTriangles.argtypes = (c_void_p, c_void_p, c_uint)
         self.lib.CopyMeshData.argtypes = (
             c_void_p,   # name
             c_uint,     # loopCount

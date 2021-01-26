@@ -467,72 +467,6 @@ namespace Coherence
         #region Mesh Data API
 
         /// <summary>
-        /// Read an array of <see cref="MVert"/> from Blender to push updated
-        /// vertex coordinates and normals with Unity.
-        /// </summary>
-        [DllExport]
-        public static int CopyVertices(
-        #pragma warning disable IDE0060 // Remove unused parameter
-            [MarshalAs(UnmanagedType.LPStr)] string name,
-            [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 2)] MLoop[] loops,
-            uint loopCount,
-            [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 4)] MVert[] vertices,
-            uint verticesCount
-        #pragma warning restore IDE0060 // Remove unused parameter
-        ) {
-            InteropLogger.Debug($"Copy {loops.Length} loops and {vertices.Length} vertices for `{name}`");
-
-            try
-            {
-                var obj = Bridge.GetObject(name);
-
-                obj.CopyFromMVerts(vertices);
-                obj.CopyFromMLoops(loops);
-
-                // Followed by changes to the vertex coordinate and normals
-                Bridge.SendArray(RpcRequest.UpdateVertices, obj.Name, obj.Vertices, true);
-                Bridge.SendArray(RpcRequest.UpdateNormals, obj.Name, obj.Normals, true);
-
-                return 1;
-            }
-            catch (Exception e)
-            {
-                SetLastError(e);
-                return -1;
-            }
-        }
-
-        /// <summary>
-        /// Read an array of <see cref="MLoopTri"/> from Blender to push updated
-        /// triangle indices to Unity
-        /// </summary>
-        [DllExport]
-        public static int CopyLoopTriangles(
-        #pragma warning disable IDE0060 // Remove unused parameter
-            [MarshalAs(UnmanagedType.LPStr)] string name,
-            [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 2)] MLoopTri[] loopTris,
-            uint loopTrisCount
-        #pragma warning restore IDE0060 // Remove unused parameter
-        ) {
-            InteropLogger.Debug($"Copy {loopTris.Length} loop triangles for `{name}`");
-
-            try
-            {
-                var obj = Bridge.GetObject(name);
-
-                obj.CopyFromMLoopTris(loopTris);
-
-                Bridge.SendArray(RpcRequest.UpdateTriangles, obj.Name, obj.Triangles, true);
-                return 1;
-            }
-            catch (Exception e)
-            {
-                SetLastError(e);
-                return -1;
-            }
-        }
-
-        /// <summary>
         /// Perform a copy of <b>all</b> available mesh data to Unity in one go.
         /// </summary>
         [DllExport]
@@ -567,6 +501,7 @@ namespace Coherence
                 if (loopUV3s != null) loopUVLayers.Add(loopUV3s);
                 if (loopUV4s != null) loopUVLayers.Add(loopUV4s);*/
 
+                /*
                 obj.CopyMeshData(
                     verts,
                     loops,
@@ -574,6 +509,7 @@ namespace Coherence
                     loopCols,
                     loopUVLayers
                 );
+                */
 
                 // TODO: Eventually make this just send deltas whenever possible
                 // assuming it's cheaper to calculate the deltas than to just send
@@ -640,7 +576,8 @@ namespace Coherence
                     new NativeArray<MVert>(verts, vertsSize),
                     new NativeArray<MLoop>(loops, loopsSize),
                     new NativeArray<MLoopTri>(loopTris, loopTrisSize),
-                    new NativeArray<MLoopCol>(loopCols, loopsSize)
+                    new NativeArray<MLoopCol>(loopCols, loopsSize),
+                    new NativeArray<MLoopUV>(loopUVs, loopsSize)
                 );
 
                 obj.SendDirty();
