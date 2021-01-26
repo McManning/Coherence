@@ -14,6 +14,21 @@ namespace Coherence
     /// </summary>
     class Bridge : IDisposable
     {
+        public static Bridge Instance
+        {
+            get
+            {
+                if (instance == null)
+                {
+                    instance = new Bridge();
+                }
+
+                return instance;
+            }
+        }
+
+        private static Bridge instance;
+
         const string VIEWPORT_IMAGE_BUFFER = "_UnityViewportImage";
         const string UNITY_MESSAGES_BUFFER = "_UnityMessages";
         const string BLENDER_MESSAGES_BUFFER = "_BlenderMessages";
@@ -285,10 +300,22 @@ namespace Coherence
                 return;
             }
 
-            if (messages.ReplaceOrQueueArray(type, target, data, allowSplitMessages))
+            messages.ReplaceOrQueueArray(type, target, data, allowSplitMessages);
+        }
+
+        internal void SendBuffer<T>(RpcRequest type, string target, ArrayBuffer<T> buffer, bool useDirtyRange = false) where T : struct
+        {
+            if (!IsConnectedToSharedMemory || buffer.IsEmpty)
             {
-                InteropLogger.Debug($"Replaced queued {type} for {target}");
+                return;
             }
+
+            InteropLogger.Debug(
+                $"SendBuffer target={target} type={type} length={buffer.Length} " +
+                $"useDirtyRange={useDirtyRange} dirty=[{buffer.DirtyStart}, {buffer.DirtyEnd}])"
+            );
+
+            messages.ReplaceOrQueueBuffer(type, target, buffer, useDirtyRange);
         }
 
         /// <summary>
@@ -302,6 +329,9 @@ namespace Coherence
                 return;
             }
 
+            obj.SendAll();
+
+            /*
             SendArray(RpcRequest.UpdateVertices, obj.Name, obj.Vertices, true);
             SendArray(RpcRequest.UpdateNormals, obj.Name, obj.Normals, true);
 
@@ -320,6 +350,7 @@ namespace Coherence
             // (e.g. booleans on which buffers should be active)
 
             SendArray(RpcRequest.UpdateTriangles, obj.Name, obj.Triangles, true);
+            */
         }
 
         /// <summary>

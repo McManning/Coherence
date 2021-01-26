@@ -25,7 +25,9 @@ namespace Coherence
     /// </summary>
     class Program
     {
-        public static Bridge Bridge { get; } = new Bridge();
+        public static Bridge Bridge {
+            get => Bridge.Instance;
+        }
 
         public static string LastError { get; private set; }
 
@@ -560,10 +562,10 @@ namespace Coherence
 
                 // Make a list of lists for included UVs
                 var loopUVLayers = new List<MLoopUV[]>();
-                if (loopUVs != null) loopUVLayers.Add(loopUVs);
+                /*if (loopUVs != null) loopUVLayers.Add(loopUVs);
                 if (loopUV2s != null) loopUVLayers.Add(loopUV2s);
                 if (loopUV3s != null) loopUVLayers.Add(loopUV3s);
-                if (loopUV4s != null) loopUVLayers.Add(loopUV4s);
+                if (loopUV4s != null) loopUVLayers.Add(loopUV4s);*/
 
                 obj.CopyMeshData(
                     verts,
@@ -597,7 +599,51 @@ namespace Coherence
                 // this one - so maybe not worth the extra effort.
 
                 // Send ALL the data to Unity.
-                Bridge.SendAllMeshData(obj);
+                obj.SendAll();
+
+                return 1;
+            }
+            catch (Exception e)
+            {
+                SetLastError(e);
+                return -1;
+            }
+        }
+
+        /// <summary>
+        /// Perform a copy of <b>all</b> available mesh data to Unity in one go.
+        /// </summary>
+        [DllExport]
+        public static int CopyMeshDataNative(
+            [MarshalAs(UnmanagedType.LPStr)] string name,
+            IntPtr loops,
+            int loopsSize,
+            IntPtr loopTris,
+            int loopTrisSize,
+            IntPtr verts,
+            int vertsSize,
+            // Only one vertex color layer is supported.
+            IntPtr loopCols,
+            // TODO: More dynamic UV support. Until then - we support up to 4 UV layers.
+            IntPtr loopUVs,
+            IntPtr loopUV2s,
+            IntPtr loopUV3s,
+            IntPtr loopUV4s
+        ) {
+            InteropLogger.Debug($"Native Copy {loopsSize} loops for `{name}`");
+
+            try
+            {
+                var obj = Bridge.GetObject(name);
+
+                obj.CopyMeshDataNative(
+                    new NativeArray<MVert>(verts, vertsSize),
+                    new NativeArray<MLoop>(loops, loopsSize),
+                    new NativeArray<MLoopTri>(loopTris, loopTrisSize),
+                    new NativeArray<MLoopCol>(loopCols, loopsSize)
+                );
+
+                obj.SendDirty();
 
                 return 1;
             }

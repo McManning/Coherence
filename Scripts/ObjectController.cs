@@ -5,69 +5,10 @@ using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace Coherence
 {
-    public class ArrayBuffer<T> where T : struct
-    {
-        public T[] data;
-        public bool isDirty;
-
-        public T[] Read()
-        {
-            isDirty = false;
-            return data;
-        }
-
-        /// <summary>
-        /// Resize the buffer and mark dirty until the next call
-        /// to <see cref="Read"/>.
-        /// </summary>
-        /// <param name="size"></param>
-        /// <returns></returns>
-        public ArrayBuffer<T> Resize(int size)
-        {
-            if (data == null)
-            {
-                data = new T[size];
-            }
-            else
-            {
-                Array.Resize(ref data, size);
-            }
-
-            isDirty = true;
-            return this;
-        }
-
-        /// <summary>
-        /// Fill the buffer from the source memory location and mark
-        /// dirty until the next call to <see cref="Read"/>.
-        /// </summary>
-        /// <param name="ptr"></param>
-        /// <param name="index"></param>
-        /// <param name="count"></param>
-        /// <returns></returns>
-        public ArrayBuffer<T> Fill(IntPtr ptr, int index, int count)
-        {
-            FastStructure.ReadArray(data, ptr, index, count);
-            isDirty = true;
-            return this;
-        }
-
-        /// <summary>
-        /// Deallocate the buffer and mark dirty until the next call
-        /// to <see cref="Read"/>.
-        /// </summary>
-        /// <returns></returns>
-        public ArrayBuffer<T> Clear()
-        {
-            data = null;
-            isDirty = true;
-            return this;
-        }
-    }
-
     [ExecuteAlways]
     public class ObjectController : MonoBehaviour
     {
@@ -91,13 +32,13 @@ namespace Coherence
         MeshRenderer meshRenderer;
         MaterialPropertyBlock materialProperties;
 
+        bool applyDirtiedBuffers;
+
         public void Sync()
         {
-            // TODO: A better per-buffer isDirty check.
-            // Once I can confirm everything is safe to move to buffers.
-            if (triangles.isDirty) // || normals.isDirty)
+            if (applyDirtiedBuffers)
             {
-             //   isDirty = false;
+                applyDirtiedBuffers = false;
                 UpdateMesh();
             }
         }
@@ -180,6 +121,23 @@ namespace Coherence
             }
 
             Data = obj;
+
+            if (HasDirtyBuffers())
+            {
+                applyDirtiedBuffers = true;
+            }
+        }
+
+        bool HasDirtyBuffers()
+        {
+            return vertices.IsDirty
+                || colors.IsDirty
+                || triangles.IsDirty
+                || uv.IsDirty
+                || uv2.IsDirty
+                || uv3.IsDirty
+                || uv4.IsDirty
+                || normals.IsDirty;
         }
 
         void SetMaterial(string name)
@@ -221,60 +179,69 @@ namespace Coherence
 
         void UpdateMesh()
         {
-            // Skip if we're still waiting on more data to fill in
-            if (mesh == null || triangles == null || vertices == null)
+            Debug.Log("UPDATE MESH");
+
+            // If vertex length changes - Unity will throw a fit since we can't
+            // just fill buffers without it trying to second guess us each step.
+            //
+            // This is especially common with metaballs.
+            // So we assume vertex length changes = everything will be dirtied.
+            // Not a great assumption though so.. TODO! :)
+            if (vertices.Length != mesh.vertices.Length)
             {
-                return;
+                mesh.Clear();
             }
 
-            // TODO: Figure out if we've filled out these arrays.
-            // Each OnUpdate* would probably let us fill in a min/max
-            // range value (assuming no gaps between ranges...).
-            // Alternatively - screw it. Who cares if there's a bunch
-            // of zeroed data while waiting for more batches.
-
-            // Upload to Unity's managed mesh data
-            mesh.Clear();
-            try
+            // Channels that were dirtied from last time get loaded.
+            if (vertices.IsDirty)
             {
-                // TODO: Only really needs to be filled if dirtied.
-                // Could save on performance for larger meshes.
+                Debug.Log($"Dirty vertices={vertices.Length}");
                 mesh.vertices = vertices.Read();
+            }
+
+            if (normals.IsDirty)
+            {
+                Debug.Log($"Dirty normals={normals.Length}");
                 mesh.normals = normals.Read();
+            }
+
+            if (triangles.IsDirty)
+            {
+                Debug.Log($"Dirty triangles={triangles.Length}");
+
+                // Change index format for large Blender meshes - when needed
+                if (triangles.Length > short.MaxValue)
+                {
+                    mesh.indexFormat = IndexFormat.UInt32;
+                }
+                else
+                {
+                    mesh.indexFormat = IndexFormat.UInt16;
+                }
+
                 mesh.triangles = triangles.Read();
+            }
+
+
+            if (colors.IsDirty)
                 mesh.colors32 = colors.Read();
+
+            if (uv.IsDirty)
                 mesh.uv = uv.Read();
+
+            if (uv2.IsDirty)
                 mesh.uv2 = uv2.Read();
+
+            if (uv3.IsDirty)
                 mesh.uv3 = uv3.Read();
+
+            if (uv4.IsDirty)
                 mesh.uv4 = uv4.Read();
 
-                // TODO: Additional channels
-                // mesh.boneWeights =
-                // mesh.bindposes =
-                // mesh.tangents =
-            }
-            catch (Exception e)
-            {
-                // Removing subd from blender errors out on 226 for:
-                // Failed setting triangles. Some indices are referencing out of bounds vertices. IndexCount: 188928, VertexCount: 507
-
-                // Probably due to the ordering of getting mesh data. We get updated verts first (with new count smaller)
-                // and then use the old indices list until we get the updated indices immediately after.
-                // TODO: We might need a footer message for "yes here's everything, please rebuild the mesh now"
-
-                // TODO: Seems like this is uncatchable. Raised from UnityEngine.Mesh:set_triangles(Int32[])
-                Debug.LogWarning($"Could not copy Blender mesh data: {e}");
-            }
-
-            // We check for normal length here because if a vertex array
-            // update comes in and we rebuild the mesh *before* a followup
-            // normals array comes in - they could differ in size if the
-            // mesh has vertices added/removed from within Blender.
-            /*if (normals.data != null && normals.data.Length == vertices.Length)
-            {
-                mesh.normals = normals.data;
-            }*/
-
+            // TODO: Additional channels
+            // mesh.boneWeights =
+            // mesh.bindposes =
+            // mesh.tangents =
 
             // mesh.MarkModified();
 

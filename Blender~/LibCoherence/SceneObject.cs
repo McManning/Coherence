@@ -1,9 +1,22 @@
-﻿using System;
+﻿using SharedMemory;
+using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 namespace Coherence
 {
+    internal static class DictionaryExtensions
+    {
+        public static TValue GetValueOrDefault<TKey, TValue>(this Dictionary<TKey, TValue> dict, TKey key, TValue defaultValue = default) {
+            if (dict.ContainsKey(key))
+            {
+                return dict[key];
+            }
+
+            return defaultValue;
+        }
+    }
+
     /// <summary>
     /// A distinct object in a blender scene
     /// </summary>
@@ -111,6 +124,7 @@ namespace Coherence
         /// <param name="loops"></param>
         internal void CopyFromMLoops(MLoop[] loops)
         {
+            #if LEGACY
             if (cachedLoops == null)
             {
                 cachedLoops = new MLoop[loops.Length];
@@ -123,6 +137,7 @@ namespace Coherence
             Array.Copy(loops, cachedLoops, loops.Length);
 
             InteropLogger.Debug($"Copy {loops.Length} loops");
+            #endif
         }
 
         /// <summary>
@@ -131,6 +146,7 @@ namespace Coherence
         /// <param name="verts"></param>
         internal void CopyFromMVerts(MVert[] verts)
         {
+            #if LEGACY
             var count = verts.Length;
             if (_vertices == null)
             {
@@ -200,6 +216,7 @@ namespace Coherence
                 $"** Changed {changedVertexCount} vertices within index range " +
                 $"[{rangeStart}, {rangeEnd}] covering {rangeEnd - rangeStart} vertices"
             );
+            #endif
         }
 
         /// <summary>
@@ -214,6 +231,7 @@ namespace Coherence
         /// <param name="loopTris"></param>
         internal void CopyFromMLoopTris(MLoopTri[] loopTris)
         {
+            #if LEGACY
             var count = loopTris.Length * 3;
             if (_triangles == null)
             {
@@ -232,14 +250,15 @@ namespace Coherence
                 // TODO: Can this be any faster? This indirect lookup sucks,
                 // but might be the best we can do with the way Blender
                 // organizes data.
-                _triangles[j] = cachedLoops[loop.tri[0]].v;
-                _triangles[j + 1] = cachedLoops[loop.tri[1]].v;
-                _triangles[j + 2] = cachedLoops[loop.tri[2]].v;
+                _triangles[j] = cachedLoops[loop.tri_0].v;
+                _triangles[j + 1] = cachedLoops[loop.tri_1].v;
+                _triangles[j + 2] = cachedLoops[loop.tri_2].v;
 
                 // Console.WriteLine($" - {triangles[j]}, {triangles[j + 1]},  {triangles[j + 2]}");
             }
 
             InteropLogger.Debug($"Copied {_triangles.Length} triangle indices");
+            #endif
         }
 
         /// <summary>
@@ -255,6 +274,7 @@ namespace Coherence
         /// <param name="loopUVs"></param>
         internal void CopyFromMLoopUV(int layer, MLoopUV[] loopUVs)
         {
+            #if LEGACY
             var count = _vertices.Length;
 
             if (!uvLayers.TryGetValue(layer, out InteropVector2[] uv))
@@ -272,8 +292,9 @@ namespace Coherence
                 // since we crush them down and don't try to split verts.
                 // TODO: Improve on this.
                 var v = cachedLoops[i].v; // Vertex index
-                uv[v] = new InteropVector2(loopUVs[i].uv);
+                uv[v] = loopUVs[i].ToInterop();
             }
+            #endif
         }
 
         public InteropSceneObject Serialize()
@@ -297,6 +318,7 @@ namespace Coherence
         /// <param name="uvLayerCount"></param>
         private void Reallocate(int vertexCount, int triangleCount, int uvLayerCount, bool hasColors)
         {
+            #if LEGACY
             if (_triangles == null)
             {
                 _triangles = new uint[triangleCount * 3];
@@ -369,6 +391,7 @@ namespace Coherence
 
                 }
             }
+            #endif
         }
 
         /// <summary>
@@ -381,6 +404,7 @@ namespace Coherence
             MLoopCol[] loopCols,
             List<MLoopUV[]> loopUVs
         ) {
+            #if LEGACY
             Reallocate(loops.Length, loopTris.Length, loopUVs.Count, loopCols != null);
 
             // Normals need to be cast from short -> float from Blender
@@ -427,6 +451,7 @@ namespace Coherence
                     _triangles[(t * 3) + i] = loopTris[t].tri[i];
                 }
             }
+            #endif
         }
 
         /// <summary>
@@ -441,13 +466,14 @@ namespace Coherence
         /// <param name="loopTris"></param>
         /// <param name="loopUVs"></param>
         /// <param name="loopCols"></param>
-        internal void CopyMeshData(
+        internal void CopyMeshData_V1(
             MVert[] verts,
             MLoop[] loops,
             MLoopTri[] loopTris,
             MLoopCol[] loopCols,
             List<MLoopUV[]> loopUVs
         ) {
+            #if LEGACY
             // In the case of split vertices - this'll resize DOWN
             // and then resize UP again for split vertices.
 
@@ -614,44 +640,43 @@ namespace Coherence
                     newVertIndex++;
                 }
             }
+            #endif
         }
 
         // Raw data from Blender - cached for later memcmp calls
-        ArrayBuffer<MLoop> loops;
-        ArrayBuffer<MVert> verts;
-        ArrayBuffer<MLoopTri> loopTris;
-        ArrayBuffer<MLoopCol> loopCols;
+        NativeArray<MLoop> loops = new NativeArray<MLoop>();
+        NativeArray<MVert> verts = new NativeArray<MVert>();
+        NativeArray<MLoopTri> loopTris = new NativeArray<MLoopTri>();
+        NativeArray<MLoopCol> loopCols = new NativeArray<MLoopCol>();
+
         // ... and so on
 
         // Buffers converted from Blender data to an interop format
-        ArrayBuffer<InteropVector3> vertices;
-        ArrayBuffer<InteropVector3> normals;
-        ArrayBuffer<InteropColor32> colors;
-        List<ArrayBuffer<InteropVector2>> uvs;
+        ArrayBuffer<InteropVector3> vertices = new ArrayBuffer<InteropVector3>();
+        ArrayBuffer<InteropVector3> normals = new ArrayBuffer<InteropVector3>();
+        ArrayBuffer<InteropColor32> colors = new ArrayBuffer<InteropColor32>();
+
         // ... and so on
-        ArrayBuffer<int> triangles;
+
+        ArrayBuffer<int> triangles = new ArrayBuffer<int>();
 
         /// <summary>
         /// Mapping an index in <see cref="loops"/> to a split vertex index in <see cref="vertices"/>
         /// </summary>
         Dictionary<int, int> splitVertices = new Dictionary<int, int>();
 
-        internal void CopyMeshData_V2(
-            MVert[] verts,
-            MLoop[] loops,
-            MLoopTri[] loopTris,
-            MLoopCol[] loopCols,
-            List<MLoopUV[]> loopUVs
+        internal void CopyMeshDataNative(
+            NativeArray<MVert> verts,
+            NativeArray<MLoop> loops,
+            NativeArray<MLoopTri> loopTris,
+            NativeArray<MLoopCol> loopCols
         ) {
-            bool dirtyVertices = false;
-            bool dirtyNormals = false;
-            bool dirtyColors = false;
-            bool dirtyTriangles = false;
-
             // A change of unique vertex count or a change to the primary
             // loop mapping (loop index -> vertex index) requires a full rebuild.
+            // This will hit frequently for things like Metaballs that change often
             if (verts.Length != this.verts.Length || !this.loops.Equals(loops))
             {
+                InteropLogger.Debug($"CopyMeshData - rebuild all");
                 this.loops.CopyFrom(loops);
                 this.verts.CopyFrom(verts);
                 this.loopCols.CopyFrom(loopCols);
@@ -660,81 +685,137 @@ namespace Coherence
                 this.loopTris.CopyFrom(loopTris);
 
                 RebuildAll();
-                SendAll();
                 return;
             }
 
-            int addedVertices = 0;
+            int prevVertexCount = vertices.Length;
 
-            // Rebuild dirtied channels and aggregate how many
-            // split vertices we needed to add while rebuilding
+            // Trigger rebuild of buffers based on whether the Blender data changed.
+
             if (!this.verts.Equals(verts))
             {
+                InteropLogger.Debug("CopyMeshData - !verts.Equals");
                 this.verts.CopyFrom(verts);
-                addedVertices += RebuildVertices();
-                addedVertices += RebuildNormals();
-                dirtyVertices = true;
-                dirtyNormals = true;
+                RebuildVertices();
+                RebuildNormals();
             }
 
             if (!this.loopCols.Equals(loopCols))
             {
+                InteropLogger.Debug("CopyMeshData - !colors.Equals");
                 this.loopCols.CopyFrom(loopCols);
-                // addedVertices += RebuildColors();
-                addedVertices += RebuildBuffer(this.loopCols, colors);
-                dirtyColors = true;
+                RebuildBuffer(this.loopCols, colors);
             }
 
             // ... and so on
 
+
+            InteropLogger.Debug("CopyMeshData - Check triangles");
 
             // If any of the channels created new split vertices
             // we need to rebuild the full triangle buffer to re-map
             // old loop triangle indices to new split vertex indices
-            if (addedVertices > 0 || !this.loopTris.Equals(loopTris))
+            if (prevVertexCount != vertices.Length || !this.loopTris.Equals(loopTris))
             {
+                InteropLogger.Debug($"CopyMeshData - !loopTris.Equals or prev {prevVertexCount} != {vertices.Length}");
+
                 this.loopTris.CopyFrom(loopTris);
                 RebuildTriangles();
-                dirtyTriangles = true;
+            }
+        }
+
+        internal void CopyMeshData(
+            MVert[] verts,
+            MLoop[] loops,
+            MLoopTri[] loopTris,
+            MLoopCol[] loopCols,
+            List<MLoopUV[]> loopUVs
+        ) {
+        #if LEGACY
+            /* OK - WORKS
+
+            // TEMP - Rebuild all. Always.
+            this.loops.CopyFrom(loops);
+            this.verts.CopyFrom(verts);
+            this.loopCols.CopyFrom(loopCols);
+            // ... and so on
+
+            this.loopTris.CopyFrom(loopTris);
+
+            RebuildAll();
+            return;
+            */
+
+            InteropLogger.Debug($"CopyMeshData - Check loops {this.loops} vs {loops} at length {loops.Length}");
+            InteropLogger.Debug($"CopyMeshData - And verts {this.verts} vs {verts} at Length={verts.Length}");
+
+            bool matchLength = verts.Length != this.verts.Length;
+            InteropLogger.Debug($"Match length={matchLength}");
+
+            // error here.
+            bool loopsEquivalent = this.loops.Equals(loops);
+            InteropLogger.Debug($"Match loops: {loopsEquivalent}");
+
+            // A change of unique vertex count or a change to the primary
+            // loop mapping (loop index -> vertex index) requires a full rebuild.
+            if (verts.Length != this.verts.Length || !this.loops.Equals(loops))
+            {
+                InteropLogger.Debug($"CopyMeshData - verts {verts.Length} != {this.verts.Length} || !loops.Equals");
+                this.loops.CopyFrom(loops);
+                this.verts.CopyFrom(verts);
+                this.loopCols.CopyFrom(loopCols);
+                // ... and so on
+
+                this.loopTris.CopyFrom(loopTris);
+
+                RebuildAll();
+                return;
             }
 
-            // Send each updated channel to Unity.
+            int prevVertexCount = vertices.Length;
 
-            // If a channel was dirtied - we send the whole thing.
-            // Otherwise if we added new split verts triggered by an adjacent
-            // channel's update - we send just the new vertex data.
+            InteropLogger.Debug("CopyMeshData - Check verts");
 
-            // Example: if the user updates vertex colors and causes 20 new split
-            // vertices to be added to a 30k vertex model, we'll send a buffer
-            // of 30k vertex colors and then 20 vertices, 20 normals, 20 uvs, [etc]
-            // instead of sending 30k values per-channel.
-            int offset = vertices.Length - addedVertices;
+            // Trigger rebuild of buffers based on
+            // whether the Blender data changed.
+            if (!this.verts.Equals(verts))
+            {
+                InteropLogger.Debug("CopyMeshData - !verts.Equals");
+                this.verts.CopyFrom(verts);
+                RebuildVertices();
+                RebuildNormals();
+            }
 
-            if (dirtyVertices)
-                SendBuffer(RpcRequest.UpdateVertices, vertices);
-            else if (addedVertices > 0)
-                SendBuffer(RpcRequest.UpdateVertices, vertices, offset);
+            InteropLogger.Debug("CopyMeshData - Check loopCols");
+            if (!this.loopCols.Equals(loopCols))
+            {
+                InteropLogger.Debug("CopyMeshData - !colors.Equals");
 
-            if (dirtyNormals)
-                SendBuffer(RpcRequest.UpdateNormals, normals);
-            else if (addedVertices > 0)
-                SendBuffer(RpcRequest.UpdateNormals, normals, offset);
-
-            if (dirtyColors)
-                SendBuffer(RpcRequest.UpdateVertexColors, colors);
-            else if (addedVertices > 0)
-                SendBuffer(RpcRequest.UpdateVertexColors, colors, offset);
+                this.loopCols.CopyFrom(loopCols);
+                // addedVertices += RebuildColors();
+                RebuildBuffer(this.loopCols, colors);
+            }
 
             // ... and so on
 
-            if (dirtyTriangles)
-                SendBuffer(RpcRequest.UpdateTriangles, triangles);
 
-            SendApplyChanges();
+            InteropLogger.Debug("CopyMeshData - Check triangles");
+            // If any of the channels created new split vertices
+            // we need to rebuild the full triangle buffer to re-map
+            // old loop triangle indices to new split vertex indices
+            if (prevVertexCount != vertices.Length || !this.loopTris.Equals(loopTris))
+            {
+                InteropLogger.Debug($"CopyMeshData - !loopTris.Equals or prev {prevVertexCount} != {vertices.Length}");
+
+                this.loopTris.CopyFrom(loopTris);
+                RebuildTriangles();
+            }
+            #endif
         }
 
         void RebuildAll()
         {
+            InteropLogger.Debug($"RebuildAll name={Name}");
             splitVertices.Clear();
 
             RebuildVertices();
@@ -753,9 +834,16 @@ namespace Coherence
             // in a prior pass (thus already have the data filled out)
             vertices.Resize(verts.Length + splitVertices.Count);
 
+            InteropLogger.Debug($"RebuildVertices name={Name}, Length={vertices.Length}");
+
             for (int i = 0; i < verts.Length; i++)
             {
-                vertices[i] = new InteropVector3(verts[i].co);
+                var vert = verts[i];
+                vertices[i] = new InteropVector3(
+                    vert.co_x,
+                    vert.co_y,
+                    vert.co_z
+                );
             }
 
             // Also update all existing split vertices to match
@@ -775,17 +863,18 @@ namespace Coherence
             // We assume it always happens AFTER RebuildVertices
             normals.Resize(vertices.Length);
 
+            InteropLogger.Debug($"RebuildNormals name={Name}, Length={normals.Length}");
+
             // Normals need to be cast from short -> float from Blender
             var normalScale = 1f / 32767f;
 
             for (int i = 0; i < verts.Length; i++)
             {
-                var no = verts[i].no;
-
+                var vert = verts[i];
                 normals[i] = new InteropVector3(
-                    no[0] * normalScale,
-                    no[1] * normalScale,
-                    no[2] * normalScale
+                    vert.no_x * normalScale,
+                    vert.no_y * normalScale,
+                    vert.no_z * normalScale
                 );
             }
 
@@ -807,26 +896,24 @@ namespace Coherence
         {
             triangles.Resize(loopTris.Length * 3);
 
+            InteropLogger.Debug($"RebuildTriangles name={Name}, Length={triangles.Length}");
+
             for (int t = 0; t < loopTris.Length; t++)
             {
-                for (int i = 0; i < 2; i++)
-                {
-                    int loopIndex = (int)loopTris[t].tri[i];
+                var loopTri = loopTris[t];
+                int tri0 = (int)loopTri.tri_0;
+                int tri1 = (int)loopTri.tri_1;
+                int tri2 = (int)loopTri.tri_2;
 
-                    // If the triangle vert has been mapped to a split vertex,
-                    // use that instead of the original vertex
-                    if (splitVertices.ContainsKey(loopIndex))
-                    {
-                        triangles[t * 3 + i] = splitVertices[loopIndex];
-                    }
-                    else
-                    {
-                        triangles[t * 3 + i] = (int)loops[loopIndex].v;
-                    }
-                }
+                // If the triangle vert has been mapped to a split vertex,
+                // use that instead of the original vertex
+                triangles[t * 3 + 0] = splitVertices.GetValueOrDefault(tri0, (int)loops[tri0].v);
+                triangles[t * 3 + 1] = splitVertices.GetValueOrDefault(tri1, (int)loops[tri1].v);
+                triangles[t * 3 + 2] = splitVertices.GetValueOrDefault(tri2, (int)loops[tri2].v);
             }
         }
 
+        #if LEGACY
         int RebuildColors()
         {
             // No vertex color data - clear everything.
@@ -886,6 +973,7 @@ namespace Coherence
 
             return splitCount;
         }
+        #endif
 
         /// <summary>
         /// Generic implementation of mapping an array of Blender structs to interop structs.
@@ -902,14 +990,14 @@ namespace Coherence
         /// <param name="target">Array of interop structs for Unity. Must be aligned to <see cref="vertices"/></param>
         /// <returns></returns>
         int RebuildBuffer<TSource, TTarget>(
-            ArrayBuffer<TSource> source,
+            NativeArray<TSource> source,
             ArrayBuffer<TTarget> target
         )
         where TSource : struct, IInteropConvertible<TTarget>
         where TTarget : struct
         {
             // No data in this buffer - clear target.
-            if (source.IsEmpty)
+            if (source.Length < 1)
             {
                 target.Clear();
                 return 0;
@@ -917,6 +1005,11 @@ namespace Coherence
 
             // Match the target channel to the vertex length
             target.Resize(vertices.Length);
+
+            InteropLogger.Debug(
+                $"RebuildBuffer name={Name}, Length={target.Length}, " +
+                $"TSource={typeof(TSource)}, TTarget={typeof(TTarget)}"
+            );
 
             int splitCount = 0;
             var written = new bool[target.Length];
@@ -956,6 +1049,8 @@ namespace Coherence
                 target[vertIndex] = val.ToInterop();
             }
 
+            InteropLogger.Debug($"RebuildBuffer name={Name} - Split {splitCount} vertices");
+
             return splitCount;
         }
 
@@ -982,123 +1077,86 @@ namespace Coherence
             return newIndex;
         }
 
-        void SendAll()
+        /// <summary>
+        /// Send all buffers to Unity - regardless of dirtied status
+        /// </summary>
+        internal void SendAll()
         {
-            SendBuffer(RpcRequest.UpdateVertices, vertices);
-            SendBuffer(RpcRequest.UpdateNormals, normals);
-            SendBuffer(RpcRequest.UpdateVertexColors, colors);
+            var b = Bridge.Instance;
+
+            InteropLogger.Debug($"SendAll name={Name}");
+
+            b.SendBuffer(RpcRequest.UpdateVertices, Name, vertices);
+            b.SendBuffer(RpcRequest.UpdateNormals, Name, normals);
+            b.SendBuffer(RpcRequest.UpdateVertexColors, Name, colors);
             // ... and so on
 
-            SendBuffer(RpcRequest.UpdateTriangles, triangles);
+            b.SendBuffer(RpcRequest.UpdateTriangles, Name, triangles);
 
             SendApplyChanges();
+
+            // Clean everything - Unity should be synced.
+            CleanAllBuffers();
         }
 
         /// <summary>
-        /// Send the buffer to Unity if it is non-empty.
-        ///
-        /// If <paramref name="offset"/> is defined, only the buffer starting at offset will be sent.
+        /// Send all dirtied buffers to Unity
         /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="request"></param>
-        /// <param name="buffer"></param>
-        /// <param name="offset"></param>
-        void SendBuffer<T>(RpcRequest request, ArrayBuffer<T> buffer, int offset = 0) where T : struct
+        internal void SendDirty()
         {
-            if (buffer.IsEmpty)
-            {
-                return;
-            }
+            var b = Bridge.Instance;
 
-            // TODO: If it existed previous and was removed,
-            // we need to send something for that.
-            // Maybe apply changes lists all active channels?
-            // Or it just sends a 0 length array (seems less efficient though)
+            // If a channel was dirtied - we send the range of elements modified.
+            // A change to one channel may dirty others.
+            // Example: if the user updates vertex colors and causes 20 new split
+            // vertices to be added to a 30k vertex model, we'll send a buffer
+            // of 30k vertex colors and then 20 vertices, 20 normals, 20 uvs, [etc]
 
-            // TODO: Send.
+            // TODO: Eventually will send just the dirtied fragments.
+            // Need to add support on Unity's side.
 
-            // TODO: This can be in the bridge as a method instead.
+            if (vertices.IsDirty)
+                b.SendBuffer(RpcRequest.UpdateVertices, Name, vertices);
+
+            if (normals.IsDirty)
+                b.SendBuffer(RpcRequest.UpdateNormals, Name, normals);
+
+            if (colors.IsDirty)
+                b.SendBuffer(RpcRequest.UpdateVertexColors, Name, colors);
+
+            // ... and so on
+
+            // Triangles sent regardless right now - that's how Unity updates.
+            //if (triangles.IsDirty)
+                b.SendBuffer(RpcRequest.UpdateTriangles, Name, triangles);
+
+            SendApplyChanges();
+
+            CleanAllBuffers();
         }
 
+        void CleanAllBuffers()
+        {
+            // Reset dirty status on buffers
+            vertices.Clean();
+            normals.Clean();
+            colors.Clean();
+            // ... and so on
+
+            triangles.Clean();
+        }
+
+        /// <summary>
+        /// Notify Unity that it's safe to apply any dirtied buffers to the mesh.
+        ///
+        /// This happens after any number of buffers have been sent
+        /// </summary>
         void SendApplyChanges()
         {
-
-        }
-    }
-
-    public class LowLevel
-    {
-        #pragma warning disable IDE1006 // Naming Styles
-
-        // Via: https://stackoverflow.com/a/1445405
-        [DllImport("msvcrt.dll", CallingConvention=CallingConvention.Cdecl)]
-        public static extern int memcmp(byte[] b1, byte[] b2, long count);
-
-        #pragma warning restore IDE1006 // Naming Styles
-    }
-
-    public class ArrayBuffer<T> where T : struct
-    {
-        T[] data;
-
-        public int Length {
-            get => data.Length;
-        }
-
-        public bool IsEmpty
-        {
-            get => data == null || data.Length < 1;
-        }
-
-        public bool Equals(T[] other)
-        {
-            // Alternatively - SequenceEqual with spans
-            // (see: https://stackoverflow.com/questions/43289/comparing-two-byte-arrays-in-net)
-            // but that's assuming .NET support that we don't necessarily have atm
-            return other.Length == data.Length
-                && LowLevel.memcmp(other as byte[], data as byte[], other.Length) == 0;
-        }
-
-        public void CopyFrom(T[] other)
-        {
-            // do work copying into .data
-        }
-
-        /// <summary>
-        /// Add a new T to the end of the buffer - resizing where necessary
-        /// </summary>
-        public void Add(T value)
-        {
-            // Do the thing that List<> does.
-        }
-
-        /// <summary>
-        /// Add a new <typeparamref name="T"/> to the end of the buffer
-        /// - copied from the specified index
-        /// </summary>
-        /// <param name="index"></param>
-        public void AppendCopy(int index)
-        {
-            if (!IsEmpty)
-            {
-                Add(data[index]);
-            }
-        }
-
-        public T this[int index]
-        {
-            get => data[index];
-            set => data[index] = value;
-        }
-
-        public void Resize(int length)
-        {
-            //TODO
-        }
-
-        public void Clear()
-        {
-            data = null;
+            // Instead of using a new message, we'll just reuse the update message
+            // for now - it'll also sync up transforms/other stateful information
+            // TODO: Probably use a separate message for this?
+            Bridge.Instance.SendEntity(RpcRequest.UpdateSceneObject, this);
         }
     }
 }

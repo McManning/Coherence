@@ -226,6 +226,11 @@ namespace Coherence
         /// </para>
         /// </summary>
         UpdateMaterial,
+
+        /// <summary>
+        /// Notify Unity to apply updates to queued buffers
+        /// </summary>
+        ApplyMeshUpdates,
     }
 
     public enum RpcResponse : byte
@@ -563,6 +568,12 @@ namespace Coherence
         {
             this.x = xy[0];
             this.y = xy[1];
+        }
+
+        public InteropVector2(float x, float y)
+        {
+            this.x = x;
+            this.y = x;
         }
 
         internal bool Approx(InteropVector2 v)
@@ -918,7 +929,7 @@ namespace Coherence
         /// <param name="target"></param>
         /// <param name="data"></param>
         /// <param name="allowSplitMessages"></param>
-        public bool ReplaceOrQueueArray<T>(RpcRequest type, string target, T[] data, bool allowSplitMessages) where T : struct
+        public void ReplaceOrQueueArray<T>(RpcRequest type, string target, T[] data, bool allowSplitMessages) where T : struct
         {
             var headerSize = FastStructure.SizeOf<InteropMessageHeader>();
             var elementSize = FastStructure.SizeOf<T>();
@@ -977,8 +988,44 @@ namespace Coherence
                     return elementSize * hdr.count;
                 }
             });
+        }
 
-            return false;
+        public void ReplaceOrQueueBuffer<T>(RpcRequest type, string target, ArrayBuffer<T> buffer, bool useDirtyRange = false) where T : struct
+        {
+             var headerSize = FastStructure.SizeOf<InteropMessageHeader>();
+            var elementSize = FastStructure.SizeOf<T>();
+
+            if (headerSize + elementSize * buffer.Length > messageProducer.NodeBufferSize)
+            {
+                throw new Exception($"Cannot queue {buffer.Length} elements of {typeof(T)} - will not fit in a single message");
+            }
+
+            var header = new InteropMessageHeader {
+                type = type,
+                length = buffer.Length,
+                // Subset is based on whether or not we're going to use the dirty info or not
+                index = (useDirtyRange) ? buffer.DirtyStart : 0,
+                count = (useDirtyRange) ? buffer.DirtyLength : buffer.Length,
+            };
+
+            // Remove any queued messages with the same outbound header
+            RemoveQueuedMessage(target, ref header);
+
+            InteropLogger.Debug($"    ROQB-> {target}:{type:F}");
+            outboundQueue.Enqueue(new InteropMessage
+            {
+                target = target,
+                header = header,
+                producer = (tar, hdr, ptr) => {
+                    if (hdr.count < 1 || hdr.index + hdr.count > buffer.Length)
+                    {
+                        throw new Exception($"Producer out of range of dataset - {hdr.type} - {tar}");
+                    }
+
+                    buffer.CopyTo(ptr, hdr.index, hdr.count);
+                    return elementSize * hdr.count;
+                }
+            });
         }
 
         /*

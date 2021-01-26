@@ -486,49 +486,49 @@ namespace Coherence
                         GetObject(target)
                             .triangles
                             .Resize(header.length)
-                            .Fill(ptr, header.index, header.count);
+                            .CopyFrom(ptr, header.index, header.count);
                         break;
                     case RpcRequest.UpdateVertices:
                         GetObject(target)
                             .vertices
                             .Resize(header.length)
-                            .Fill(ptr, header.index, header.count);
+                            .CopyFrom(ptr, header.index, header.count);
                         break;
                     case RpcRequest.UpdateNormals:
                         GetObject(target)
                             .normals
                             .Resize(header.length)
-                            .Fill(ptr, header.index, header.count);
+                            .CopyFrom(ptr, header.index, header.count);
                         break;
                     case RpcRequest.UpdateUV:
                         GetObject(target)
                             .uv
                             .Resize(header.length)
-                            .Fill(ptr, header.index, header.count);
+                            .CopyFrom(ptr, header.index, header.count);
                         break;
                     case RpcRequest.UpdateUV2:
                         GetObject(target)
                             .uv2
                             .Resize(header.length)
-                            .Fill(ptr, header.index, header.count);
+                            .CopyFrom(ptr, header.index, header.count);
                         break;
                     case RpcRequest.UpdateUV3:
                         GetObject(target)
                             .uv3
                             .Resize(header.length)
-                            .Fill(ptr, header.index, header.count);
+                            .CopyFrom(ptr, header.index, header.count);
                         break;
                     case RpcRequest.UpdateUV4:
                         GetObject(target)
                             .uv4
                             .Resize(header.length)
-                            .Fill(ptr, header.index, header.count);
+                            .CopyFrom(ptr, header.index, header.count);
                         break;
                     case RpcRequest.UpdateVertexColors:
                         GetObject(target)
                             .colors
                             .Resize(header.length)
-                            .Fill(ptr, header.index, header.count);
+                            .CopyFrom(ptr, header.index, header.count);
                         break;
                     // TODO: ... and so on for weights/bones/etc
                     default:

@@ -56,11 +56,17 @@ namespace Coherence
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
     public struct MVert
     {
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 3)]
-        public float[] co;
+        //[MarshalAs(UnmanagedType.ByValArray, SizeConst = 3)]
+        //public float[] co;
+        public float co_x;
+        public float co_y;
+        public float co_z;
 
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 3)]
-        public short[] no;
+        //[MarshalAs(UnmanagedType.ByValArray, SizeConst = 3)]
+        //public short[] no;
+        public short no_x;
+        public short no_y;
+        public short no_z;
 
         public char flag;
         public char bweight;
@@ -76,28 +82,33 @@ namespace Coherence
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
     public struct MLoopUV : IInteropConvertible<InteropVector2>
     {
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 2)]
-        public float[] uv;
+        //[MarshalAs(UnmanagedType.ByValArray, SizeConst = 2)]
+        //public float[] uv;
+        public float u;
+        public float v;
 
         public int flag;
 
         public InteropVector2 ToInterop()
         {
-            return new InteropVector2(uv);
+            return new InteropVector2(u, v);
         }
 
         public bool Equals(InteropVector2 vec)
         {
-            return uv[0] == vec.x
-                && uv[1] == vec.y;
+            return u == vec.x
+                && v == vec.y;
         }
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
     public struct MLoopTri
     {
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 3)]
-        public uint[] tri;
+        //[MarshalAs(UnmanagedType.ByValArray, SizeConst = 3)]
+        //public uint[] tri;
+        public uint tri_0;
+        public uint tri_1;
+        public uint tri_2;
 
         public uint poly;
     }

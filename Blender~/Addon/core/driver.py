@@ -92,11 +92,28 @@ class BridgeDriver:
             c_void_p,   # loopTris
             c_uint,     # verticesCount
             c_void_p,   # verts
+            c_void_p,   # loopCols
             c_void_p,   # loopUVs
             c_void_p,   # loopUV2s
             c_void_p,   # loopUV3s
             c_void_p,   # loopUV4s
         )
+
+        self.lib.CopyMeshDataNative.argtypes = (
+            c_void_p,   # name
+            c_void_p,   # loops
+            c_uint,     # loopSize
+            c_void_p,   # loopTris
+            c_uint,     # loopTrisSize
+            c_void_p,   # verts
+            c_uint,     # verticesSize
+            c_void_p,   # loopCols
+            c_void_p,   # loopUVs
+            c_void_p,   # loopUV2s
+            c_void_p,   # loopUV3s
+            c_void_p,   # loopUV4s
+        )
+
         self.lib.GetRenderTexture.argtypes = (c_uint, )
         self.lib.GetRenderTexture.restype = RenderTextureData
 
@@ -486,6 +503,7 @@ class BridgeDriver:
             if len(mesh.uv_layers[layer].data) > 0:
                 uv_ptr[layer] = mesh.uv_layers[layer].data[0].as_pointer()
 
+        """
         self.lib.CopyMeshData(
             name_buf,
             len(mesh.loops),
@@ -494,6 +512,23 @@ class BridgeDriver:
             mesh.loop_triangles[0].as_pointer(),
             len(mesh.vertices),
             mesh.vertices[0].as_pointer(),
+            cols_ptr,
+            uv_ptr[0],
+            uv_ptr[1],
+            uv_ptr[2],
+            uv_ptr[3]
+        )
+        """
+
+
+        self.lib.CopyMeshDataNative(
+            name_buf,
+            mesh.loops[0].as_pointer(),
+            len(mesh.loops),
+            mesh.loop_triangles[0].as_pointer(),
+            len(mesh.loop_triangles),
+            mesh.vertices[0].as_pointer(),
+            len(mesh.vertices),
             cols_ptr,
             uv_ptr[0],
             uv_ptr[1],
@@ -527,26 +562,26 @@ class BridgeDriver:
 
         # TODO: Don't do this repeately. Only if the root changes transform.
         # seems to be lagging out the interop.
-        #self.lib.SetObjectTransform(
-        #    self.METABALLS_OBJECT_NAME,
-        #    to_interop_matrix4x4(obj.matrix_world)
-        #)
-
-        self.lib.CopyMeshData(
+        self.lib.SetObjectTransform(
             self.METABALLS_OBJECT_NAME,
-            len(mesh.loops),
+            to_interop_matrix4x4(obj.matrix_world)
+        )
+
+        self.lib.CopyMeshDataNative(
+            self.METABALLS_OBJECT_NAME,
             mesh.loops[0].as_pointer(),
-            len(mesh.loop_triangles),
+            len(mesh.loops),
             mesh.loop_triangles[0].as_pointer(),
-            len(mesh.vertices),
+            len(mesh.loop_triangles),
             mesh.vertices[0].as_pointer(),
+            len(mesh.vertices),
             # Metaballs don't have UV/Vertex Color information,
-            # So we skip all that on upload (cheaper as well)
-            None,
-            None,
-            None,
-            None,
-            None
+            # So we skip all that on upload
+            None,   # loopCols
+            None,   # uv
+            None,   # uv2
+            None,   # uv3
+            None    # uv4
         )
 
         eval_obj.to_mesh_clear()
