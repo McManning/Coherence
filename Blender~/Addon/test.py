@@ -256,16 +256,31 @@ def experimental():
     # data = bridge.GetRenderTexture(14, 100, 60)
     # print(data.viewportId, data.width, data.height, data.pixels)
 
+class InteropString64(Structure):
+    _fields_ = [
+        ('buffer', c_char * 64)
+    ]
+
+def test_string_array():
+
+    buffer = (InteropString64 * 32)()
+
+    write_count = bridge.GetTextureSlots(byref(buffer), 32)
+
+    print(write_count)
+    print(buffer[0].buffer)
+    print(buffer[write_count - 1].buffer)
 
 if __name__ == '__main__':
-    fourteen = bridge.Fourteen()
-    if fourteen != 14:
-        raise Exception('Could not query Bridge.Fourteen. DLL might be borked')
+    test_string_array()
 
-    print(fourteen)
+    #fourteen = bridge.Fourteen()
+    #if fourteen != 14:
+    #    raise Exception('Could not query Bridge.Fourteen. DLL might be borked')
 
-    add_mock_scene()
+    #print(fourteen)
 
-    run()
+    #add_mock_scene()
 
-# Viewport camera would just be a raw ass matrix, right?
+    #run()
+

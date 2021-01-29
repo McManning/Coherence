@@ -575,7 +575,6 @@ namespace Coherence
 
                     if (!val.Equals(prevVal)) {
                         vertIndex = Split(i);
-                        InteropLogger.Debug($"!! SPLIT loop={i} - {loops[i].v} -> {vertIndex}");
                         splitCount++;
                     }
                 }
@@ -625,13 +624,13 @@ namespace Coherence
 
             InteropLogger.Debug($"SendAll name={Name}");
 
-            b.SendBuffer(RpcRequest.UpdateVertices, Name, vertices);
-            b.SendBuffer(RpcRequest.UpdateNormals, Name, normals);
-            b.SendBuffer(RpcRequest.UpdateVertexColors, Name, colors);
-            b.SendBuffer(RpcRequest.UpdateUV, Name, uvs);
+            b.SendArray(RpcRequest.UpdateVertices, Name, vertices);
+            b.SendArray(RpcRequest.UpdateNormals, Name, normals);
+            b.SendArray(RpcRequest.UpdateVertexColors, Name, colors);
+            b.SendArray(RpcRequest.UpdateUV, Name, uvs);
             // ... and so on
 
-            b.SendBuffer(RpcRequest.UpdateTriangles, Name, triangles);
+            b.SendArray(RpcRequest.UpdateTriangles, Name, triangles);
 
             SendApplyChanges();
 
@@ -654,23 +653,24 @@ namespace Coherence
 
             // TODO: Eventually will send just the dirtied fragments.
             // Need to add support on Unity's side.
+            // E.g. b.SendArray(RpcRequest.UpdateVertices, Name, vertices.GetDirtyRange());
 
             if (vertices.IsDirty)
-                b.SendBuffer(RpcRequest.UpdateVertices, Name, vertices);
+                b.SendArray(RpcRequest.UpdateVertices, Name, vertices);
 
             if (normals.IsDirty)
-                b.SendBuffer(RpcRequest.UpdateNormals, Name, normals);
+                b.SendArray(RpcRequest.UpdateNormals, Name, normals);
 
             if (colors.IsDirty)
-                b.SendBuffer(RpcRequest.UpdateVertexColors, Name, colors);
+                b.SendArray(RpcRequest.UpdateVertexColors, Name, colors);
 
             if (uvs.IsDirty)
-                b.SendBuffer(RpcRequest.UpdateUV, Name, uvs);
+                b.SendArray(RpcRequest.UpdateUV, Name, uvs);
 
             // ... and so on
 
             if (triangles.IsDirty)
-                b.SendBuffer(RpcRequest.UpdateTriangles, Name, triangles);
+                b.SendArray(RpcRequest.UpdateTriangles, Name, triangles);
 
             SendApplyChanges();
 

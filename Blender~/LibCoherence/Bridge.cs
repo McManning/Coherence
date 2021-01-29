@@ -1,9 +1,8 @@
 ﻿
+using SharedMemory;
 using System;
 using System.Collections.Generic;
-using System.Linq; // TODO: Drop Linq usage
 using System.Runtime.ExceptionServices;
-using SharedMemory;
 
 namespace Coherence
 {
@@ -276,81 +275,18 @@ namespace Coherence
             messages.ReplaceOrQueue(type, entity.Name, ref data);
         }
 
-        /// <summary>
-        /// Send an array of <typeparamref name="T"/> to Unity, splitting into multiple
-        /// <see cref="RpcRequest"/> if all the objects cannot fit in a single message.
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="type"></param>
-        /// <param name="target"></param>
-        /// <param name="data"></param>
-        /// <param name="allowSplitMessages"></param>
-        internal void SendArray<T>(RpcRequest type, string target, T[] data, bool allowSplitMessages) where T : struct
+        internal void SendArray<T>(RpcRequest type, string target, IArray<T> buffer) where T : struct
         {
-            if (!IsConnectedToSharedMemory)
-            {
-                return;
-            }
-
-            // TODO: Zero length array support. Makes sense in some use cases
-            // but not others (e.g. don't send RpcRequest.UpdateUVs if there
-            // are no UVs to send)
-            if (data == null || data.Length < 1)
-            {
-                return;
-            }
-
-            messages.ReplaceOrQueueArray(type, target, data, allowSplitMessages);
-        }
-
-        internal void SendBuffer<T>(RpcRequest type, string target, ArrayBuffer<T> buffer, bool useDirtyRange = false) where T : struct
-        {
-            if (!IsConnectedToSharedMemory || buffer.IsEmpty)
+            if (!IsConnectedToSharedMemory || buffer.Length < 1)
             {
                 return;
             }
 
             InteropLogger.Debug(
-                $"SendBuffer target={target} type={type} length={buffer.Length} " +
-                $"useDirtyRange={useDirtyRange} dirty=[{buffer.DirtyStart}, {buffer.DirtyEnd}])"
+                $"SendBuffer target={target} type={type} length={buffer.Length}"
             );
 
-            messages.ReplaceOrQueueBuffer(type, target, buffer, useDirtyRange);
-        }
-
-        /// <summary>
-        /// Send <b>all</b> current mesh data (vertices, triangles, normals, UVs, etc) to Unity
-        /// </summary>
-        /// <param name="obj"></param>
-        internal void SendAllMeshData(SceneObject obj)
-        {
-            if (!IsConnectedToSharedMemory)
-            {
-                return;
-            }
-
-            obj.SendAll();
-
-            /*
-            SendArray(RpcRequest.UpdateVertices, obj.Name, obj.Vertices, true);
-            SendArray(RpcRequest.UpdateNormals, obj.Name, obj.Normals, true);
-
-            // Optional datasets - based on object data
-            if (obj.Colors != null) SendArray(RpcRequest.UpdateVertexColors, obj.Name, obj.Colors, true);
-            if (obj.UV != null) SendArray(RpcRequest.UpdateUV, obj.Name, obj.UV, true);
-            if (obj.UV2 != null) SendArray(RpcRequest.UpdateUV2, obj.Name, obj.UV2, true);
-            if (obj.UV3 != null) SendArray(RpcRequest.UpdateUV3, obj.Name, obj.UV3, true);
-            if (obj.UV4 != null) SendArray(RpcRequest.UpdateUV4, obj.Name, obj.UV4, true);
-
-            // TODO: There needs to be some form of "this buffer is no longer valid"
-            // type of message for all the optional ones - because if we had vertex
-            // colors then deleted them - it'll still exist on Unity's side of things.
-
-            // This could be stateful information on InteropSceneObject
-            // (e.g. booleans on which buffers should be active)
-
-            SendArray(RpcRequest.UpdateTriangles, obj.Name, obj.Triangles, true);
-            */
+            messages.QueueArray(type, target, buffer);
         }
 
         /// <summary>
@@ -370,20 +306,22 @@ namespace Coherence
                 var viewport = vp.Value;
 
                 SendEntity(RpcRequest.AddViewport, viewport);
+
+                /* TODO: Reimplement
                 SendArray(
                     RpcRequest.UpdateVisibleObjects,
                     viewport.Name,
                     viewport.VisibleObjectIds,
                     false
-                );
+                );*/
             }
 
             // THEN send current mesh data for all objects with meshes.
             // We do this last so that we can ensure Unity is completely setup and
             // ready to start accepting large data chunks.
-            foreach (var obj in Objects)
+            foreach (var obj in Objects.Values)
             {
-                SendAllMeshData(obj.Value);
+                obj.SendAll();
             }
         }
 
@@ -528,6 +466,27 @@ namespace Coherence
             var obj = Objects[name];
             SendEntity(RpcRequest.RemoveObjectFromScene, obj);
             Objects.Remove(name);
+        }
+
+        #endregion
+
+        #region Texture Sync
+
+        public readonly List<Texture> Textures = new List<Texture>()
+        {
+            new Texture("Foo"),
+            new Texture("Bar")
+        };
+
+        public Texture GetTexture(string name)
+        {
+            var match = Textures.Find((tex) => tex.Name == name);
+            if (match == null)
+            {
+                throw new Exception($"Texture `{name}` does not exist");
+            }
+
+            return match;
         }
 
         #endregion

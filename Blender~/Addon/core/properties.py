@@ -181,3 +181,56 @@ class CoherenceMaterialSettings(PropertyGroup):
     @classmethod
     def unregister(cls):
         del bpy.types.Material.coherence
+
+
+def texture_slot_enum_items(self, context):
+    slots = bridge_driver().get_texture_slots()
+    slots.insert(0, '-- Unassigned --')
+    print(slots)
+
+    return [(name, name, '') for name in slots]
+
+def on_update_texture_slot(self, context):
+    print('on_update_texture_slot', self.texture_slot)
+
+    # Test push.
+    image = self.id_data
+    bridge_driver().sync_texture(self.texture_slot, image)
+
+    #image = self.id_data # bpy.data.images['Untitled']
+    # obj = context.object # bpy.data.objects['Cube']
+
+    #bpy.ops.image.update_sync_target(image_name=image.name, sync_target=self.sync_name)
+
+
+@autoregister
+class CoherenceImageSettings(PropertyGroup):
+    src_error: StringProperty(
+        name='Source Image Error',
+        description='An error with the source image that prevents syncing with Unity',
+        default='',
+        # Errors are runtime only
+        options={'SKIP_SAVE'}
+    )
+
+    texture_slot: EnumProperty(
+        name='Texture Slot to Sync',
+        items=texture_slot_enum_items,
+        update=on_update_texture_slot,
+        default=0,
+        # Don't persist slot targets between Blender saves,
+        # as these may be modified within Unity.
+        options={'SKIP_SAVE'}
+    )
+
+    @classmethod
+    def register(cls):
+        bpy.types.Image.coherence = PointerProperty(
+            name='Coherence Image Settings',
+            description='',
+            type=cls
+        )
+
+    @classmethod
+    def unregister(cls):
+        del bpy.types.Image.coherence

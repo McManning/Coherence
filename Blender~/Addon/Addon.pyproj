@@ -24,6 +24,9 @@
   <ItemGroup>
     <Compile Include="core\driver.py" />
     <Compile Include="core\engine.py" />
+    <Compile Include="core\image.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="core\interop.py" />
     <Compile Include="core\operators.py" />
     <Compile Include="core\panels.py" />

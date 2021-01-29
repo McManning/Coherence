@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 
 #if !MOCKING
 using RGiesecke.DllExport;
+using SharedMemory;
 #else
 [AttributeUsage(AttributeTargets.Method)]
 class DllExportAttribute : Attribute
@@ -249,12 +250,14 @@ namespace Coherence
                 var viewport = Bridge.GetViewport(viewportId);
                 viewport.SetVisibleObjects(visibleObjectIds);
 
+                throw new NotImplementedException("TODO: Reimplement");
+                /*
                 Bridge.SendArray(
                     RpcRequest.UpdateVisibleObjects,
                     viewport.Name,
                     viewport.VisibleObjectIds,
                     false
-                );
+                );*/
                 return 1;
             }
             catch (Exception e)
@@ -464,12 +467,78 @@ namespace Coherence
 
         #endregion
 
+        #region Texture Sync API
+
+        /// <summary>
+        /// Return names of all texture sync slots provided by Unity
+        /// </summary>
+        /// <param name="dst">Target buffer allocated to store up to size elements</param>
+        /// <param name="size"></param>
+        /// <returns>The number of elements filled to <paramref name="dst"/></returns>
+        [DllExport]
+        public static int GetTextureSlots(IntPtr dst, int size)
+        {
+            try
+            {
+                var elementSize = FastStructure.SizeOf<InteropString64>();
+
+                var offset = dst;
+                var count = 0;
+                foreach (var texture in Bridge.Textures)
+                {
+                    var buffer = new InteropString64(texture.Name);
+                    FastStructure.StructureToPtr(ref buffer, offset);
+                    offset = IntPtr.Add(offset, elementSize);
+
+                    // Limit write to the first `size` entries
+                    if (count++ >= size) break;
+                }
+
+                return count;
+            }
+            catch (Exception e)
+            {
+                SetLastError(e);
+                return -1;
+            }
+        }
+
+        [DllExport]
+        public static int UpdateTexturePixels(
+            [MarshalAs(UnmanagedType.LPStr)] string name,
+            int width,
+            int height,
+            IntPtr pixels
+        ) {
+            InteropLogger.Debug($"Sync {width}x{height} pixels for `{name}`");
+
+            try
+            {
+                var texture = Bridge.GetTexture(name);
+
+                texture.CopyPixels(
+                    width, height,
+                    new NativeArray<float>(pixels, width * height * 4)
+                );
+
+                texture.SendDirty();
+                return 1;
+            }
+            catch (Exception e)
+            {
+                SetLastError(e);
+                return -1;
+            }
+        }
+
+        #endregion
+
         #region Mesh Data API
 
         /// <summary>
         /// Perform a copy of <b>all</b> available mesh data to Unity in one go.
         /// </summary>
-        [DllExport]
+        [DllExport] // LEGACY
         public static int CopyMeshData(
             #pragma warning disable IDE0060 // Remove unused parameter
                 [MarshalAs(UnmanagedType.LPStr)] string name,

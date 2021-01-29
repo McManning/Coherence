@@ -1,6 +1,11 @@
 
 from ctypes import *
 
+class InteropString64(Structure):
+    _fields_ = [
+        ('buffer', c_char * 64)
+    ]
+
 class InteropMatrix4x4(Structure):
     _fields_ = [
         ('m00', c_float),

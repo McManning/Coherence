@@ -114,6 +114,11 @@ namespace Coherence
             }
         }
 
+        private void DrawTextureSettings()
+        {
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("textureSlots"));
+        }
+
         private void DrawOpenWithBlender()
         {
             if (Selection.activeGameObject == null)
@@ -372,6 +377,13 @@ namespace Coherence
             using (new EditorGUI.IndentLevelScope())
             {
                 DrawMaterialSettings();
+            }
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Texture Sync", EditorStyles.boldLabel);
+            using (new EditorGUI.IndentLevelScope())
+            {
+                DrawTextureSettings();
             }
 
             EditorGUILayout.Space();

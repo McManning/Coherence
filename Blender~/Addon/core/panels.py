@@ -19,6 +19,44 @@ class BasePanel(Panel):
     def poll(cls, context):
         return context.engine in cls.COMPAT_ENGINES
 
+
+@autoregister
+class COHERENCE_IMAGEPAINT_PT_texture_sync(Panel):
+    """Creates a Panel in the scene context of the properties editor"""
+    bl_label = 'Coherence Texture Sync'
+
+    bl_space_type = 'IMAGE_EDITOR'
+    bl_region_type = 'UI'
+    bl_category = 'Image' # gets jammed into a 'Misc' tab if not set
+
+    #bl_space_type = 'VIEW_3D'
+    #bl_region_type = 'UI'
+    #bl_category = 'Tool'
+
+    # Tool contexts ref: https://blender.stackexchange.com/a/73154
+    # bl_context = 'imagepaint'
+
+    def draw(self, context):
+        layout = self.layout
+
+        print(context)
+        image = context.space_data.image
+
+        if not image:
+            layout.label(text='Select an image', icon='ERROR')
+            return
+
+        settings = image.coherence
+
+        if settings.src_error:
+            layout.label(text=settings.src_error, icon='ERROR')
+
+        layout.label(
+            text='is_float={} w={} h={} depth={} channels={}, len(pixels)={}'.format(image.is_float, image.size[0], image.size[1], image.depth, image.channels, len(image.pixels))
+        )
+
+        layout.prop(image.coherence, 'texture_slot')
+
 @autoregister
 class COHERENCE_RENDER_PT_settings(BasePanel):
     """Parent panel for renderer settings"""

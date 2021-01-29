@@ -228,9 +228,20 @@ namespace Coherence
         UpdateMaterial,
 
         /// <summary>
-        /// Notify Unity to apply updates to queued buffers
+        ///
+        /// <para>
+        ///     Payload: <see cref="InteropTexture"/>
+        /// </para>
         /// </summary>
-        ApplyMeshUpdates,
+        UpdateTexture,
+
+        /// <summary>
+        ///
+        /// <para>
+        ///     Payload: <see cref="InteropColor32"/>[]
+        /// </para>
+        /// </summary>
+        UpdateTextureData,
     }
 
     public enum RpcResponse : byte
@@ -559,6 +570,13 @@ namespace Coherence
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct InteropTexture
+    {
+        public int width;
+        public int height;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct InteropVector2
     {
         public float x;
@@ -780,6 +798,8 @@ namespace Coherence
         }
     }
 
+    public delegate int InteropMessageProducer(string target, InteropMessageHeader hdr, IntPtr ptr);
+
     /// <summary>
     /// Simplified verison of RpcBuffer that:
     ///
@@ -797,7 +817,7 @@ namespace Coherence
             internal string target;
             internal InteropMessageHeader header;
             internal byte[] payload;
-            internal Func<string, InteropMessageHeader, IntPtr, int> producer;
+            internal InteropMessageProducer producer;
         }
 
         Queue<InteropMessage> outboundQueue;
@@ -914,85 +934,15 @@ namespace Coherence
         }
 
         /// <summary>
-        /// Queue an outbound message containing one or more <typeparamref name="T"/> values.
         ///
-        /// <para>
-        ///     If we cannot fit the entire dataset into a single message, and
-        ///     <paramref name="allowSplitMessages"/> is true then the payload will
-        ///     be split into multiple messages, each with a distinct
-        ///     <see cref="InteropMessageHeader.index"/> and <see cref="InteropMessageHeader.count"/>
-        ///     range.
-        /// </para>
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <param name="type"></param>
         /// <param name="target"></param>
-        /// <param name="data"></param>
-        /// <param name="allowSplitMessages"></param>
-        public void ReplaceOrQueueArray<T>(RpcRequest type, string target, T[] data, bool allowSplitMessages) where T : struct
+        /// <param name="buffer"></param>
+        public void QueueArray<T>(RpcRequest type, string target, IArray<T> buffer) where T : struct
         {
             var headerSize = FastStructure.SizeOf<InteropMessageHeader>();
-            var elementSize = FastStructure.SizeOf<T>();
-
-            // TODO: Splitting. Right now assume fit or fail.
-            if (headerSize + elementSize * data.Length > messageProducer.NodeBufferSize)
-            {
-                throw new Exception($"Cannot queue {data.Length} elements of {typeof(T)} - will not fit in a single message");
-            }
-
-            var header = new InteropMessageHeader {
-                type = type,
-                index = 0,
-                length = data.Length,
-                count = data.Length
-            };
-
-            // TODO: If the source array size changes - find queued won't be correct.
-
-            // We assume ReplaceOrQueue because of the below TODO - multiple queued arrays
-            // would be pointing to the same data anyway.
-
-            // If it's already queued, we don't need to do anything.
-            /*var queued = FindQueuedMessage(target, ref header);
-            if (queued != null)
-            {
-                return true;
-            }*/
-
-            // Remove the old one to then queue up one at the end
-            // This ensures messages that are queued up together
-            // remain in their queued order.
-            RemoveQueuedMessage(target, ref header);
-
-            InteropLogger.Debug($"    ROQA-> {target}:{type:F}");
-            outboundQueue.Enqueue(new InteropMessage
-            {
-                target = target,
-                header = header,
-                producer = (tar, hdr, ptr) => {
-                    if (hdr.count < 1 || hdr.index + hdr.count > data.Length)
-                    {
-                        throw new Exception($"Producer out of range of dataset - {hdr.type} - {tar}");
-                    }
-                    // TODO: My concern here would be what happens if the buffer changes before this is sent?
-                    // This would send the updated buffer - BUT that probably wouldn't be a problem because
-                    // we're trying to send the most recent data at all times anyway, right?
-                    // Even if it's sitting in queue for a while.
-
-                    // Also seems like this should be an implicit QueueOrReplace - because if multiple
-                    // queued messsages point to the same array - they're going to send the same array data.
-
-                    // Could leave this up to the QueueArray caller - passing in this Func<...>
-                    // and we're just responsible for adjusting the header to the ranges that fit.
-                    FastStructure.WriteArray(ptr, data, hdr.index, hdr.count);
-                    return elementSize * hdr.count;
-                }
-            });
-        }
-
-        public void ReplaceOrQueueBuffer<T>(RpcRequest type, string target, ArrayBuffer<T> buffer, bool useDirtyRange = false) where T : struct
-        {
-             var headerSize = FastStructure.SizeOf<InteropMessageHeader>();
             var elementSize = FastStructure.SizeOf<T>();
 
             if (headerSize + elementSize * buffer.Length > messageProducer.NodeBufferSize)
@@ -1000,95 +950,28 @@ namespace Coherence
                 throw new Exception($"Cannot queue {buffer.Length} elements of {typeof(T)} - will not fit in a single message");
             }
 
+            // Construct a header with metadata for the array
             var header = new InteropMessageHeader {
                 type = type,
-                length = buffer.Length,
-                // Subset is based on whether or not we're going to use the dirty info or not
-                index = (useDirtyRange) ? buffer.DirtyStart : 0,
-                count = (useDirtyRange) ? buffer.DirtyLength : buffer.Length,
+                length = buffer.MaxLength,
+                index = buffer.Offset,
+                count = buffer.Length
             };
 
             // Remove any queued messages with the same outbound header
             RemoveQueuedMessage(target, ref header);
 
-            InteropLogger.Debug($"    ROQB-> {target}:{type:F}");
+            InteropLogger.Debug($"    QA-> {target}:{type:F}");
             outboundQueue.Enqueue(new InteropMessage
             {
                 target = target,
                 header = header,
                 producer = (tar, hdr, ptr) => {
-                    if (hdr.count < 1 || hdr.index + hdr.count > buffer.Length)
-                    {
-                        throw new Exception($"Producer out of range of dataset - {hdr.type} - {tar}");
-                    }
-
-                    buffer.CopyTo(ptr, hdr.index, hdr.count);
-                    return elementSize * hdr.count;
+                    buffer.CopyTo(ptr, 0, buffer.Length);
+                    return elementSize * buffer.Length;
                 }
             });
         }
-
-        /*
-        private void Queue(InteropMessageHeader header, byte[] payload)
-        {
-            outboundQueue.Enqueue(new InteropMessage
-            {
-                target = "",
-                header = header,
-                payload = payload,
-                producer = null
-            });
-        }
-
-        private void Queue<T>(InteropMessageHeader header, ref T data) where T : struct
-        {
-            Queue(header, FastStructure.ToBytes(ref data));
-        }
-
-        private void Queue(InteropMessageHeader header, Func<string, InteropMessageHeader, IntPtr, int> producer)
-        {
-            outboundQueue.Enqueue(new InteropMessage
-            {
-                target = "",
-                header = header,
-                payload = null,
-                producer = producer
-            });
-        }
-
-        /// <summary>
-        /// Queue a new message or replace one with a matching header (via .Equals)
-        /// </summary>
-        /// <param name="header"></param>
-        /// <param name="payload"></param>
-        private void QueueOrReplace(InteropMessageHeader header, byte[] payload)
-        {
-            var queued = FindQueuedMessage(header);
-            if (queued != null)
-            {
-                queued.header = header;
-                queued.payload = payload;
-                queued.producer = null;
-                return;
-            }
-
-            Queue(header, payload);
-        }
-
-        private void QueueOrReplace(InteropMessageHeader header, Func<string, InteropMessageHeader, IntPtr, int> producer)
-        {
-            var queued = FindQueuedMessage(header);
-            if (queued != null)
-            {
-                queued.header = header;
-                queued.payload = null;
-                queued.producer = producer;
-                return;
-            }
-
-            Queue(header, producer);
-        }
-        */
 
         /// <summary>
         /// Read from the queue into the consumer callable.

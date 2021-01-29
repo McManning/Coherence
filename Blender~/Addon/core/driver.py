@@ -51,11 +51,16 @@ class BridgeDriver:
 
     METABALLS_OBJECT_NAME = get_string_buffer("__Metaballs")
 
+    MAX_TEXTURE_SLOTS = 64
+
     running = False
     lib = None
     connection_name: str = None
     blender_version: str = None
     has_metaballs: bool = False
+
+    image_editor_handle = None # <capsule object RNA_HANDLE>
+    image_buffer = None # np.ndarray
 
     # Mapping between viewport IDs and RenderEngine instances.
     # Weakref is used so that we don't hold onto RenderEngine references
@@ -82,8 +87,22 @@ class BridgeDriver:
         self.lib.Disconnect.restype = c_int
         self.lib.Clear.restype = c_int
         self.lib.SetViewportCamera.argtypes = (c_int, InteropCamera)
-        #self.lib.CopyVertices.argtypes = (c_void_p, c_void_p, c_uint, c_void_p, c_uint)
-        #self.lib.CopyLoopTriangles.argtypes = (c_void_p, c_void_p, c_uint)
+
+
+        #self.lib.GetTextureSlots.argtypes = (
+        #    POINTER(InteropString64),   # Target buffer
+        #    c_int                       # size
+        #)
+        self.lib.GetTextureSlots.restype = c_int
+
+        self.lib.UpdateTexturePixels.argtypes = (
+            c_void_p,   # name
+            c_int,      # width
+            c_int,      # height
+            c_void_p    # pixels
+        )
+        self.lib.UpdateTexturePixels.restype = c_int
+
         self.lib.CopyMeshData.argtypes = (
             c_void_p,   # name
             c_uint,     # loopCount
@@ -98,6 +117,7 @@ class BridgeDriver:
             c_void_p,   # loopUV3s
             c_void_p,   # loopUV4s
         )
+        self.lib.CopyMeshData.restype = c_int
 
         self.lib.CopyMeshDataNative.argtypes = (
             c_void_p,   # name
@@ -113,6 +133,7 @@ class BridgeDriver:
             c_void_p,   # loopUV3s
             c_void_p,   # loopUV4s
         )
+        self.lib.CopyMeshDataNative.restype = c_int
 
         self.lib.GetRenderTexture.argtypes = (c_uint, )
         self.lib.GetRenderTexture.restype = RenderTextureData
@@ -147,6 +168,12 @@ class BridgeDriver:
         bpy.app.handlers.depsgraph_update_post.append(self.on_depsgraph_update)
         bpy.app.timers.register(self.on_tick)
 
+        # Monitor updates in SpaceImageEditor for texture syncing
+        self.image_editor_handle = bpy.types.SpaceImageEditor.draw_handler_add(
+            self.on_image_editor_update, (bpy.context,),
+            'WINDOW', 'POST_PIXEL'
+        )
+
         # Sync the current scene state into the bridge
         self.sync_tracked_objects(
             bpy.context.scene,
@@ -169,6 +196,10 @@ class BridgeDriver:
         if self.on_depsgraph_update in depsgraph_update_post:
             depsgraph_update_post.remove(self.on_depsgraph_update)
 
+        if self.image_editor_handle:
+            bpy.types.SpaceImageEditor.draw_handler_remove(self.image_editor_handle, 'WINDOW')
+            self.image_editor_handle = None
+
     def free_lib(self): # UNUSED
         pass
         # # Windows-specific handling for freeing the DLL.
@@ -181,10 +212,52 @@ class BridgeDriver:
         # kernel32.FreeLibrary.argtypes = [wintypes.HMODULE]
         # kernel32.FreeLibrary(handle)
 
+    def get_texture_slots(self) -> list:
+        """Return all sync-able texture slot names exposed by Unity
+
+        Returns:
+            list[str]
+        """
+        buffer = (InteropString64 * self.MAX_TEXTURE_SLOTS)()
+        size = self.lib.GetTextureSlots(buffer, len(buffer))
+
+        # Convert byte arrays to a list of strings
+        return [buffer[i].buffer.decode('utf-8') for i in range(size)]
+
+
+    def sync_texture(self, name, image):
+        """Send updated pixel data for a texture to Unity
+
+        Args:
+            name (str): Texture slot name
+            image (bpy.types.Image):
+        """
+        if name[0] == '-':
+            return # TODO: Better "skip if not bound" version
+
+        # TODO: Optimize further (e.g. don't allocate
+        # the numpy buffer each time, etc etc)
+        w, h = image.size
+
+        if self.image_buffer is None:
+            self.image_buffer = np.empty(w * h * 4, dtype=np.float32)
+        else:
+            self.image_buffer.resize(w * h * 4, refcheck=False)
+
+        image.pixels.foreach_get(self.image_buffer)
+        pixels_ptr = self.image_buffer.ctypes.data
+
+        self.lib.UpdateTexturePixels(
+            get_string_buffer(name),
+            image.size[0],
+            image.size[1],
+            pixels_ptr
+        )
+
     def add_viewport(self, render_engine):
         """Add a RenderEngine instance as a tracked viewport
 
-        Parameters:
+        Args:
             render_engine (CoherenceRenderEngine)
         """
         log('Create Viewport {} from {}'.format(
@@ -198,7 +271,7 @@ class BridgeDriver:
     def remove_viewport(self, uid):
         """Remove a RenderEngine instance as a tracked viewport
 
-        Parameters:
+        Args:
             uid (int): Unique identifier for the viewport RenderEngine
         """
         log('***REMOVE VIEWPORT {}'.format(uid))
@@ -246,6 +319,9 @@ class BridgeDriver:
             if not self.lib.IsConnectedToUnity():
                 self.on_disconnected_from_unity()
 
+            # TODO: Lower the frequency of image paint updates
+            self.check_image_paint_updates()
+
             #return 0.0001
             #return 0.016 # 60 FPS update rate
             return 0.008 # 120 FPS
@@ -267,6 +343,22 @@ class BridgeDriver:
             self.on_connected_to_unity()
 
         return 0.05
+
+    def check_image_paint_updates(self):
+        """Push image updates to Unity if we're actively drawing
+            on an image bound to one of the synced texture slots
+        """
+        if bpy.context.mode != 'PAINT_TEXTURE':
+            return
+
+
+
+        # Only try to sync updates if we're actively painting
+        # on an image. Any other action (masking, viewing) are ignored.
+        if space.mode == 'PAINT' and space.image:
+            settings = space.image.coherence
+            self.sync_texture(settings.texture_slot, space.image)
+
 
     def on_connected_to_unity(self):
         debug('on_connected_to_unity')
@@ -293,7 +385,7 @@ class BridgeDriver:
 
         Objects may be added/removed in case of undo, rename, etc.
 
-        Parameters:
+        Args:
             scene (bpy.types.Scene)
             depsgraph (bpy.types.Depsgraph)
         """
@@ -322,6 +414,15 @@ class BridgeDriver:
 
         # Update current tracked list
         self.objects = current
+
+    def on_image_editor_update(self, context):
+        space = context.space_data
+
+        # Only try to sync updates if we're actively painting
+        # on an image. Any other action (masking, viewing) are ignored.
+        if space.mode == 'PAINT' and space.image:
+            settings = space.image.coherence
+            self.sync_texture(settings.texture_slot, space.image)
 
     def on_depsgraph_update(self, scene, depsgraph):
         """Sync the bridge with the scene's dependency graph on each update

@@ -250,7 +250,7 @@ namespace Coherence
         public Material displayMaterial;
 
         [Tooltip("Overrides to automatic mapping between Blender and Unity material names")]
-        public BlenderMaterialOverride[] materialOverrides;
+        public List<BlenderMaterialOverride> materialOverrides;
 
         #endregion
 
@@ -280,6 +280,13 @@ namespace Coherence
 
         // TODO: Smarter.
         public string pathToBlendFiles = "D:\\Blender\\Coherence_Blend_Files";
+
+        #endregion
+
+        #region Texture Sync
+
+        [Tooltip("Render Texture targets for textures synced from Blender")]
+        public List<BlenderTexture> textureSlots;
 
         #endregion
 

@@ -256,6 +256,8 @@ namespace Coherence
             objects.Clear();
         }
 
+        #region Viewports
+
         /// <summary>
         /// Publish the RT of the next viewport in the dictionary.
         ///
@@ -326,6 +328,21 @@ namespace Coherence
             viewportIndex = 0;
         }
 
+        #endregion
+
+        #region Textures
+
+        private BlenderTexture GetTexture(string name)
+        {
+            return CoherenceSettings.Instance.textureSlots.Find(
+                (tex) => tex.name == name
+            );
+        }
+
+        #endregion
+
+        #region Objects
+
         private ObjectController GetObject(string name)
         {
             if (!objects.ContainsKey(name))
@@ -371,6 +388,9 @@ namespace Coherence
             objects.Remove(name);
         }
 
+        #endregion
+
+        #region IO
         private void OnConnectToBlender()
         {
             Debug.Log("Connected to Blender");
@@ -447,6 +467,8 @@ namespace Coherence
                         // safely first before disposing the connection.
                         disconnected = true;
                         break;
+
+                    // Viewport messages
                     case RpcRequest.AddViewport:
                         AddViewport(
                             target,
@@ -468,6 +490,8 @@ namespace Coherence
                             visibleObjectIds
                         );
                         break;
+
+                    // Object messages
                     case RpcRequest.AddObjectToScene:
                         AddObject(
                             target,
@@ -531,6 +555,18 @@ namespace Coherence
                             .CopyFrom(ptr, header.index, header.count);
                         break;
                     // TODO: ... and so on for weights/bones/etc
+
+                    // Texture messages
+                    case RpcRequest.UpdateTexture:
+                        GetTexture(target).UpdateFromInterop(
+                            FastStructure.PtrToStructure<InteropTexture>(ptr)
+                        );
+                        break;
+                    case RpcRequest.UpdateTextureData:
+                        GetTexture(target).CopyFrom(
+                            ptr, header.index, header.count, header.count
+                        );
+                        break;
                     default:
                         Debug.LogWarning($"Unhandled request type {header.type} for {target}");
                         break;
@@ -631,5 +667,6 @@ namespace Coherence
 
             Profiler.EndSample();
         }
+        #endregion
     }
 }
