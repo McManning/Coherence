@@ -441,8 +441,6 @@ namespace Coherence
 
             var bytesRead = messages.Read((target, header, ptr) =>
             {
-                ObjectController obj;
-
                 // While not connected - only accept connection requests
                 if (!IsConnected)
                 {
@@ -567,6 +565,7 @@ namespace Coherence
                             ptr, header.index, header.count, header.count
                         );
                         break;
+
                     default:
                         Debug.LogWarning($"Unhandled request type {header.type} for {target}");
                         break;

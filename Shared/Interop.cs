@@ -362,7 +362,10 @@ namespace Coherence
         /// <summary>Viewport height in pixels</summary>
         public int height;
 
+        public bool isPerspective;
+
         public float lens;
+        public float viewDistance;
 
         public InteropVector3 position;
         public InteropVector3 forward;
@@ -379,6 +382,8 @@ namespace Coherence
                 && cam.width == width
                 && cam.height == height
                 && cam.lens == lens
+                && cam.isPerspective == isPerspective
+                && cam.viewDistance == viewDistance
                 && cam.position.Approx(position)
                 && cam.forward.Approx(forward)
                 && cam.up.Approx(up);
@@ -407,6 +412,11 @@ namespace Coherence
         public float m20;
         public float m10;
         public float m31;
+
+        public override string ToString()
+        {
+            return $"[{m00} {m01} {m02} {m03}\n{m10} {m11} {m12} {m13}\n{m20} {m21} {m22} {m23}\n{m30} {m31} {m32} {m33}]\n";
+        }
     }
 
     /// <summary>

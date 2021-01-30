@@ -260,13 +260,14 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
         region3d = space.region_3d # or just context.region_3d?
         region = context.region
 
+        self.camera.width = region.width
+        self.camera.height = region.height
         self.camera.lens = space.lens
+        self.camera.isPerspective = region3d.is_perspective
+        self.camera.viewDistance = region3d.view_distance
         self.camera.position = to_interop_vector3(region3d.view_matrix.inverted().translation)
         self.camera.forward = to_interop_vector3(region3d.view_rotation @ Vector((0.0, 0.0, -1.0)))
         self.camera.up = to_interop_vector3(region3d.view_rotation @ Vector((0.0, 1.0, 0.0)))
-
-        self.camera.width = region.width
-        self.camera.height = region.height
 
         # debug('lens', space.lens)
         # debug('sensor_width', space.camera.data.sensor_width)

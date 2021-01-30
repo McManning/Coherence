@@ -43,10 +43,12 @@ class InteropCamera(Structure):
     _fields_ = [
         ('width', c_int),
         ('height', c_int),
+        ('isPerspective', c_bool),
         ('lens', c_float),
+        ('viewDistance', c_float),
         ('position', InteropVector3),
         ('forward', InteropVector3),
-        ('up', InteropVector3),
+        ('up', InteropVector3)
     ]
 
 class RenderTextureData(Structure):

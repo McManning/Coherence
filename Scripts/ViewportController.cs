@@ -108,48 +108,38 @@ namespace Coherence
                 Profiler.EndSample();
             }
 
-            // TODO: Camera view matching magic.
-            // This is the hard part :^)
-
-
-            // Blender is z-up - swap z/y everywhere
-            // TODO: But they could also change the up axis manually...
-         /*   InteropMatrix4x4 t = camera.matrix;
-
-            Vector3 forward;
-            forward.x = t.m02;
-            forward.y = t.m22;
-            forward.z = t.m12;
-
-            Vector3 up;
-            up.x = t.m01;
-            up.y = t.m21;
-            up.z = t.m11;
-
-            transform.position = Vector3.zero;
-
-            transform.rotation = Quaternion.LookRotation(forward, up);
-            transform.Translate(new Vector3(t.m03, t.m13, t.m23), Space.Self);
-         */
-
             var p = new Vector3(camera.position.x, camera.position.z, camera.position.y);
             var f = new Vector3(camera.forward.x, camera.forward.z, camera.forward.y);
             var u = new Vector3(camera.up.x, camera.up.z, camera.up.y);
 
-            transform.position = p;
-            transform.rotation = Quaternion.LookRotation(f, u);
+            if (camera.isPerspective)
+            {
+                transform.position = p;
+                transform.rotation = Quaternion.LookRotation(f, u);
 
-            // horizontal field of view = 2 atan(0.5 width / focallength)
+                // Here's what I know thus far (from trial and error)
+                cam.orthographic = false;
+                cam.usePhysicalProperties = true;
+                cam.focalLength = camera.lens;
+                cam.gateFit = Camera.GateFitMode.Fill;
 
-            // 2*atan(0.5 * 1586 / 50)
+                // Magic number comes from a number of tests against Blender's viewport
+                cam.sensorSize = new Vector2(72, 72);
+            }
+            else // Orthogonal camera view
+            {
+                cam.orthographic = true;
 
-            // Here's what I know thus far (from trial and error)
-            cam.usePhysicalProperties = true;
-            cam.focalLength = camera.lens;
-            cam.gateFit = Camera.GateFitMode.Fill;
-            cam.sensorSize = new Vector2(72, 72); // Matched via trial and error.
-            // TODO: Actual value from Blender somehow?
+                // The magic number here was derived from a number of tests
+                // against different lens values and view distances.
+                cam.orthographicSize = 19.809f / camera.lens * camera.viewDistance;
 
+                // View distance from the facing direction needs to be factored in,
+                // as zooming will change view distance but not position.
+                // (2D panning is the only thing that changes position)
+                transform.position = p + f * -camera.viewDistance;
+                transform.rotation = Quaternion.LookRotation(f, u);
+            }
         }
 
         /// <summary>
