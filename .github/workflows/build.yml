@@ -35,4 +35,5 @@ jobs:
         name: unity-package
         path: |
           .
-          !Blender~/
+          !./Blender~
+          !./.git
