@@ -48,12 +48,19 @@ class COHERENCE_IMAGEPAINT_PT_texture_sync(Panel):
 
         settings = image.coherence
 
-        if settings.src_error:
-            layout.label(text=settings.src_error, icon='ERROR')
+        if settings.error:
+            layout.label(text=settings.error, icon='ERROR')
 
         layout.label(
             text='is_float={} w={} h={} depth={} channels={}, len(pixels)={}'.format(image.is_float, image.size[0], image.size[1], image.depth, image.channels, len(image.pixels))
         )
+
+        if not bridge_driver().is_connected():
+            layout.label(
+                text='Not connected to Unity.',
+                icon='ERROR'
+            )
+            return
 
         layout.prop(image.coherence, 'texture_slot')
 
@@ -84,6 +91,8 @@ class COHERENCE_RENDER_PT_settings(BasePanel):
 
         col = layout.column(align=True)
         col.prop(settings, 'connection_name')
+
+        col.prop(settings, 'texture_slot_update_frequency')
 
 @autoregister
 class COHERENCE_RENDER_PT_settings_viewport(BasePanel):

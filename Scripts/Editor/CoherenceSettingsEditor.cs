@@ -207,9 +207,10 @@ namespace Coherence
                     new GUIContent("8 MB"),
                     new GUIContent("16 MB"),
                     new GUIContent("32 MB"),
-                    new GUIContent("64 MB")
+                    new GUIContent("64 MB"),
+                    new GUIContent("128 MB")
                 },
-                new int[] { 1, 2, 4, 8, 16, 32, 64 }
+                new int[] { 1, 2, 4, 8, 16, 32, 64, 128 }
             );
 
             EditorGUILayout.PropertyField(serializedObject.FindProperty("pixelsNodeCount"));

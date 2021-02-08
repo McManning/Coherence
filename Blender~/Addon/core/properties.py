@@ -68,6 +68,12 @@ class CoherenceSceneSettings(PropertyGroup):
         description='Background color of the scene'
     )
 
+    texture_slot_update_frequency: FloatProperty(
+        name='TSUF',
+        description='How frequently (in seconds) to sync image pixel data to Unity while actively using the Image Paint tool',
+        default=0.05
+    )
+
     @classmethod
     def register(cls):
         bpy.types.Scene.coherence = PointerProperty(
@@ -183,29 +189,45 @@ class CoherenceMaterialSettings(PropertyGroup):
         del bpy.types.Material.coherence
 
 
+def validate_image_for_sync(img) -> str:
+    """Check if an image can be synced with Unity
+
+    Args:
+        img (bpy.types.Image)
+
+    Returns:
+        str: Error message, or an empty string for no error
+    """
+    w, h = img.size
+
+    # Perform additional checks for image format - ensuring we can transfer
+    # it in RGBA32 without significant conversion overhead
+    #if img.depth != 32:
+    #    return 'Image must contain an alpha channel'
+
+    if w < 1 or h < 1 or w > 1024 or h > 1024:
+        return 'Image must be between 1x1 and 1024x1024 to enable syncing'
+
+    return ''
+
 def texture_slot_enum_items(self, context):
     slots = bridge_driver().get_texture_slots()
-    slots.insert(0, '-- Unassigned --')
-    print(slots)
-
     return [(name, name, '') for name in slots]
 
 def on_update_texture_slot(self, context):
-    print('on_update_texture_slot', self.texture_slot)
-
-    # Test push.
     image = self.id_data
-    bridge_driver().sync_texture(self.texture_slot, image)
 
-    #image = self.id_data # bpy.data.images['Untitled']
-    # obj = context.object # bpy.data.objects['Cube']
+    # Re-validate prior to trying to sync
+    # (e.g. to ensure it's not a zero length image or wrong format)
+    self.error = validate_image_for_sync(image)
 
-    #bpy.ops.image.update_sync_target(image_name=image.name, sync_target=self.sync_name)
+    # Sync immediately to the target slot once changed
+    bridge_driver().sync_texture(image)
 
 
 @autoregister
 class CoherenceImageSettings(PropertyGroup):
-    src_error: StringProperty(
+    error: StringProperty(
         name='Source Image Error',
         description='An error with the source image that prevents syncing with Unity',
         default='',
@@ -214,7 +236,8 @@ class CoherenceImageSettings(PropertyGroup):
     )
 
     texture_slot: EnumProperty(
-        name='Texture Slot to Sync',
+        name='Slot',
+        description='',
         items=texture_slot_enum_items,
         update=on_update_texture_slot,
         default=0,

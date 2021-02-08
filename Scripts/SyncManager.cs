@@ -562,7 +562,7 @@ namespace Coherence
                         break;
                     case RpcRequest.UpdateTextureData:
                         GetTexture(target).CopyFrom(
-                            ptr, header.index, header.count, header.count
+                            ptr, header.index, header.count, header.length
                         );
                         break;
 

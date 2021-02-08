@@ -510,8 +510,6 @@ namespace Coherence
             int height,
             IntPtr pixels
         ) {
-            InteropLogger.Debug($"Sync {width}x{height} pixels for `{name}`");
-
             try
             {
                 var texture = Bridge.GetTexture(name);

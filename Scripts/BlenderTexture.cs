@@ -16,22 +16,43 @@ namespace Coherence
         [Tooltip("Common name for the texture shared between Unity and Blender")]
         public string name;
 
-        [Tooltip("Render Texture that gets updated as the source texture changes in Blender")]
-        public RenderTexture texture;
+        [Tooltip(
+            "Texture2D or RenderTexture to update with the Blender data. \n" +
+            "Will be resized to match the texture from Blender."
+        )]
+        public Texture target;
 
+        /// <summary>
+        /// Temporary Texture2D if <see cref="target"/> is a <see cref="RenderTexture"/>
+        /// </summary>
         public Texture2D tempTexture;
 
         internal void UpdateFromInterop(InteropTexture data)
         {
-            if (!tempTexture || data.width != tempTexture.width || data.height != tempTexture.height)
+            if (target is RenderTexture)
             {
-                RebuildTempTexture(data.width, data.height);
+                if (!tempTexture || data.width != tempTexture.width || data.height != tempTexture.height)
+                {
+                    RebuildTempTexture(data.width, data.height);
+                }
+            }
+            else if (target is Texture2D tex)
+            {
+                // Resize and update format (if necessary)
+                tex.Resize(data.width, data.height, TextureFormat.RGBAFloat, false);
+            }
+            else
+            {
+                throw new Exception(
+                    $"Syncing a Blender texture ({name}) to {target.GetType()} is not supported. " +
+                    $"Must be either a Texture2D or RenderTexture"
+                );
             }
         }
 
         void RebuildTempTexture(int width, int height)
         {
-            tempTexture = new Texture2D(width, height, TextureFormat.RGBAFloat, false);
+            tempTexture = new Texture2D(width, height, TextureFormat.RGBAFloat, false, true);
         }
 
         /// <summary>
@@ -41,16 +62,29 @@ namespace Coherence
         /// <param name="index"></param>
         /// <param name="count"></param>
         /// <param name="length"></param>
-        internal unsafe void CopyFrom(IntPtr src, int index, int count, int length)
+        internal void CopyFrom(IntPtr src, int index, int count, int length)
         {
-            var data = tempTexture.GetRawTextureData<float>();
+            Texture2D tex;
+
+            if (target is RenderTexture)
+            {
+                tex = tempTexture;
+            }
+            else if (target is Texture2D tex2d)
+            {
+                tex = tex2d;
+            }
+            else
+            {
+                return;
+            }
+
+            var data = tex.GetRawTextureData<float>();
+
             int elementSize = UnsafeUtility.SizeOf<float>(); // RGBAFloat
 
             int offset = index * elementSize; // 0
             int size = count * elementSize; // 4mil
-
-            // Write out of bounds - index=0, count=4194304, length=4194304,
-            // data.Length=4194304, elementSize=16
 
             // Make sure we don't try to write outside of allowable memory
             if (offset < 0 || offset + size > data.Length * elementSize)
@@ -61,16 +95,19 @@ namespace Coherence
                 );
             }
 
-            Debug.Log($"Max storage will be {data.Length} for {size} bytes");
+            unsafe
+            {
+                var dst = IntPtr.Add((IntPtr)data.GetUnsafePtr(), offset);
+                UnsafeUtility.MemCpy(dst.ToPointer(), src.ToPointer(), size);
+            }
 
-            // Max storage will be 4 194 304 for 16 777 216 bytes
-            var dst = IntPtr.Add((IntPtr)data.GetUnsafePtr(), offset);
-            UnsafeUtility.MemCpy(dst.ToPointer(), src.ToPointer(), size);
+            tex.Apply();
 
-            tempTexture.Apply();
-
-            Debug.Log("Blitting to target RT");
-            Graphics.Blit(tempTexture, texture);
+            // If our final output is an RT - blit from the temp texture into that.
+            if (target is RenderTexture rt)
+            {
+                Graphics.Blit(tex, rt);
+            }
         }
     }
 }

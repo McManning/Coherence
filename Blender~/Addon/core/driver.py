@@ -5,6 +5,7 @@ from ctypes import wintypes
 import bpy
 import numpy as np
 import gpu
+from pathlib import Path
 from bgl import *
 from gpu_extras.batch import batch_for_shader
 from mathutils import Vector, Matrix, Quaternion
@@ -49,9 +50,13 @@ from .interop import *
 class BridgeDriver:
     """Respond to scene object changes and handle messaging through the Unity bridge"""
 
+    # Location of the Coherence DLL - relative to addon root
+    DLL_PATH = 'lib/LibCoherence.dll';
+
     METABALLS_OBJECT_NAME = get_string_buffer("__Metaballs")
 
     MAX_TEXTURE_SLOTS = 64
+    UNASSIGNED_TEXTURE_SLOT_NAME = '-- Unassigned --'
 
     running = False
     lib = None
@@ -71,16 +76,9 @@ class BridgeDriver:
     objects = set()
 
     def __init__(self):
-        # TODO: Better path lookup. I'm using a junction point in Blender
-        # to reference the DLL during development - so this needs to be hardcoded
-        # since __file__ shows the virtual path
-
-        # path = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + os.path.sep + 'Bridge.dll'
-        path = 'D:\\Unity Projects\\Coherence\\Blender~\\LibCoherence\\bin\\Debug\\LibCoherence.dll'
-
+        path = Path(__file__).parent.parent.joinpath(self.DLL_PATH).absolute()
         log('Loading DLL from {}'.format(path))
-
-        self.lib = cdll.LoadLibrary(path)
+        self.lib = cdll.LoadLibrary(str(path))
 
         # Typehint all the API calls we actually need to typehint
         self.lib.Connect.restype = c_int
@@ -150,13 +148,10 @@ class BridgeDriver:
         # bpy.types.SpaceView3D.draw_handler_remove(post_view_draw, 'WINDOW')
 
     def start(self):
-        """Start trying to connect to Unity
-
-        Parameters:
-            scene (bpy.types.Scene)
-        """
+        """Start trying to connect to Unity"""
         log('Starting the DCC')
 
+        # TODO: Pull connection name from scene's coherence.connection_name
         self.connection_name = create_string_buffer("Coherence".encode())
         self.blender_version = create_string_buffer(bpy.app.version_string.encode())
         self.running = True
@@ -167,6 +162,7 @@ class BridgeDriver:
 
         bpy.app.handlers.depsgraph_update_post.append(self.on_depsgraph_update)
         bpy.app.timers.register(self.on_tick)
+        bpy.app.timers.register(self.check_texture_sync)
 
         # Monitor updates in SpaceImageEditor for texture syncing
         self.image_editor_handle = bpy.types.SpaceImageEditor.draw_handler_add(
@@ -218,22 +214,25 @@ class BridgeDriver:
         Returns:
             list[str]
         """
+        if not self.is_connected():
+            return []
+
         buffer = (InteropString64 * self.MAX_TEXTURE_SLOTS)()
         size = self.lib.GetTextureSlots(buffer, len(buffer))
 
-        # Convert byte arrays to a list of strings
-        return [buffer[i].buffer.decode('utf-8') for i in range(size)]
+        # Convert byte arrays to a list of strings.
+        return [self.UNASSIGNED_TEXTURE_SLOT_NAME] + [buffer[i].buffer.decode('utf-8') for i in range(size)]
 
 
-    def sync_texture(self, name, image):
+    def sync_texture(self, image):
         """Send updated pixel data for a texture to Unity
 
         Args:
-            name (str): Texture slot name
-            image (bpy.types.Image):
+            image (bpy.types.Image): The image to sync
         """
-        if name[0] == '-':
-            return # TODO: Better "skip if not bound" version
+        settings = image.coherence
+        if settings.error or settings.texture_slot == self.UNASSIGNED_TEXTURE_SLOT_NAME:
+            return
 
         # TODO: Optimize further (e.g. don't allocate
         # the numpy buffer each time, etc etc)
@@ -248,7 +247,7 @@ class BridgeDriver:
         pixels_ptr = self.image_buffer.ctypes.data
 
         self.lib.UpdateTexturePixels(
-            get_string_buffer(name),
+            get_string_buffer(settings.texture_slot),
             image.size[0],
             image.size[1],
             pixels_ptr
@@ -309,18 +308,15 @@ class BridgeDriver:
 
         # While actively connected to Unity, send typical IO,
         # get viewport renders, and run as fast as possible
-        if self.lib.IsConnectedToUnity():
+        if self.is_connected():
             self.lib.Update()
             self.lib.ConsumeRenderTextures()
 
             self.tag_redraw_viewports()
 
-            # During an update we lost connection.
-            if not self.lib.IsConnectedToUnity():
+            # If we lost connection while polling - flag a disconnect
+            if not self.is_connected():
                 self.on_disconnected_from_unity()
-
-            # TODO: Lower the frequency of image paint updates
-            self.check_image_paint_updates()
 
             #return 0.0001
             #return 0.016 # 60 FPS update rate
@@ -339,26 +335,33 @@ class BridgeDriver:
         # Poll for updates from Unity until we get one.
         self.lib.Update()
 
-        if self.lib.IsConnectedToUnity():
+        if self.is_connected():
             self.on_connected_to_unity()
 
         return 0.05
 
-    def check_image_paint_updates(self):
+    def check_texture_sync(self) -> float:
         """Push image updates to Unity if we're actively drawing
             on an image bound to one of the synced texture slots
+
+        Returns:
+            float: Milliseconds until the next check
         """
-        if bpy.context.mode != 'PAINT_TEXTURE':
-            return
+        delay = bpy.context.scene.coherence.texture_slot_update_frequency
 
+        # Don't do anything if we're still not connected
+        if bpy.context.mode != 'PAINT_TEXTURE' or not self.is_connected():
+            return delay
 
+        image = bpy.context.tool_settings.image_paint.canvas
 
-        # Only try to sync updates if we're actively painting
-        # on an image. Any other action (masking, viewing) are ignored.
-        if space.mode == 'PAINT' and space.image:
-            settings = space.image.coherence
-            self.sync_texture(settings.texture_slot, space.image)
+        # Tool is active but we don't have an image assigned
+        if image is None:
+            return delay
 
+        self.sync_texture(image)
+
+        return delay
 
     def on_connected_to_unity(self):
         debug('on_connected_to_unity')
@@ -421,8 +424,7 @@ class BridgeDriver:
         # Only try to sync updates if we're actively painting
         # on an image. Any other action (masking, viewing) are ignored.
         if space.mode == 'PAINT' and space.image:
-            settings = space.image.coherence
-            self.sync_texture(settings.texture_slot, space.image)
+            self.sync_texture(space.image)
 
     def on_depsgraph_update(self, scene, depsgraph):
         """Sync the bridge with the scene's dependency graph on each update
