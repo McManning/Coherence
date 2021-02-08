@@ -1,0 +1,38 @@
+name: Build Packages
+on:
+  push:
+    branches: [ master ]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+
+    - name: Setup MSBuild.exe
+      uses: microsoft/setup-msbuild@v1.0.2
+
+    - name: Setup NuGet
+      uses: NuGet/setup-nuget@v1.0.5
+
+    - name: Restore NuGet Packages
+      run: nuget restore Blender~/Coherence.sln
+
+    - name: Build LibCoherence.dll
+      run: msbuild Blender~/Coherence.sln /p:Configuration=Release
+
+    - name: Upload Blender Addon Artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: blender-addon
+        path: Blender~/Addon
+
+    - name: Upload Unity Package Artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: unity-package
+        path: |
+          .
+          !Blender~/
