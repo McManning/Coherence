@@ -326,14 +326,23 @@ namespace Coherence
         NativeArray<MVert> verts = new NativeArray<MVert>();
         NativeArray<MLoopTri> loopTris = new NativeArray<MLoopTri>();
         NativeArray<MLoopCol> loopCols = new NativeArray<MLoopCol>();
+        NativeArray<MDeformVert> deformVerts = new NativeArray<MDeformVert>();
+        NativeArray<MDeformWeight>[] weights;
         NativeArray<MLoopUV> loopUVs = new NativeArray<MLoopUV>();
-
         // ... and so on
+
+        /// <summary>
+        /// Aggregate count of <see cref="MDeformWeight"/> for all vertices from Blender.
+        /// This is updated when <see cref="weights"/> is updated.
+        /// </summary>
+        int totalVertexWeights;
 
         // Buffers converted from Blender data to an interop format
         ArrayBuffer<InteropVector3> vertices = new ArrayBuffer<InteropVector3>();
         ArrayBuffer<InteropVector3> normals = new ArrayBuffer<InteropVector3>();
         ArrayBuffer<InteropColor32> colors = new ArrayBuffer<InteropColor32>();
+        ArrayBuffer<byte> bonesPerVertex = new ArrayBuffer<byte>();
+        ArrayBuffer<InteropBoneWeight> boneWeights = new ArrayBuffer<InteropBoneWeight>();
         ArrayBuffer<InteropVector2> uvs = new ArrayBuffer<InteropVector2>();
 
         // ... and so on
@@ -345,12 +354,19 @@ namespace Coherence
         /// </summary>
         Dictionary<int, int> splitVertices = new Dictionary<int, int>();
 
+        /// <summary>
+        /// Starting offset in <see cref="boneWeights"/> per vertex.
+        /// Used during copy ops for split vertices.
+        /// </summary>
+        int[] vertexBoneWeightsOffset;
+
         internal void CopyMeshDataNative(
             NativeArray<MVert> verts,
             NativeArray<MLoop> loops,
             NativeArray<MLoopTri> loopTris,
             NativeArray<MLoopCol> loopCols,
-            NativeArray<MLoopUV> loopUVs
+            NativeArray<MLoopUV> loopUVs,
+            NativeArray<MDeformVert> deformVerts
         ) {
             // A change of unique vertex count or a change to the primary
             // loop mapping (loop index -> vertex index) requires a full rebuild.
@@ -360,6 +376,7 @@ namespace Coherence
                 InteropLogger.Debug($"CopyMeshData - rebuild all");
                 this.loops.CopyFrom(loops);
                 this.verts.CopyFrom(verts);
+                CopyWeightsFrom(deformVerts);
                 this.loopCols.CopyFrom(loopCols);
                 this.loopUVs.CopyFrom(loopUVs);
                 // ... and so on
@@ -380,6 +397,13 @@ namespace Coherence
                 this.verts.CopyFrom(verts);
                 RebuildVertices();
                 RebuildNormals();
+            }
+
+            if (HasVertexWeightChanges(deformVerts))
+            {
+                InteropLogger.Debug("CopyMeshData - HasVertexWeightChanges");
+                CopyWeightsFrom(deformVerts);
+                RebuildWeights();
             }
 
             if (!this.loopCols.Equals(loopCols))
@@ -419,11 +443,84 @@ namespace Coherence
 
             RebuildVertices();
             RebuildNormals();
+            RebuildWeights();
             RebuildBuffer(loopCols, colors);
             RebuildBuffer(loopUVs, uvs);
             // .. and so on
 
             RebuildTriangles();
+        }
+
+        /// <summary>
+        /// Compare the current cached <see cref="deformVerts"/> and <see cref="weights"/>
+        /// with Blender and determine if anything has changed.
+        /// </summary>
+        /// <param name="deformVerts"></param>
+        /// <returns></returns>
+        private bool HasVertexWeightChanges(NativeArray<MDeformVert> deformVerts)
+        {
+            // If MDeformVert changes - then we have added/removed/moved
+            // weights from individual vertices. So short circuit and say yes.
+            if (!this.deformVerts.Equals(deformVerts) || weights.Length != verts.Length)
+            {
+                return true;
+            }
+
+            // If the MDeformVert array is the same - then we need to
+            // check for changes to weights on individual vertices.
+            // This is an unfortunate sub-array memcmp-per-vertex.
+            int structSize = FastStructure.SizeOf<MDeformWeight>();
+            for (int i = 0; i < deformVerts.Length; i++)
+            {
+                // Some pointer work is done here to avoid having to
+                // copy to a struct per vertex (e.g. by calling deformVerts[i].dw)
+                unsafe
+                {
+                    var offset = IntPtr.Add(deformVerts.Ptr, structSize * i);
+                    MDeformVert* dv = (MDeformVert*)&offset;
+
+                    var weights = new NativeArray<MDeformWeight>(dv->dw, dv->totweight);
+                    if (!this.weights[i].Equals(weights))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Replace cached <see cref="deformVerts"/> and <see cref="weights"/> with
+        /// fresh data from Blender.
+        /// </summary>
+        /// <param name="deformVerts"></param>
+        private void CopyWeightsFrom(NativeArray<MDeformVert> deformVerts)
+        {
+            if (deformVerts == null)
+            {
+                totalVertexWeights = 0;
+                bonesPerVertex.Clear();
+                boneWeights.Clear();
+                return;
+            }
+
+            this.deformVerts.CopyFrom(deformVerts);
+            Array.Resize(ref weights, deformVerts.Length);
+
+            totalVertexWeights = 0;
+            int structSize = FastStructure.SizeOf<MDeformWeight>();
+            for (int i = 0; i < deformVerts.Length; i++)
+            {
+                unsafe
+                {
+                    var offset = IntPtr.Add(deformVerts.Ptr, structSize * i);
+                    MDeformVert* dv = (MDeformVert*)&offset;
+
+                    totalVertexWeights += dv->totweight;
+                    weights[i].CopyFrom(dv->dw, 0, dv->totweight);
+                }
+            }
         }
 
         int RebuildVertices()
@@ -491,6 +588,9 @@ namespace Coherence
             return 0;
         }
 
+        /// <summary>
+        /// Rebuild <see cref="triangles"/> from <see cref="loopTris"/>.
+        /// </summary>
         void RebuildTriangles()
         {
             triangles.Resize(loopTris.Length * 3);
@@ -509,6 +609,77 @@ namespace Coherence
                 triangles[t * 3 + 0] = splitVertices.GetValueOrDefault(tri0, (int)loops[tri0].v);
                 triangles[t * 3 + 1] = splitVertices.GetValueOrDefault(tri1, (int)loops[tri1].v);
                 triangles[t * 3 + 2] = splitVertices.GetValueOrDefault(tri2, (int)loops[tri2].v);
+            }
+        }
+
+        /// <summary>
+        /// Rebuild <see cref="bonesPerVertex"/> and <see cref="boneWeights"/>.
+        /// </summary>
+        private void RebuildWeights()
+        {
+            // TODO: This assumes weights cannot split vertices.
+            // This might be a wrong assumption?
+
+            // Reallocate to fit Blender verts + split verts
+            bonesPerVertex.Resize(vertices.Length);
+            vertexBoneWeightsOffset = new int[vertices.Length];
+
+            int weightCount = 0; // Total bone weights (verts + splits)
+            int i; // Current index in bonesPerVertex/vertexBoneWeightsOffset
+
+            // Fill weight counts (sans split vertices)
+            for (i = 0; i < weights.Length; i++)
+            {
+                var count = weights[i].Length;
+                bonesPerVertex[i] = (byte)count;
+                vertexBoneWeightsOffset[i] = weightCount;
+                weightCount += count;
+            }
+
+            // Fill counts for split vertices
+            foreach (var kv in splitVertices)
+            {
+                var vertIndex = (int)loops[kv.Key].v;
+                var count = weights[vertIndex].Length;
+
+                bonesPerVertex[i] = (byte)count;
+                vertexBoneWeightsOffset[i] = count;
+                weightCount += count;
+
+                i++;
+            }
+
+            boneWeights.Resize(weightCount);
+
+            i = 0; // Current index in boneWeights
+
+            // Fill weights from Blender
+            for (int j = 0; j < weights.Length; j++)
+            {
+                for (int k = 0; k < weights[j].Length; k++)
+                {
+                    var weight = weights[j][k];
+                    boneWeights[i] = new InteropBoneWeight
+                    {
+                        weight = weight.weight,
+                        boneIndex = weight.def_nr // TODO: Convert to bone ID
+                    };
+                    i++;
+                }
+            }
+
+            // Fill weights with copies for split vertices
+            foreach (var kv in splitVertices)
+            {
+                var vertIndex = (int)loops[kv.Key].v;
+                var count = bonesPerVertex[vertIndex];
+                var offset = vertexBoneWeightsOffset[vertIndex];
+
+                for (int k = offset; k < offset + count; k++)
+                {
+                    boneWeights[i] = boneWeights[k];
+                    i++;
+                }
             }
         }
 
@@ -612,6 +783,18 @@ namespace Coherence
             uvs.AppendCopy(vertIndex);
             // ... and so on
 
+            // An array of weights need to be added per vertex
+            if (bonesPerVertex.Length > 0)
+            {
+                var count = bonesPerVertex[vertIndex];
+                var offset = vertexBoneWeightsOffset[vertIndex];
+
+                for (int k = offset; k < offset + count; k++)
+                {
+                    boneWeights.AppendCopy(k);
+                }
+            }
+
             return newIndex;
         }
 
@@ -626,6 +809,8 @@ namespace Coherence
 
             b.SendArray(RpcRequest.UpdateVertices, Name, vertices);
             b.SendArray(RpcRequest.UpdateNormals, Name, normals);
+            b.SendArray(RpcRequest.UpdateBonesPerVertex, Name, bonesPerVertex);
+            b.SendArray(RpcRequest.UpdateBoneWeights, Name, boneWeights);
             b.SendArray(RpcRequest.UpdateVertexColors, Name, colors);
             b.SendArray(RpcRequest.UpdateUV, Name, uvs);
             // ... and so on
@@ -661,6 +846,12 @@ namespace Coherence
             if (normals.IsDirty)
                 b.SendArray(RpcRequest.UpdateNormals, Name, normals);
 
+            if (bonesPerVertex.IsDirty)
+                b.SendArray(RpcRequest.UpdateBonesPerVertex, Name, bonesPerVertex);
+
+            if (boneWeights.IsDirty)
+                b.SendArray(RpcRequest.UpdateBoneWeights, Name, boneWeights);
+
             if (colors.IsDirty)
                 b.SendArray(RpcRequest.UpdateVertexColors, Name, colors);
 
@@ -677,9 +868,11 @@ namespace Coherence
             CleanAllBuffers();
         }
 
+        /// <summary>
+        /// Reset dirty status on all buffers sent to Unity
+        /// </summary>
         void CleanAllBuffers()
         {
-            // Reset dirty status on buffers
             vertices.Clean();
             normals.Clean();
             colors.Clean();
@@ -687,6 +880,9 @@ namespace Coherence
             // ... and so on
 
             triangles.Clean();
+
+            bonesPerVertex.Clean();
+            boneWeights.Clean();
         }
 
         /// <summary>

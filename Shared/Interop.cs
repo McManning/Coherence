@@ -218,6 +218,24 @@ namespace Coherence
         UpdateVertexColors,
 
         /// <summary>
+        /// Notify Unity that a range of vertices have updated bone weight counts.
+        ///
+        /// <para>
+        ///     Payload: <see cref="byte"/>[] number of nonzero weights per vertex
+        /// </para>
+        /// </summary>
+        UpdateBonesPerVertex,
+
+        /// <summary>
+        /// Notify Unity that a range of weights have changed.
+        ///
+        /// <para>
+        ///     Payload: <see cref="InteropBoneWeight"/>[]
+        /// </para>
+        /// </summary>
+        UpdateBoneWeights,
+
+        /// <summary>
         /// Notify Unity that the active material name for a
         /// <see cref="InteropSceneObject"/> has changed.
         ///
@@ -683,20 +701,13 @@ namespace Coherence
     }
 
     /// <summary>
-    /// Structure that matches the layout of a UnityEngine.BoneWeight
+    /// Structure that matches the layout of a UnityEngine.BoneWeight1
     /// </summary>
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct InteropBoneWeight
     {
-        public float weight0;
-        public float weight1;
-        public float weight2;
-        public float weight3;
-
-        public int boneIndex0;
-        public int boneIndex1;
-        public int boneIndex2;
-        public int boneIndex3;
+        public int boneIndex;
+        public float weight;
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]

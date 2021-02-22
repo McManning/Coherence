@@ -80,8 +80,7 @@ namespace Coherence
     /// <typeparam name="T"></typeparam>
     public class NativeArray<T> : IDisposable, IArray<T> where T : struct
     {
-        private IntPtr ptr;
-        private bool isUnsafeReference;
+        public IntPtr Ptr { get; private set; }
 
         /// <summary>
         /// Native size of a struct in the array
@@ -97,19 +96,27 @@ namespace Coherence
 
         public int MaxLength { get; private set; }
 
+        public bool IsUnsafeReference { get; private set; }
+
         public NativeArray()
         {
-            isUnsafeReference = false;
-            ptr = IntPtr.Zero;
+            IsUnsafeReference = false;
+            Ptr = IntPtr.Zero;
             MaxLength = 0;
             Length = 0;
             Offset = 0;
         }
 
+        /// <summary>
+        /// Create a container referencing an array
+        /// in read-only unmanaged memory.
+        /// </summary>
+        /// <param name="src"></param>
+        /// <param name="count"></param>
         public NativeArray(IntPtr src, int count)
         {
-            isUnsafeReference = true;
-            ptr = src;
+            IsUnsafeReference = true;
+            Ptr = src;
             Length = count;
             MaxLength = count;
             Offset = 0;
@@ -122,18 +129,31 @@ namespace Coherence
             }
         }
 
+        /// <summary>
+        /// Allocate unmanaged memory to store an array of structs
+        /// </summary>
+        /// <param name="count"></param>
+        public NativeArray(int count)
+        {
+            IsUnsafeReference = false;
+            Ptr = Marshal.AllocHGlobal(count * ElementSize);
+            Length = count;
+            MaxLength = count;
+            Offset = 0;
+        }
+
         public void Dispose()
         {
-            if (ptr != IntPtr.Zero && !isUnsafeReference)
+            if (Ptr != IntPtr.Zero && !IsUnsafeReference)
             {
-                Marshal.FreeHGlobal(ptr);
+                Marshal.FreeHGlobal(Ptr);
             }
 
-            ptr = IntPtr.Zero;
+            Ptr = IntPtr.Zero;
             Length = 0;
             MaxLength = 0;
             Offset = 0;
-            isUnsafeReference = false;
+            IsUnsafeReference = false;
         }
 
         /// <summary>
@@ -145,7 +165,7 @@ namespace Coherence
         public bool Equals(IntPtr ptr, int length)
         {
             // Same pointer and same length
-            if (this.ptr == ptr && this.Length == length)
+            if (this.Ptr == ptr && this.Length == length)
                 return true;
 
             // Different lengths
@@ -153,22 +173,22 @@ namespace Coherence
                 return false;
 
             // One null
-            if (this.ptr == IntPtr.Zero && ptr != IntPtr.Zero)
+            if (this.Ptr == IntPtr.Zero && ptr != IntPtr.Zero)
                 return false;
 
             // One null
-            if (this.ptr != IntPtr.Zero && ptr == IntPtr.Zero)
+            if (this.Ptr != IntPtr.Zero && ptr == IntPtr.Zero)
                 return false;
 
             // memcmp (or equivalent method...)
-            return UnsafeNativeMethods.CompareMemory(this.ptr, ptr, length * ElementSize) == 0;
+            return UnsafeNativeMethods.CompareMemory(this.Ptr, ptr, length * ElementSize) == 0;
         }
 
         public bool Equals(IArray<T> other)
         {
             if (other is NativeArray<T> arr)
             {
-                return Equals(arr.ptr, arr.Length);
+                return Equals(arr.Ptr, arr.Length);
             }
 
             return false;
@@ -178,14 +198,14 @@ namespace Coherence
         {
             UnsafeNativeMethods.CopyMemory(
                 dst,
-                IntPtr.Add(ptr, (Offset + index) * ElementSize),
+                IntPtr.Add(Ptr, (Offset + index) * ElementSize),
                 (uint)(ElementSize * count)
             );
         }
 
         public void CopyTo(IArray<T> dst)
         {
-            dst.CopyFrom(ptr, 0, Length);
+            dst.CopyFrom(Ptr, 0, Length);
         }
 
         public void CopyFrom(IntPtr src, int index, int count)
@@ -202,24 +222,31 @@ namespace Coherence
             {
                 Dispose();
 
-                ptr = Marshal.AllocHGlobal(ElementSize * count);
+                Ptr = Marshal.AllocHGlobal(ElementSize * count);
                 Length = count;
                 MaxLength = count;
             }
 
-            UnsafeNativeMethods.CopyMemory(ptr, src, (uint)(ElementSize * count));
-            isUnsafeReference = false;
+            UnsafeNativeMethods.CopyMemory(Ptr, src, (uint)(ElementSize * count));
+            IsUnsafeReference = false;
         }
 
         public void CopyFrom(IArray<T> src)
         {
             if (src is NativeArray<T> other)
             {
-                CopyFrom(other.ptr, 0, other.Length);
+                CopyFrom(other.Ptr, 0, other.Length);
                 return;
             }
 
             throw new NotSupportedException();
+        }
+
+        // TODO: Give this a better name. It's copying
+        // from source memory directly INTO this buffer (if not an unsafe ref)
+        public void CopyFromInto(IntPtr src, int index, int count)
+        {
+
         }
 
         /*public NativeArray<T> CopyFrom(NativeArray<T> src)
@@ -235,7 +262,7 @@ namespace Coherence
         public IArray<T> GetRange(int index, int count)
         {
             return new NativeArray<T>(
-                IntPtr.Add(ptr, index * ElementSize),
+                IntPtr.Add(Ptr, index * ElementSize),
                 count
             ) {
                 // Adjust range to match
@@ -261,7 +288,7 @@ namespace Coherence
 
                 int offset = ElementSize * index;
                 return FastStructure.PtrToStructure<T>(
-                    IntPtr.Add(ptr, offset)
+                    IntPtr.Add(Ptr, offset)
                 );
             }
         }
