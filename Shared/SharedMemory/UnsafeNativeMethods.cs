@@ -31,6 +31,7 @@ using System.Security;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
 
+#pragma warning disable CS0436 // Type conflicts with imported type
 namespace SharedMemory
 {
     [System.Security.SuppressUnmanagedCodeSecurity]
@@ -184,3 +185,4 @@ namespace SharedMemory
 #endif
     }
 }
+#pragma warning restore CS0436 // Type conflicts with imported type

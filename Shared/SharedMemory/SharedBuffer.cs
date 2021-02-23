@@ -8,10 +8,10 @@
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -33,6 +33,7 @@ using System.Security.Permissions;
 using System.Text;
 using System.Threading;
 
+#pragma warning disable CS0436 // Type conflicts with imported type
 namespace SharedMemory
 {
     /// <summary>
@@ -51,12 +52,12 @@ namespace SharedMemory
         /// The name of the Shared Memory instance
         /// </summary>
         public string Name { get; private set; }
-        
+
         /// <summary>
         /// The buffer size
         /// </summary>
         public long BufferSize { get; private set; }
-        
+
         /// <summary>
         /// The total shared memory size, including header and buffer.
         /// </summary>
@@ -72,7 +73,7 @@ namespace SharedMemory
         /// Indicates whether this instance owns the shared memory (i.e. creator of the shared memory)
         /// </summary>
         public bool IsOwnerOfSharedMemory { get; private set; }
-        
+
         /// <summary>
         /// Returns true if the SharedMemory owner has/is shutting down
         /// </summary>
@@ -192,7 +193,7 @@ namespace SharedMemory
         #region Open / Close
 
         /// <summary>
-        /// Creates a new or opens an existing shared memory buffer with the name of <see cref="Name"/> depending on the value of <see cref="IsOwnerOfSharedMemory"/>. 
+        /// Creates a new or opens an existing shared memory buffer with the name of <see cref="Name"/> depending on the value of <see cref="IsOwnerOfSharedMemory"/>.
         /// </summary>
         /// <returns>True if the memory was successfully mapped</returns>
         /// <remarks>If <see cref="IsOwnerOfSharedMemory"/> is true then the shared memory buffer will be created, opening will fail in this case if the shared memory already exists. Otherwise if IsOwnerOfSharedMemory is false then the shared memory buffer will be opened, which will fail if it doesn't already exist.</remarks>
@@ -509,3 +510,4 @@ namespace SharedMemory
         #endregion
     }
 }
+#pragma warning restore CS0436 // Type conflicts with imported type

@@ -8,10 +8,10 @@
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -33,11 +33,12 @@ using System.Security;
 using System.Security.Permissions;
 using System.Text;
 
+#pragma warning disable CS0436 // Type conflicts with imported type
 namespace System.IO.MemoryMappedFiles
 {
 #if !NET40Plus
     /// <summary>
-    /// 
+    ///
     /// </summary>
 #if NETFULL
     [PermissionSet(SecurityAction.LinkDemand)]
@@ -50,9 +51,9 @@ namespace System.IO.MemoryMappedFiles
         {
             this._view = memoryMappedView;
         }
-        
+
         /// <summary>
-        /// 
+        ///
         /// </summary>
         public SafeMemoryMappedViewHandle SafeMemoryMappedViewHandle
         {
@@ -122,7 +123,7 @@ namespace System.IO.MemoryMappedFiles
 
             if (position > this._view.Size - (elementSize * count))
                 throw new ArgumentOutOfRangeException("position");
-            
+
             try
             {
                 byte* ptr = null;
@@ -177,7 +178,7 @@ namespace System.IO.MemoryMappedFiles
                 ptr += _view.ViewStartOffset + position;
 
                 FastStructure.ReadArray<T>(buffer, (IntPtr)ptr, index, count);
-                
+
                 //for (var i = 0; i < count; i++)
                 //{
                 //    PtrToStructure(ptr + (i * elementSize), out buffer[index + i]);
@@ -191,3 +192,4 @@ namespace System.IO.MemoryMappedFiles
     }
 #endif
 }
+#pragma warning restore CS0436 // Type conflicts with imported type
