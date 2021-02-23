@@ -53,7 +53,7 @@ from util.registry import autoregister
 @autoregister
 class CoherenceRenderEngine(bpy.types.RenderEngine):
     bl_idname = "coherence_renderer"
-    bl_label = "Unity Renderer"
+    bl_label = "Coherence"
     bl_use_preview = False
 
     # Panels that we don't register this engine with
@@ -264,7 +264,8 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
         self.camera.height = region.height
         self.camera.lens = space.lens
         self.camera.isPerspective = region3d.is_perspective
-        self.camera.viewDistance = region3d.view_distance
+        #self.camera.viewDistance = region3d.view_distance
+        self.camera.viewDistance = 1.0 / region3d.window_matrix[1][1]
         self.camera.position = to_interop_vector3(region3d.view_matrix.inverted().translation)
         self.camera.forward = to_interop_vector3(region3d.view_rotation @ Vector((0.0, 0.0, -1.0)))
         self.camera.up = to_interop_vector3(region3d.view_rotation @ Vector((0.0, 1.0, 0.0)))

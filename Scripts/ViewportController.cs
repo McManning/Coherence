@@ -41,6 +41,12 @@ namespace Coherence
 
         public SyncManager Sync { get; set; }
 
+        public void Awake()
+        {
+            gameObject.tag = "EditorOnly";
+            gameObject.hideFlags = HideFlags.DontSave;
+        }
+
         private void OnEnable()
         {
             cam = GetComponent<Camera>();
@@ -80,8 +86,6 @@ namespace Coherence
             // Resize the render texture / target Texture2D to match the viewport
             if (rt == null || rt.width != camera.width || rt.height != camera.height)
             {
-                Debug.LogWarning($"Realloc to {camera.width} x {camera.height}");
-
                 Profiler.BeginSample("Resize Viewport RT");
 
                 if (cam.targetTexture != null)
@@ -129,10 +133,7 @@ namespace Coherence
             else // Orthogonal camera view
             {
                 cam.orthographic = true;
-
-                // The magic number here was derived from a number of tests
-                // against different lens values and view distances.
-                cam.orthographicSize = 19.809f / camera.lens * camera.viewDistance;
+                cam.orthographicSize = camera.viewDistance;
 
                 // View distance from the facing direction needs to be factored in,
                 // as zooming will change view distance but not position.

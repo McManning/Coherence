@@ -51,10 +51,6 @@ class COHERENCE_IMAGEPAINT_PT_texture_sync(Panel):
         if settings.error:
             layout.label(text=settings.error, icon='ERROR')
 
-        layout.label(
-            text='is_float={} w={} h={} depth={} channels={}, len(pixels)={}'.format(image.is_float, image.size[0], image.size[1], image.depth, image.channels, len(image.pixels))
-        )
-
         if not bridge_driver().is_connected():
             layout.label(
                 text='Not connected to Unity.',
