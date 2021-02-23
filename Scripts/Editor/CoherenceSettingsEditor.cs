@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using UnityEditor;
+using UnityEditorInternal;
 using System.Runtime.InteropServices;
 using SharedMemory;
 using MessageType = UnityEditor.MessageType;
@@ -9,41 +10,17 @@ namespace Coherence
     [CustomEditor(typeof(CoherenceSettings))]
     public class CoherenceSettingsEditor : Editor
     {
-        /*public CoherenceSettings Settings
+        private bool showAdvancedSettings = false;
+        private bool showExperimentalSettings = false;
+
+        private bool IsRunning
         {
-            get
-            {
-                return CoherenceSettings.Instance;
-            }
-        }*/
+            get { return sync != null && sync.IsRunning; }
+        }
 
-        /// <summary>
-        /// Sync management singleton attached to the current scene.
-        ///
-        /// This will instantiate a new one if one does not already exist.
-        /// </summary>
-        public SyncManager Sync
+        private bool IsConnected
         {
-            get
-            {
-                if (sync == null)
-                {
-                    sync = FindObjectOfType<SyncManager>();
-                }
-
-                if (sync == null)
-                {
-                    var go = new GameObject("[Coherence Sync]")
-                    {
-                        tag = "EditorOnly",
-                        hideFlags = HideFlags.NotEditable | HideFlags.DontSave
-                    };
-
-                    sync = go.AddComponent<SyncManager>();
-                }
-
-                return sync;
-            }
+            get { return sync != null && sync.IsConnected; }
         }
 
         /// <summary>
@@ -51,28 +28,93 @@ namespace Coherence
         /// </summary>
         private SyncManager sync;
 
-        private bool showAdvancedSettings = false;
-        private bool showExperimentalSettings = false;
+        private ReorderableList materialOverridesList;
+        private ReorderableList textureSlotList;
+
+        private void OnEnable()
+        {
+            materialOverridesList = new ReorderableList(
+                serializedObject,
+                serializedObject.FindProperty("materialOverrides"),
+                true, true, true, true
+            ) {
+                drawHeaderCallback = DrawMaterialOverridesHeader,
+                drawElementCallback = DrawMaterialOverride,
+                showDefaultBackground = false
+            };
+
+            textureSlotList = new ReorderableList(
+                serializedObject,
+                serializedObject.FindProperty("textureSlots"),
+                true, true, true, true
+            ) {
+                drawHeaderCallback = DrawTextureSlotsHeader,
+                drawElementCallback = DrawTextureSlot,
+                showDefaultBackground = false
+            };
+        }
+
+        private void DrawMaterialOverridesHeader(Rect rect)
+        {
+            EditorGUI.LabelField(rect, "Material Overrides");
+        }
+
+        private void DrawMaterialOverride(Rect rect, int index, bool isActive, bool isFocused)
+        {
+            var element = materialOverridesList.serializedProperty.GetArrayElementAtIndex(index);
+
+            EditorGUI.PropertyField(
+                new Rect(rect.x, rect.y, 120, EditorGUIUtility.singleLineHeight),
+                element.FindPropertyRelative("blenderMaterial"),
+                GUIContent.none
+            );
+
+            EditorGUI.PropertyField(
+                new Rect(rect.x + 120, rect.y, rect.width - rect.x - 100, EditorGUIUtility.singleLineHeight),
+                element.FindPropertyRelative("replacement"),
+                GUIContent.none
+            );
+        }
+
+        private void DrawTextureSlotsHeader(Rect rect)
+        {
+            EditorGUI.LabelField(rect, "Texture Slots");
+        }
+
+        private void DrawTextureSlot(Rect rect, int index, bool isActive, bool isFocused)
+        {
+            var element = textureSlotList.serializedProperty.GetArrayElementAtIndex(index);
+
+            EditorGUI.PropertyField(
+                new Rect(rect.x, rect.y, 120, EditorGUIUtility.singleLineHeight),
+                element.FindPropertyRelative("name"),
+                GUIContent.none
+            );
+
+            EditorGUI.PropertyField(
+                new Rect(rect.x + 120, rect.y, rect.width - rect.x - 100, EditorGUIUtility.singleLineHeight),
+                element.FindPropertyRelative("target"),
+                GUIContent.none
+            );
+        }
 
         private void DrawRunControls()
         {
-            var running = Sync.IsSetup;
-
-            if (Sync.IsConnected)
+            if (IsConnected)
             {
                 EditorGUILayout.HelpBox("Connected to Blender", MessageType.Info);
             }
-            else if (running)
+            else if (IsRunning)
             {
                 EditorGUILayout.HelpBox("Waiting for Blender connection.", MessageType.Info);
             }
 
-            if (running && GUILayout.Button("Stop"))
+            if (IsRunning && GUILayout.Button("Stop"))
             {
                 Stop();
             }
 
-            if (!running && GUILayout.Button("Start"))
+            if (!IsRunning && GUILayout.Button("Start"))
             {
                 Start();
             }
@@ -80,15 +122,15 @@ namespace Coherence
 
         private void DrawBasic()
         {
-            EditorGUI.BeginDisabledGroup(Sync.IsConnected);
+            EditorGUI.BeginDisabledGroup(IsConnected);
 
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("viewportUpdateMode"));
+            // EditorGUILayout.PropertyField(serializedObject.FindProperty("viewportUpdateMode"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("viewportCameraPrefab"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("sceneObjectPrefab"));
 
             EditorGUI.EndDisabledGroup();
 
-            if (sync.IsConnected)
+            if (IsConnected)
             {
                 EditorGUILayout.HelpBox(
                     "The above settings cannot be modified while Blender is connected",
@@ -102,21 +144,21 @@ namespace Coherence
             EditorGUI.BeginChangeCheck();
 
             EditorGUILayout.PropertyField(serializedObject.FindProperty("defaultMaterial"));
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("displayMaterial"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("resourcesPath"));
 
-            // TODO: This counts as a "change" if you're opening/closing the property drawers.
-            // Weird...
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("materialOverrides"));
+            materialOverridesList.DoLayoutList();
 
             if (EditorGUI.EndChangeCheck())
             {
-                Debug.LogWarning("Changed");
+                // Debug.LogWarning("Changed");
+                // TODO: Change materials dynamically for
+                // everything loaded already.
             }
         }
 
         private void DrawTextureSettings()
         {
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("textureSlots"));
+            textureSlotList.DoLayoutList();
         }
 
         private void DrawOpenWithBlender()
@@ -138,17 +180,35 @@ namespace Coherence
             }
         }
 
+        /// <summary>
+        /// Stop and destroy all instances of the sync manager.
+        ///
+        /// This includes instances that may be lingering in the editor and not
+        /// necessarily attached to the current scene Hierarchy.
+        /// </summary>
         private void Stop()
         {
-            Sync.Teardown();
+            foreach (var instance in Resources.FindObjectsOfTypeAll<SyncManager>())
+            {
+                instance.Teardown();
+                DestroyImmediate(instance.gameObject);
+            }
 
-            DestroyImmediate(Sync.gameObject);
             sync = null;
         }
 
         private void Start()
         {
-            Sync.Setup();
+            Stop();
+
+            var go = new GameObject("[Coherence Sync]")
+            {
+                tag = "EditorOnly",
+                hideFlags = HideFlags.NotEditable | HideFlags.DontSave
+            };
+
+            sync = go.AddComponent<SyncManager>();
+            sync.Setup();
         }
 
         private bool CanOpenSelectionInBlender()
@@ -190,9 +250,11 @@ namespace Coherence
 
         private void DrawAdvanced()
         {
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("displayMaterial"));
+
             EditorGUILayout.LabelField("Shared Memory Buffer Settings", EditorStyles.boldLabel);
 
-            EditorGUI.BeginDisabledGroup(Sync.IsSetup);
+            EditorGUI.BeginDisabledGroup(IsRunning);
 
             EditorGUILayout.PropertyField(serializedObject.FindProperty("bufferName"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("nodeCount"));
@@ -227,7 +289,7 @@ namespace Coherence
                 MessageType.Info
             );
 
-            if (Sync.IsSetup)
+            if (IsRunning)
             {
                 EditorGUILayout.HelpBox(
                     "The above settings cannot be modified while Coherence is running",
@@ -359,9 +421,9 @@ namespace Coherence
             serializedObject.Update();
 
             EditorGUILayout.HelpBox(
-                "Coherence v#.#\n\n" +
-                "Big blurb here about Coherence configurations, etc etc.",
-                MessageType.None
+                "This is a preview build of Coherence and many features are still a work in progress.\n\n" +
+                "For more information, check on GitHub.",
+                MessageType.Warning
             );
 
             DrawRunControls();
