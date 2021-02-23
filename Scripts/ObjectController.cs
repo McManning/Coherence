@@ -142,21 +142,11 @@ namespace Coherence
 
         void SetMaterial(string name)
         {
-            // TODO: Smarter path lookup and mapping
-            string path = $"Materials/{name}";
-
-            var mat = Resources.Load<Material>(path);
-            if (!mat)
-            {
-                Debug.LogWarning($"Cannot find material resource at '{path}'");
-                mat = CoherenceSettings.Instance.defaultMaterial;
-            }
+            var mat = CoherenceSettings.Instance.GetMatchingMaterial(name);
 
             material = mat;
             meshRenderer.sharedMaterial = mat;
         }
-
-        Material material;
 
         /// <summary>
         /// Change out material for alternatives based on the chosen display mode
@@ -179,8 +169,6 @@ namespace Coherence
 
         void UpdateMesh()
         {
-            Debug.Log("UPDATE MESH");
-
             // If vertex length changes - Unity will throw a fit since we can't
             // just fill buffers without it trying to second guess us each step.
             //

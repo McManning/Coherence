@@ -243,6 +243,10 @@ namespace Coherence
         )]
         public GameObject sceneObjectPrefab;
 
+        #endregion
+
+        #region Materials
+
         [Tooltip("Material to use when a mapping cannot be made between a Blender material and one in Unity")]
         public Material defaultMaterial;
 
@@ -251,6 +255,49 @@ namespace Coherence
 
         [Tooltip("Overrides to automatic mapping between Blender and Unity material names")]
         public List<BlenderMaterialOverride> materialOverrides;
+
+        [Tooltip(
+            "If a material is not mapped through Material Overrides then a material with " +
+            "the same name as the Blender material will be loaded from this path via Resources.Load()"
+        )]
+        public string resourcesPath = "Materials";
+
+        public Material GetMatchingMaterial(string blenderMaterialName)
+        {
+            // Find an override for the Blender material
+            var match = materialOverrides.Find((mo) => mo.blenderMaterial == blenderMaterialName);
+            if (match != null)
+            {
+                if (match.replacement == null)
+                {
+                    Debug.LogWarning(
+                        $"Ignoring override setting for [{blenderMaterialName}] - " +
+                        $"no replacement material was specified."
+                    );
+                }
+                else
+                {
+                    return match.replacement;
+                }
+            }
+
+            // Try to find a loadable resource with a matching name
+            string path = $"{resourcesPath}/{blenderMaterialName}";
+
+            var mat = Resources.Load<Material>(path);
+            if (mat != null)
+            {
+                return mat;
+            }
+
+            Debug.LogWarning(
+                $"Could not find a material matching Blender's [{blenderMaterialName}] from " +
+                $"override list or [*/Resources/{resourcesPath}/{blenderMaterialName}]."
+            );
+
+            // Fallback to default
+            return defaultMaterial;
+        }
 
         #endregion
 
