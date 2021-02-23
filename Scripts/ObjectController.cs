@@ -30,9 +30,16 @@ namespace Coherence
         Mesh mesh;
         MeshFilter meshFilter;
         MeshRenderer meshRenderer;
+        Material material;
         MaterialPropertyBlock materialProperties;
 
         bool applyDirtiedBuffers;
+
+        public void Awake()
+        {
+            gameObject.tag = "EditorOnly";
+            gameObject.hideFlags = HideFlags.DontSave;
+        }
 
         public void Sync()
         {

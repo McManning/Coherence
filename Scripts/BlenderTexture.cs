@@ -25,7 +25,7 @@ namespace Coherence
         /// <summary>
         /// Temporary Texture2D if <see cref="target"/> is a <see cref="RenderTexture"/>
         /// </summary>
-        public Texture2D tempTexture;
+        private Texture2D tempTexture;
 
         internal void UpdateFromInterop(InteropTexture data)
         {

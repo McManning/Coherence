@@ -8,6 +8,8 @@ using UnityEngine.Profiling.Memory.Experimental;
 using UnityEngine.Rendering;
 using SharedMemory;
 using UnityEditor;
+using UnityEngine.SceneManagement;
+using UnityEditor.SceneManagement;
 
 namespace Coherence
 {
@@ -32,7 +34,7 @@ namespace Coherence
         /// <summary>
         /// Do we have shared memory allocated and ready to listen for Blender connections
         /// </summary>
-        public bool IsSetup { get; private set; }
+        public bool IsRunning { get; private set; }
 
         /// <summary>
         /// Is an instance of Blender connected to our shared memory
@@ -49,9 +51,8 @@ namespace Coherence
         /// <summary>
         /// Viewport controller to match Blender's viewport configuration
         /// </summary>
-        OrderedDictionary viewports = new OrderedDictionary();
-
-        Dictionary<string, ObjectController> objects = new Dictionary<string, ObjectController>();
+        readonly OrderedDictionary viewports = new OrderedDictionary();
+        readonly Dictionary<string, ObjectController> objects = new Dictionary<string, ObjectController>();
 
         /// <summary>
         /// Current index in <see cref="viewports"/> to use for
@@ -73,17 +74,18 @@ namespace Coherence
         InteropBlenderState blenderState;
 
         /// <summary>
-        /// Connect to the shared memory hosted by Blender and send an initial hello.
-        ///
-        /// Upon failure, this disconnects us.
+        /// Create a shared memory space for Blender to connect to.
         /// </summary>
-        /// <returns></returns>
         public bool Setup()
         {
-            if (IsSetup)
+            gameObject.transform.parent = null;
+
+            if (IsRunning)
             {
                 return true;
             }
+
+            IsRunning = true;
 
             Debug.Log("Setting up shared memory space");
 
@@ -127,8 +129,9 @@ namespace Coherence
 
             AssemblyReloadEvents.beforeAssemblyReload += OnBeforeAssemblyReload;
             EditorApplication.update += OnEditorUpdate;
+            SceneManager.activeSceneChanged += OnSceneUnloaded;
+            EditorSceneManager.activeSceneChangedInEditMode += OnSceneUnloaded;
 
-            IsSetup = true;
             return true;
         }
 
@@ -137,8 +140,19 @@ namespace Coherence
         /// </summary>
         public void Teardown()
         {
+            if (!IsRunning)
+            {
+                return;
+            }
+
+            IsRunning = false;
+
+            Debug.Log("Tearing down shared memory space");
+
             AssemblyReloadEvents.beforeAssemblyReload -= OnBeforeAssemblyReload;
             EditorApplication.update -= OnEditorUpdate;
+            SceneManager.activeSceneChanged -= OnSceneUnloaded;
+            EditorSceneManager.activeSceneChangedInEditMode -= OnSceneUnloaded;
 
             // Notify Blender if we're shutting down from the Unity side
             if (IsConnected)
@@ -152,10 +166,6 @@ namespace Coherence
                 // the connection uncleanly and have some persisted data to clean up.
                 Clear();
             }
-
-            IsSetup = false;
-
-            Debug.Log("Tearing down shared memory space");
 
             // Dispose shared memory
             messages?.Dispose();
@@ -182,7 +192,7 @@ namespace Coherence
         /// </summary>
         public void Sync()
         {
-            if (IsSetup)
+            if (IsRunning)
             {
                 messages.ProcessOutboundQueue();
                 ConsumeMessages();
@@ -206,6 +216,11 @@ namespace Coherence
             }
         }
 
+        private void OnSceneUnloaded(Scene current, Scene next)
+        {
+            Teardown();
+        }
+
         private void OnDisable()
         {
             Teardown();
@@ -227,12 +242,6 @@ namespace Coherence
             {
                 Sync();
             }
-
-            // This is our equivalent to a "Connect" button in the UI for now.
-            /*if (Input.GetKeyDown(KeyCode.Space))
-            {
-                Connect();
-            } */
         }
 
         /// <summary>
@@ -294,7 +303,12 @@ namespace Coherence
         {
             if (viewportsContainer == null)
             {
-                viewportsContainer = new GameObject("Viewports");
+                viewportsContainer = new GameObject("Viewports")
+                {
+                    tag = "EditorOnly",
+                    hideFlags = HideFlags.NotEditable | HideFlags.DontSave
+                };
+
                 viewportsContainer.transform.parent = transform;
             }
 
@@ -357,7 +371,12 @@ namespace Coherence
         {
             if (objectsContainer == null)
             {
-                objectsContainer = new GameObject("Objects");
+                objectsContainer = new GameObject("Objects")
+                {
+                    tag = "EditorOnly",
+                    hideFlags = HideFlags.NotEditable | HideFlags.DontSave
+                };
+
                 objectsContainer.transform.parent = transform;
             }
 
