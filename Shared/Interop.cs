@@ -244,15 +244,6 @@ namespace Coherence
         UpdateTextureData,
     }
 
-    public enum RpcResponse : byte
-    {
-        /// <summary>
-        /// Sync local data with an updated Blender state
-        /// (camera position, objects, etc)
-        /// </summary>
-        BlenderState = 1
-    }
-
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct InteropMessageHeader
     {
@@ -569,9 +560,19 @@ namespace Coherence
         public ObjectDisplayMode display;
 
         /// <summary>
-        /// World space transformation
+        /// World space position
         /// </summary>
-        public InteropMatrix4x4 transform;
+        public InteropVector3 position;
+
+        /// <summary>
+        /// World space rotation
+        /// </summary>
+        public InteropQuaternion rotation;
+
+        /// <summary>
+        /// Local scale
+        /// </summary>
+        public InteropVector3 scale;
 
         /// <summary>
         /// Name of the material used by this object
@@ -679,6 +680,31 @@ namespace Coherence
         public override bool Equals(object obj)
         {
             return obj is InteropVector3 vector && Approx(vector);
+        }
+    }
+
+    /// <summary>
+    /// Structure that matches the layout of a UnityEngine.Quaternion
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct InteropQuaternion
+    {
+        public float x;
+        public float y;
+        public float z;
+        public float w;
+
+        public InteropQuaternion(float x, float y, float z, float w)
+        {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.w = w;
+        }
+
+        public override string ToString()
+        {
+            return $"InteropQuaternion({x}, {y}, {z}, {w})";
         }
     }
 

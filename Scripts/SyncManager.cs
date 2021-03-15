@@ -382,14 +382,14 @@ namespace Coherence
 
             var prefab = CoherenceSettings.Instance.sceneObjectPrefab;
             var go = prefab ? Instantiate(prefab) : new GameObject();
+            var controller = go.AddComponent<ObjectController>();
 
             go.name = name;
-            go.transform.parent = objectsContainer.transform;
-
-            var controller = go.AddComponent<ObjectController>();
 
             objects[name] = controller;
             controller.UpdateFromInterop(iso);
+
+            go.transform.parent = objectsContainer.transform;
 
             return controller;
         }

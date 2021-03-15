@@ -9,6 +9,72 @@ using UnityEngine.Rendering;
 
 namespace Coherence
 {
+
+    public static class TransformExtensions
+    {
+        public static void FromInteropMatrix4x4(this Transform transform, InteropMatrix4x4 matrix)
+        {
+            transform.localScale = matrix.Scale();
+            transform.rotation = matrix.Rotation();
+            transform.position = matrix.Position();
+        }
+    }
+
+    public static class InteropVector3Extensions
+    {
+        public static Vector3 ToVector3(this InteropVector3 vec)
+        {
+            return new Vector3(vec.x, vec.y, vec.z);
+        }
+    }
+
+    public static class InteropQuaternionExtensions
+    {
+        public static Quaternion ToQuaternion(this InteropQuaternion q)
+        {
+            return new Quaternion(q.x, q.y, q.z, q.w);
+        }
+    }
+
+    /// <summary>
+    /// Extension methods that are Unity-only
+    /// </summary>
+    public static class InteropMatrix4x4Extensions
+    {
+        public static Quaternion Rotation(this InteropMatrix4x4 matrix)
+        {
+            Vector3 forward;
+            forward.x = matrix.m02;
+            forward.y = matrix.m12;
+            forward.z = matrix.m22;
+
+            Vector3 upwards;
+            upwards.x = matrix.m01;
+            upwards.y = matrix.m11;
+            upwards.z = matrix.m21;
+
+            return Quaternion.LookRotation(forward, upwards);
+        }
+
+        public static Vector3 Position(this InteropMatrix4x4 matrix)
+        {
+            Vector3 position;
+            position.x = matrix.m03;
+            position.y = matrix.m13;
+            position.z = matrix.m23;
+            return position;
+        }
+
+        public static Vector3 Scale(this InteropMatrix4x4 matrix)
+        {
+            Vector3 scale;
+            scale.x = new Vector4(matrix.m00, matrix.m10, matrix.m20, matrix.m30).magnitude;
+            scale.y = new Vector4(matrix.m01, matrix.m11, matrix.m21, matrix.m31).magnitude;
+            scale.z = new Vector4(matrix.m02, matrix.m12, matrix.m22, matrix.m32).magnitude;
+            return scale;
+        }
+    }
+
     [ExecuteAlways]
     public class ObjectController : MonoBehaviour
     {
@@ -86,30 +152,9 @@ namespace Coherence
 
         internal void UpdateFromInterop(InteropSceneObject obj)
         {
-            // Blender is z-up - swap z/y everywhere
-            // TODO: But they could also change the up axis manually...
-            InteropMatrix4x4 t = obj.transform;
-            transform.position = new Vector3(t.m03, t.m23, t.m13);
-
-            Vector3 forward;
-            forward.x = t.m02;
-            forward.y = t.m22;
-            forward.z = t.m12;
-
-            Vector3 up;
-            up.x = t.m01;
-            up.y = t.m21;
-            up.z = t.m11;
-
-            transform.rotation = Quaternion.LookRotation(forward, up);
-
-            // Multiplying X by -1 to account for different axes.
-            // TODO: Improve on.
-            transform.localScale = new Vector4(
-                new Vector4(t.m00, t.m10, t.m30, t.m20).magnitude * -1,
-                new Vector4(t.m01, t.m11, t.m31, t.m21).magnitude,
-                new Vector4(t.m02, t.m12, t.m32, t.m22).magnitude
-            );
+            transform.position = obj.position.ToVector3();
+            transform.rotation = obj.rotation.ToQuaternion();
+            transform.localScale = obj.scale.ToVector3();
 
             if (obj.type == SceneObjectType.Mesh && mesh == null)
             {

@@ -482,9 +482,10 @@ class BridgeDriver:
 
         # TODO: Other object types
 
+        pos, eul, sca = to_interop_transform(obj)
         self.lib.AddMeshObjectToScene(
             get_string_buffer(obj.name),
-            to_interop_matrix4x4(obj.matrix_world),
+            pos, eul, sca,
             get_string_buffer(mat_name)
         )
 
@@ -517,9 +518,10 @@ class BridgeDriver:
 
         mat_name = get_material_unity_name(obj.active_material)
 
+        pos, eul, sca = to_interop_transform(obj)
         self.lib.AddMeshObjectToScene(
             self.METABALLS_OBJECT_NAME,
-            to_interop_matrix4x4(obj.matrix_world),
+            pos, eul, sca,
             get_string_buffer(mat_name)
         )
 
@@ -541,9 +543,10 @@ class BridgeDriver:
         """
         debug('on_update_transform - name={}'.format(obj.name))
 
+        pos, eul, sca = to_interop_transform(obj)
         self.lib.SetObjectTransform(
             get_string_buffer(obj.name),
-            to_interop_matrix4x4(obj.matrix_world)
+            pos, eul, sca
         )
 
     def on_update_properties(self, obj):
@@ -665,9 +668,10 @@ class BridgeDriver:
 
         # TODO: Don't do this repeately. Only if the root changes transform.
         # seems to be lagging out the interop.
+        pos, eul, sca = to_interop_transform(obj)
         self.lib.SetObjectTransform(
             self.METABALLS_OBJECT_NAME,
-            to_interop_matrix4x4(obj.matrix_world)
+            pos, eul, sca
         )
 
         self.lib.CopyMeshDataNative(

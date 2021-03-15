@@ -344,7 +344,9 @@ namespace Coherence
         [DllExport]
         public static int AddMeshObjectToScene(
             [MarshalAs(UnmanagedType.LPStr)] string name,
-            InteropMatrix4x4 transform,
+            InteropVector3 position,
+            InteropQuaternion rotation,
+            InteropVector3 scale,
             [MarshalAs(UnmanagedType.LPStr)] string material
         ) {
             InteropLogger.Debug($"Adding mesh <name={name}, material={material}>");
@@ -352,7 +354,7 @@ namespace Coherence
             try
             {
                 var obj = new SceneObject(name, SceneObjectType.Mesh);
-                obj.Transform = transform;
+                obj.SetTransform(position, rotation, scale);
                 obj.Material = material;
 
                 Bridge.AddObject(obj);
@@ -371,12 +373,14 @@ namespace Coherence
         [DllExport]
         public static int SetObjectTransform(
             [MarshalAs(UnmanagedType.LPStr)] string name,
-            InteropMatrix4x4 transform
+            InteropVector3 position,
+            InteropQuaternion rotation,
+            InteropVector3 scale
         ) {
             try
             {
                 var obj = Bridge.GetObject(name);
-                obj.Transform = transform;
+                obj.SetTransform(position, rotation, scale);
 
                 Bridge.SendEntity(RpcRequest.UpdateSceneObject, obj);
                 return 1;

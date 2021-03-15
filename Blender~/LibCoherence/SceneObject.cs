@@ -44,12 +44,6 @@ namespace Coherence
             set { data.material = value; }
         }
 
-        internal InteropMatrix4x4 Transform
-        {
-            get { return data.transform; }
-            set { data.transform = value; }
-        }
-
         internal SceneObject(string name, SceneObjectType type)
         {
             Name = name;
@@ -321,6 +315,16 @@ namespace Coherence
             #endif
         }
 
+        internal void SetTransform(
+            InteropVector3 position,
+            InteropQuaternion rotation,
+            InteropVector3 scale
+        ) {
+            data.position = position;
+            data.rotation = rotation;
+            data.scale = scale;
+        }
+
         // Raw data from Blender - cached for later memcmp calls
         NativeArray<MLoop> loops = new NativeArray<MLoop>();
         NativeArray<MVert> verts = new NativeArray<MVert>();
@@ -438,10 +442,12 @@ namespace Coherence
             for (int i = 0; i < verts.Length; i++)
             {
                 var vert = verts[i];
+
+                // y/z are swizzled here to convert to Unity's coordinate space
                 vertices[i] = new InteropVector3(
                     vert.co_x,
-                    vert.co_y,
-                    vert.co_z
+                    vert.co_z,
+                    vert.co_y
                 );
             }
 
@@ -470,10 +476,12 @@ namespace Coherence
             for (int i = 0; i < verts.Length; i++)
             {
                 var vert = verts[i];
+
+                // Like vertex coordinates - we swizzle y/z
                 normals[i] = new InteropVector3(
                     vert.no_x * normalScale,
-                    vert.no_y * normalScale,
-                    vert.no_z * normalScale
+                    vert.no_z * normalScale,
+                    vert.no_y * normalScale
                 );
             }
 
@@ -500,9 +508,12 @@ namespace Coherence
             for (int t = 0; t < loopTris.Length; t++)
             {
                 var loopTri = loopTris[t];
-                int tri0 = (int)loopTri.tri_0;
+
+                // Triangles are flipped due to coordinate space conversions
+                // that happen from Blender to Unity
+                int tri0 = (int)loopTri.tri_2;
                 int tri1 = (int)loopTri.tri_1;
-                int tri2 = (int)loopTri.tri_2;
+                int tri2 = (int)loopTri.tri_0;
 
                 // If the triangle vert has been mapped to a split vertex,
                 // use that instead of the original vertex
