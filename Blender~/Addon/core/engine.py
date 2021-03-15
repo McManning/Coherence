@@ -101,6 +101,12 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
 
         bridge_driver().add_viewport(self)
 
+        # TODO: I don't like forcing this on someone, but
+        # this color space transform has to happen to sync up
+        # colors coming from Unity to all blender editors at once
+        # (including texture editing).
+        bpy.context.scene.view_settings.view_transform = 'Raw'
+
     def __del__(self):
         log('Shutdown RenderEngine at {}'.format(id(self)))
 
