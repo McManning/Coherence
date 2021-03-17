@@ -725,7 +725,7 @@ class BridgeDriver:
         # Is that fine? (Probably safe to ignore errors for these)
         # Could also iterate self.objects here and pull each from bpy.data.objects
         for obj in bpy.context.scene.objects:
-            if obj.active_material:
+            if obj.active_material == mat:
                 self.lib.SetObjectMaterial(
                     get_string_buffer(obj.name),
                     mat_name_buf
