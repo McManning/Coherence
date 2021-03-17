@@ -55,6 +55,11 @@ namespace Coherence
         readonly Dictionary<string, ObjectController> objects = new Dictionary<string, ObjectController>();
 
         /// <summary>
+        /// Objects added with parents that are not (yet) in the scene.
+        /// </summary>
+        readonly HashSet<ObjectController> orphans = new HashSet<ObjectController>();
+
+        /// <summary>
         /// Current index in <see cref="viewports"/> to use for
         /// sending a render texture to Blender
         /// </summary>
@@ -389,7 +394,10 @@ namespace Coherence
             objects[name] = controller;
             controller.UpdateFromInterop(iso);
 
-            go.transform.parent = objectsContainer.transform;
+            ReparentObject(controller);
+
+            // Attach any orphaned objects that were waiting for this parent to be added.
+            CheckOrphanedObjects();
 
             return controller;
         }
@@ -403,8 +411,86 @@ namespace Coherence
 
             var instance = objects[name];
 
+            // Move children to the main container and orphan them.
+            var children = instance.GetComponentsInChildren<ObjectController>();
+            foreach (var child in children)
+            {
+                child.transform.parent = objectsContainer.transform;
+                orphans.Add(child);
+            }
+
             DestroyImmediate(instance.gameObject);
             objects.Remove(name);
+            orphans.Remove(instance);
+        }
+
+        private void UpdateObject(string name, InteropSceneObject iso)
+        {
+            var obj = GetObject(name);
+            var needsReparenting = !iso.transform.parent.Equals(obj.Data.transform.parent);
+
+            obj.UpdateFromInterop(iso);
+
+            if (needsReparenting)
+            {
+                ReparentObject(obj);
+            }
+        }
+
+        /// <summary>
+        /// Find an object in the Unity scene matching the current parent name
+        /// provided by Blender and attach the object to it.
+        ///
+        /// If the parent cannot be found - the object is attached to the container
+        /// and added to the orphans list to be later picked up by new entries.
+        /// </summary>
+        /// <param name="obj"></param>
+        private void ReparentObject(ObjectController obj)
+        {
+            var parentName = obj.Data.transform.parent.Value;
+
+            // Object is root level / unparented.
+            if (parentName.Length < 1)
+            {
+                obj.transform.parent = objectsContainer.transform;
+                orphans.Remove(obj);
+            }
+
+            if (objects.TryGetValue(parentName, out ObjectController match))
+            {
+                obj.transform.parent = match.transform;
+                orphans.Remove(obj);
+            }
+            else
+            {
+                // A parent was defined by this object but it's not in the scene
+                // (could be added out of sequence, or a non-transferrable type).
+                // Add to the orphan list to be later picked up if it does get added.
+                obj.transform.parent = objectsContainer.transform;
+                orphans.Add(obj);
+            }
+        }
+
+        /// <summary>
+        /// Scan through orphaned objects for any new parent associations to add.
+        /// </summary>
+        private void CheckOrphanedObjects()
+        {
+            var parentedOrphans = new List<ObjectController>();
+            foreach (var orphan in orphans)
+            {
+                var parentName = orphan.Data.transform.parent.Value;
+                if (objects.TryGetValue(parentName, out ObjectController parent))
+                {
+                    orphan.transform.parent = parent.transform;
+                    parentedOrphans.Add(orphan);
+                }
+            }
+
+            foreach (var orphan in parentedOrphans)
+            {
+                orphans.Remove(orphan);
+            }
         }
 
         #endregion
@@ -519,7 +605,8 @@ namespace Coherence
                         RemoveObject(target);
                         break;
                     case RpcRequest.UpdateSceneObject:
-                        GetObject(target).UpdateFromInterop(
+                        UpdateObject(
+                            target,
                             FastStructure.PtrToStructure<InteropSceneObject>(ptr)
                         );
                         break;

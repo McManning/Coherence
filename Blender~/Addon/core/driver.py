@@ -507,6 +507,13 @@ class BridgeDriver:
             get_string_buffer(mat_name)
         )
 
+        # When an object is renamed - it's treated as an add. But the rename
+        # doesn't propagate any change events to children, so we need to manually
+        # trigger a transform update message for everything parented to this object.
+        for child in obj.children:
+            if child.name in self.objects:
+                self.on_update_transform(child)
+
         # Send up initial geometry as well
         self.on_update_geometry(obj, depsgraph)
 
