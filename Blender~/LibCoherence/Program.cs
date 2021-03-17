@@ -344,18 +344,14 @@ namespace Coherence
         [DllExport]
         public static int AddMeshObjectToScene(
             [MarshalAs(UnmanagedType.LPStr)] string name,
-            InteropVector3 position,
-            InteropQuaternion rotation,
-            InteropVector3 scale,
+            InteropTransform transform,
             [MarshalAs(UnmanagedType.LPStr)] string material
         ) {
             InteropLogger.Debug($"Adding mesh <name={name}, material={material}>");
 
             try
             {
-                var obj = new SceneObject(name, SceneObjectType.Mesh);
-                obj.SetTransform(position, rotation, scale);
-                obj.Material = material;
+                var obj = new SceneObject(SceneObjectType.Mesh, name, transform, material);
 
                 Bridge.AddObject(obj);
                 return 1;
@@ -373,14 +369,12 @@ namespace Coherence
         [DllExport]
         public static int SetObjectTransform(
             [MarshalAs(UnmanagedType.LPStr)] string name,
-            InteropVector3 position,
-            InteropQuaternion rotation,
-            InteropVector3 scale
+            InteropTransform transform
         ) {
             try
             {
                 var obj = Bridge.GetObject(name);
-                obj.SetTransform(position, rotation, scale);
+                obj.data.transform = transform;
 
                 Bridge.SendEntity(RpcRequest.UpdateSceneObject, obj);
                 return 1;
@@ -395,12 +389,14 @@ namespace Coherence
         /// <summary>
         /// Update common object properties and notify Unity.
         ///
+        /// These are properties that don't have their own setters yet.
+        ///
         /// Might eventually merge in <see cref="SetObjectMaterial(string, string)"/>
         /// and <see cref="SetObjectTransform(string, InteropMatrix4x4)"/> into this
         /// since they're all just <see cref="InteropSceneObject"/> fields.
         /// </summary>
         [DllExport]
-        public static int SetObjectProperties(
+        public static int UpdateObjectProperties(
             [MarshalAs(UnmanagedType.LPStr)] string name,
             ObjectDisplayMode display,
             int optimizeMesh
@@ -436,9 +432,9 @@ namespace Coherence
             {
                 var obj = Bridge.GetObject(name);
 
-                if (material != obj.Material)
+                if (material != obj.data.material)
                 {
-                    obj.Material = material;
+                    obj.data.material = material;
                     Bridge.SendEntity(RpcRequest.UpdateSceneObject, obj);
                 }
 

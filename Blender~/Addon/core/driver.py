@@ -139,6 +139,20 @@ class BridgeDriver:
         self.lib.ReleaseRenderTextureLock.argtypes = (c_uint, )
         self.lib.ReleaseRenderTextureLock.restype = c_int
 
+        self.lib.AddMeshObjectToScene.argtypes = (
+            c_void_p,           # name
+            InteropTransform,   # transform
+            c_void_p,           # material name
+        )
+        self.lib.AddMeshObjectToScene.restype = c_int
+
+        self.lib.SetObjectTransform.argtypes = (
+            c_void_p,           # name
+            InteropTransform,   # transform
+        )
+        self.lib.SetObjectTransform.restype = c_int
+
+
         # bpy.types.SpaceView3D.draw_handler_add(post_view_draw, (), 'WINDOW', 'POST_PIXEL')
 
 
@@ -482,10 +496,14 @@ class BridgeDriver:
 
         # TODO: Other object types
 
-        pos, eul, sca = to_interop_transform(obj)
+        parent_name = ''
+        if obj.parent_type == 'OBJECT' and obj.parent is not None:
+            parent_name = obj.parent.name
+
+        transform = to_interop_transform(obj)
         self.lib.AddMeshObjectToScene(
             get_string_buffer(obj.name),
-            pos, eul, sca,
+            transform,
             get_string_buffer(mat_name)
         )
 
@@ -518,10 +536,10 @@ class BridgeDriver:
 
         mat_name = get_material_unity_name(obj.active_material)
 
-        pos, eul, sca = to_interop_transform(obj)
+        transform = to_interop_transform(obj)
         self.lib.AddMeshObjectToScene(
             self.METABALLS_OBJECT_NAME,
-            pos, eul, sca,
+            transform,
             get_string_buffer(mat_name)
         )
 
@@ -536,17 +554,17 @@ class BridgeDriver:
         self.lib.RemoveObjectFromScene(self.METABALLS_OBJECT_NAME)
 
     def on_update_transform(self, obj):
-        """Notify the bridge that the object has been transformed in the scene
+        """Notify the bridge that the object has been transformed in the scene.
 
         Args:
             obj (bpy.types.Object): The object that was updated
         """
         debug('on_update_transform - name={}'.format(obj.name))
 
-        pos, eul, sca = to_interop_transform(obj)
+        transform = to_interop_transform(obj)
         self.lib.SetObjectTransform(
             get_string_buffer(obj.name),
-            pos, eul, sca
+            transform
         )
 
     def on_update_properties(self, obj):
@@ -557,11 +575,10 @@ class BridgeDriver:
         """
         debug('on_update_properties - name={}'.format(obj.name))
 
-        self.lib.SetObjectProperties(
-            get_string_buffer(obj.name),
+        self.lib.UpdateObjectProperties(
+            name,
             int(obj.coherence.display_mode),
             int(obj.coherence.optimize_mesh)
-            # ... etc
         )
 
     def on_update_geometry(self, obj, depsgraph):
@@ -668,10 +685,10 @@ class BridgeDriver:
 
         # TODO: Don't do this repeately. Only if the root changes transform.
         # seems to be lagging out the interop.
-        pos, eul, sca = to_interop_transform(obj)
+        transform = to_interop_transform(obj)
         self.lib.SetObjectTransform(
             self.METABALLS_OBJECT_NAME,
-            pos, eul, sca
+            transform
         )
 
         self.lib.CopyMeshDataNative(

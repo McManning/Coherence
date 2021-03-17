@@ -2,6 +2,7 @@
 from ctypes import *
 import math
 from mathutils import Vector, Matrix, Quaternion
+from .utils import get_string_buffer
 
 class InteropString64(Structure):
     _fields_ = [
@@ -60,6 +61,14 @@ class InteropQuaternion(Structure):
         self.z = z
         self.w = w
 
+class InteropTransform(Structure):
+    _fields_ = [
+        ('parent', InteropString64),
+        ('position', InteropVector3),
+        ('rotation', InteropQuaternion),
+        ('scale', InteropVector3)
+    ]
+
 class InteropCamera(Structure):
     _fields_ = [
         ('width', c_int),
@@ -90,7 +99,7 @@ def identity():
     return mat
 
 def to_interop_transform(obj):
-    """Extract local transformation (position, euler angles, scale) from an object.
+    """Extract transformation (parent, position, euler angles, scale) from an object.
 
     This will also automatically perform conversion from
     Blender's RHS Z-up space to Unity's LHS Y-up.
@@ -99,7 +108,7 @@ def to_interop_transform(obj):
         obj (bpy.types.Object): The object to extract transform from
 
     Returns:
-        tuple of InteropVector3's representing (pos, eul, sca)
+        InteropTransform
     """
     mat = Matrix(obj.matrix_world)
 
@@ -112,11 +121,20 @@ def to_interop_transform(obj):
     # the matrix can't represent negative scaling
     sca = obj.scale
 
-    return (
-        InteropVector3(pos.x, pos.z, pos.y),
-        InteropQuaternion(rot.x, rot.z, rot.y, -rot.w),
-        InteropVector3(sca.x, sca.z, sca.y)
-    )
+    # Get the parent name IFF it's an object.
+    # TODO: Figure out how parenting to armatures and whatnot would work.
+    # Ref: https://docs.blender.org/api/current/bpy.types.Object.html#bpy.types.Object.parent_type
+    parent_name = ''
+    if obj.parent_type == 'OBJECT' and obj.parent is not None:
+        parent_name = obj.parent.name
+
+    transform = InteropTransform()
+    transform.parent = InteropString64(parent_name.encode())
+    transform.position = InteropVector3(pos.x, pos.z, pos.y)
+    transform.rotation = InteropQuaternion(rot.x, rot.z, rot.y, -rot.w)
+    transform.scale = InteropVector3(sca.x, sca.z, sca.y)
+
+    return transform
 
 
 def to_interop_matrix4x4(mat):
@@ -197,8 +215,23 @@ def to_interop_vector3(vec):
         vec (mathutils.Vector)
 
     Returns:
+        InteropVector3
     """
     return InteropVector3(vec[0], vec[1], vec[2])
+
+def to_interop_quaternion(rot):
+    """Convert a Blender Quaternion to an interop type for C#
+
+    This automatically converts rotation space to match Unity
+
+    Parameters:
+        rot (mathutils.Quaternion)
+
+    returns:
+        InteropQuaternion
+    """
+    raise NotImplementedError('Need use cases before reimplementing')
+    return InteropQuaternion(rot.x, rot.z, -rot.y, rot.w)
 
 def to_interop_vector2(vec):
     """Convert a Blender Vector to an interop type for C#
@@ -207,6 +240,7 @@ def to_interop_vector2(vec):
         vec (mathutils.Vector)
 
     Returns:
+        InteropVector2
     """
     result = InteropVector2()
     result.x = vec[0]

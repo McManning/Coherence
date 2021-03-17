@@ -152,9 +152,9 @@ namespace Coherence
 
         internal void UpdateFromInterop(InteropSceneObject obj)
         {
-            transform.position = obj.position.ToVector3();
-            transform.rotation = obj.rotation.ToQuaternion();
-            transform.localScale = obj.scale.ToVector3();
+            transform.position = obj.transform.position.ToVector3();
+            transform.rotation = obj.transform.rotation.ToQuaternion();
+            transform.localScale = obj.transform.scale.ToVector3();
 
             if (obj.type == SceneObjectType.Mesh && mesh == null)
             {

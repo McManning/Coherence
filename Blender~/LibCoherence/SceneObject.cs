@@ -35,24 +35,16 @@ namespace Coherence
 
         public string Name { get; set; }
 
-        /// <summary>
-        /// Name of the active material for this object
-        /// </summary>
-        internal string Material
-        {
-            get { return data.material; }
-            set { data.material = value; }
-        }
-
-        internal SceneObject(string name, SceneObjectType type)
+        internal SceneObject(SceneObjectType type, string name, InteropTransform transform, string material)
         {
             Name = name;
 
             data = new InteropSceneObject
             {
                 name = name,
+                transform = transform,
                 type = type,
-                material = "Default"
+                material = material
             };
         }
 
@@ -313,16 +305,6 @@ namespace Coherence
                 }
             }
             #endif
-        }
-
-        internal void SetTransform(
-            InteropVector3 position,
-            InteropQuaternion rotation,
-            InteropVector3 scale
-        ) {
-            data.position = position;
-            data.rotation = rotation;
-            data.scale = scale;
         }
 
         // Raw data from Blender - cached for later memcmp calls

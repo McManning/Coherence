@@ -342,6 +342,47 @@ namespace Coherence
     }
 
     /// <summary>
+    /// Standard transform information shared between applications
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct InteropTransform
+    {
+        /// <summary>
+        /// Parent object identifier
+        /// </summary>
+        public InteropString64 parent;
+
+        /// <summary>
+        /// World space position
+        /// </summary>
+        public InteropVector3 position;
+
+        /// <summary>
+        /// World space rotation
+        /// </summary>
+        public InteropQuaternion rotation;
+
+        /// <summary>
+        /// Local scale
+        /// </summary>
+        public InteropVector3 scale;
+
+        public override int GetHashCode()
+        {
+            return base.GetHashCode();
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is InteropTransform t
+                && t.position.Equals(position)
+                && t.scale.Equals(scale)
+                && t.rotation.Equals(rotation)
+                && t.parent.Equals(parent);
+        }
+    }
+
+    /// <summary>
     /// Current viewport camera state (transform, matrices, etc)
     /// </summary>
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -375,9 +416,9 @@ namespace Coherence
                 && cam.lens == lens
                 && cam.isPerspective == isPerspective
                 && cam.viewDistance == viewDistance
-                && cam.position.Approx(position)
-                && cam.forward.Approx(forward)
-                && cam.up.Approx(up);
+                && cam.position.Equals(position)
+                && cam.forward.Equals(forward)
+                && cam.up.Equals(up);
         }
     }
 
@@ -555,24 +596,14 @@ namespace Coherence
         public SceneObjectType type;
 
         /// <summary>
+        /// Object transform in the scene
+        /// </summary>
+        public InteropTransform transform;
+
+        /// <summary>
         /// How to display this object in Unity
         /// </summary>
         public ObjectDisplayMode display;
-
-        /// <summary>
-        /// World space position
-        /// </summary>
-        public InteropVector3 position;
-
-        /// <summary>
-        /// World space rotation
-        /// </summary>
-        public InteropQuaternion rotation;
-
-        /// <summary>
-        /// Local scale
-        /// </summary>
-        public InteropVector3 scale;
 
         /// <summary>
         /// Name of the material used by this object
@@ -585,6 +616,63 @@ namespace Coherence
     {
         public int width;
         public int height;
+    }
+
+    public enum InteropPropertyType : byte
+    {
+        Boolean = 1,
+        Integer,
+        Float,
+        String,
+        Enum,
+    }
+
+    /// <summary>
+    /// Arbitrary property information shared between applications.
+    /// An object contains one or more properties.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct InteropProperty
+    {
+        /// <summary>
+        /// Property name for assigning values
+        /// </summary>
+        public InteropString64 name;
+
+        /// <summary>
+        /// Property type for mapping to and from Blender UI
+        /// </summary>
+        public InteropPropertyType type;
+
+        /// <summary>
+        /// Property group to display this within.
+        ///
+        /// Typically associated with a Unity MonoBehaviour
+        /// or third party Blender addon that provided the property.
+        /// </summary>
+        public InteropString64 group;
+
+        /// <summary>
+        /// Initial property value
+        /// </summary>
+        public InteropPropertyValue value;
+    }
+
+    /// <summary>
+    /// Property value shared between Unity and Blender
+    /// </summary>
+    public struct InteropPropertyValue
+    {
+        public bool boolValue;
+        public int intValue;
+        public float floatValue;
+        public InteropString64 strValue;
+    }
+
+    public struct InteropPropertyUpdate
+    {
+        public InteropString64 name;
+        public InteropString64 value;
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -705,6 +793,26 @@ namespace Coherence
         public override string ToString()
         {
             return $"InteropQuaternion({x}, {y}, {z}, {w})";
+        }
+
+        internal bool Approx(InteropQuaternion q)
+        {
+            var epsilon = 1e-6f;
+
+            return Math.Abs(x - q.x) < epsilon
+                && Math.Abs(y - q.y) < epsilon
+                && Math.Abs(z - q.z) < epsilon
+                && Math.Abs(w - q.w) < epsilon;
+        }
+
+        public override int GetHashCode()
+        {
+            return base.GetHashCode();
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is InteropQuaternion q && Approx(q);
         }
     }
 
