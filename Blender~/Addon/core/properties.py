@@ -95,10 +95,13 @@ class CoherenceObjectProperties(PropertyGroup):
             ('0', 'Material', '', 0),
             ('1', 'Normals', 'Show vertex normals in Unity', 1),
             ('2', 'Vertex Colors', 'Show vertex colors in Unity', 2),
-            ('3', 'UV Checker', 'Show UV values in Unity', 3),
-            ('4', 'UV2 Checker', 'Show UV2 values in Unity', 4),
-            ('5', 'UV3 Checker', 'Show UV3 values in Unity', 5),
-            ('6', 'UV4 Checker', 'Show UV4 values in Unity', 6),
+
+            ('10', 'UV Checker', 'Show UV values in Unity', 10),
+            ('11', 'UV2 Checker', 'Show UV2 values in Unity', 11),
+            ('12', 'UV3 Checker', 'Show UV3 values in Unity', 12),
+            ('13', 'UV4 Checker', 'Show UV4 values in Unity', 13),
+
+            ('100', 'Hidden', 'Do not render this object in Unity', 100),
         ],
         update=update_object_properties
     )

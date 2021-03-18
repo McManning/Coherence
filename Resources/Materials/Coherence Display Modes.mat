@@ -20,7 +20,7 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: Display Modes
+  m_Name: Coherence Display Modes
   m_Shader: {fileID: 4800000, guid: 66ace03a29c458141aabee21c7e8ddbb, type: 3}
   m_ShaderKeywords: 
   m_LightmapFlags: 4

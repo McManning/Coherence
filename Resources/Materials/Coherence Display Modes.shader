@@ -58,16 +58,16 @@
                 else if (_DisplayMode == 2) { // Vertex Colors
                     o.channel = v.color;
                 }
-                else if (_DisplayMode == 3) { // UV
+                else if (_DisplayMode == 10) { // UV
                     o.channel = float4(TRANSFORM_TEX(v.uv, _MainTex), 0, 1);
                 }
-                else if (_DisplayMode == 4) { // UV2
+                else if (_DisplayMode == 11) { // UV2
                     o.channel = float4(TRANSFORM_TEX(v.uv2, _MainTex), 0, 1);
                 }
-                else if (_DisplayMode == 5) { // UV3
+                else if (_DisplayMode == 12) { // UV3
                     o.channel = float4(TRANSFORM_TEX(v.uv3, _MainTex), 0, 1);
                 }
-                else if (_DisplayMode == 6) { // UV4
+                else if (_DisplayMode == 13) { // UV4
                     o.channel = float4(TRANSFORM_TEX(v.uv4, _MainTex), 0, 1);
                 }
                 else {

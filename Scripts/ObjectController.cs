@@ -141,13 +141,19 @@ namespace Coherence
         {
             if (display == ObjectDisplayMode.Material)
             {
+                meshRenderer.enabled = true;
                 meshRenderer.sharedMaterial = material;
+            }
+            else if (display == ObjectDisplayMode.Hidden)
+            {
+                meshRenderer.enabled = false;
             }
             else // Use the channel tester material
             {
                 materialProperties.SetInt("_DisplayMode", (int)display);
                 materialProperties.SetInt("_ApplyTexture", display >= ObjectDisplayMode.UV ? 1 : 0);
 
+                meshRenderer.enabled = true;
                 meshRenderer.sharedMaterial = CoherenceSettings.Instance.displayMaterial;
                 meshRenderer.SetPropertyBlock(materialProperties);
             }

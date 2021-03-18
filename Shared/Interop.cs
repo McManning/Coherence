@@ -489,7 +489,7 @@ namespace Coherence
         VertexColors,
 
         /// <summary>Checker pattern for the UV channel</summary>
-        UV,
+        UV = 10,
 
         /// <summary>Checker pattern for the UV2 channel</summary>
         UV2,
@@ -499,6 +499,9 @@ namespace Coherence
 
         /// <summary>Checker pattern for the UV4 channel</summary>
         UV4,
+
+        /// <summary>Do not render this object in Unity</summary>
+        Hidden = 100,
     }
 
     /// <summary>
@@ -913,7 +916,7 @@ namespace Coherence
 
     public static class InteropLogger
     {
-        [Conditional("DEBUG")]
+        [Conditional("COHERENCE_DEBUG")]
         public static void Debug(string message)
         {
         #if UNITY_EDITOR
