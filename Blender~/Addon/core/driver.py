@@ -163,6 +163,9 @@ class BridgeDriver:
 
     def start(self):
         """Start trying to connect to Unity"""
+        if self.is_running():
+            return
+
         log('Starting the DCC')
 
         # TODO: Pull connection name from scene's coherence.connection_name
@@ -190,8 +193,13 @@ class BridgeDriver:
             bpy.context.evaluated_depsgraph_get()
         )
 
+        self.tag_redraw_viewports()
+
     def stop(self):
         """Disconnect from Unity and cleanup synced objects"""
+        if not self.is_running():
+            return
+
         log('DCC teardown')
         self.lib.Disconnect()
         self.lib.Clear()
@@ -209,6 +217,8 @@ class BridgeDriver:
         if self.image_editor_handle:
             bpy.types.SpaceImageEditor.draw_handler_remove(self.image_editor_handle, 'WINDOW')
             self.image_editor_handle = None
+
+        self.tag_redraw_viewports()
 
     def free_lib(self): # UNUSED
         pass
@@ -379,6 +389,7 @@ class BridgeDriver:
 
     def on_connected_to_unity(self):
         debug('on_connected_to_unity')
+        self.tag_redraw_viewports()
         pass
 
     def on_connected_to_shared_memory(self):
@@ -387,6 +398,7 @@ class BridgeDriver:
 
     def on_disconnected_from_unity(self):
         debug('on_disconnected_from_unity')
+        self.tag_redraw_viewports()
         pass
 
     def tag_redraw_viewports(self):
@@ -514,7 +526,8 @@ class BridgeDriver:
             if child.name in self.objects:
                 self.on_update_transform(child)
 
-        # Send up initial geometry as well
+        # Send up initial geometry and state as well
+        self.on_update_properties(obj)
         self.on_update_geometry(obj, depsgraph)
 
     def on_remove_object(self, name):
@@ -583,7 +596,7 @@ class BridgeDriver:
         debug('on_update_properties - name={}'.format(obj.name))
 
         self.lib.UpdateObjectProperties(
-            name,
+            get_string_buffer(obj.name),
             int(obj.coherence.display_mode),
             int(obj.coherence.optimize_mesh)
         )
@@ -755,6 +768,7 @@ class BridgeDriver:
                     mat_name_buf
                 )
 
+__singleton = BridgeDriver()
 
 def bridge_driver() -> BridgeDriver:
     """Retrieve the active driver singleton
@@ -762,9 +776,4 @@ def bridge_driver() -> BridgeDriver:
     Returns:
         BridgeDriver
     """
-    # TODO: Not in driver_namespace... not where it belongs.
-    # can just be a singleton on its own via BridgeDriver.instance
-    if 'COHERENCE' not in bpy.app.driver_namespace:
-        bpy.app.driver_namespace['COHERENCE'] = BridgeDriver()
-
-    return bpy.app.driver_namespace['COHERENCE']
+    return __singleton
