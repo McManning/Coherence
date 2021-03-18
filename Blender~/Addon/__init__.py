@@ -25,18 +25,27 @@ if 'bpy' in locals():
     util.registry.Registry.clear()
     importlib.reload(core)
 else:
-    import bpy 
+    import bpy
     from . import util
     from . import core
 
 import bpy
 
 from util.registry import Registry
+from core.panels import (
+    draw_view3d_header,
+    draw_render_header
+)
 
 def register():
+    bpy.types.VIEW3D_HT_header.append(draw_view3d_header)
+    bpy.types.RENDER_PT_context.append(draw_render_header)
+
     Registry.register()
 
 def unregister():
+    bpy.types.VIEW3D_HT_header.remove(draw_view3d_header)
+    bpy.types.RENDER_PT_context.remove(draw_render_header)
     Registry.unregister()
 
 if __name__ == '__main__':

@@ -112,6 +112,11 @@ namespace Coherence
                 Profiler.EndSample();
             }
 
+            // TODO: It'd be nice to consolidate this down to an InteropTransform
+            // but I don't know the math for Blender view rotation -> Unity look rotation offhand.
+            // Ideally the effort happens on Blender's side and transfers as a ready to go
+            // transformation (in engine.py:279)
+
             var p = new Vector3(camera.position.x, camera.position.z, camera.position.y);
             var f = new Vector3(camera.forward.x, camera.forward.z, camera.forward.y);
             var u = new Vector3(camera.up.x, camera.up.z, camera.up.y);
@@ -157,13 +162,11 @@ namespace Coherence
             var prevRT = RenderTexture.active;
             var rt = cam.targetTexture;
 
+            // Render the camera into the RT and extract pixels
             RenderTexture.active = cam.targetTexture;
 
-            // Force a camera render into the RT
             cam.Render();
-
             tex.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
-            tex.Apply(); // TODO: Necessary?
 
             var data = tex.GetRawTextureData();
 

@@ -10,6 +10,9 @@ namespace Coherence
     [CustomEditor(typeof(CoherenceSettings))]
     public class CoherenceSettingsEditor : Editor
     {
+        private bool showMainSettings = true;
+        private bool showMaterialSettings = true;
+        private bool showTextureSyncSettings = true;
         private bool showAdvancedSettings = false;
         private bool showExperimentalSettings = false;
 
@@ -52,6 +55,17 @@ namespace Coherence
                 drawElementCallback = DrawTextureSlot,
                 showDefaultBackground = false
             };
+
+            // If we went through an assembly reload - check if we should reboot Coherence.
+            var instance = CoherenceSettings.Instance;
+            if (instance.isStarted && !IsRunning && instance.restartAfterAssemblyReload)
+            {
+                Start();
+            }
+            else
+            {
+                instance.isStarted = false;
+            }
         }
 
         private void DrawMaterialOverridesHeader(Rect rect)
@@ -118,6 +132,19 @@ namespace Coherence
             {
                 Start();
             }
+
+            //var prevWidth = EditorGUIUtility.labelWidth;
+            //EditorGUIUtility.labelWidth = EditorGUIUtility.currentViewWidth - 50;
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.FlexibleSpace();
+                EditorGUIUtility.labelWidth = 180;
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("restartAfterAssemblyReload")
+                );
+                EditorGUIUtility.labelWidth = 0;
+            }
+
         }
 
         private void DrawBasic()
@@ -188,6 +215,8 @@ namespace Coherence
         /// </summary>
         private void Stop()
         {
+            CoherenceSettings.Instance.isStarted = false;
+
             foreach (var instance in Resources.FindObjectsOfTypeAll<SyncManager>())
             {
                 instance.Teardown();
@@ -209,6 +238,8 @@ namespace Coherence
 
             sync = go.AddComponent<SyncManager>();
             sync.Setup();
+
+            CoherenceSettings.Instance.isStarted = true;
         }
 
         private bool CanOpenSelectionInBlender()
@@ -259,6 +290,7 @@ namespace Coherence
             EditorGUILayout.PropertyField(serializedObject.FindProperty("bufferName"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("nodeCount"));
 
+            int toMB = 1024*1024;
             EditorGUILayout.IntPopup(
                 serializedObject.FindProperty("nodeSize"),
                 // TODO: Cache / simplify
@@ -272,7 +304,7 @@ namespace Coherence
                     new GUIContent("64 MB"),
                     new GUIContent("128 MB")
                 },
-                new int[] { 1, 2, 4, 8, 16, 32, 64, 128 }
+                new int[] { 1*toMB, 2*toMB, 4*toMB, 8*toMB, 16*toMB, 32*toMB, 64*toMB, 128*toMB }
             );
 
             EditorGUILayout.PropertyField(serializedObject.FindProperty("pixelsNodeCount"));
@@ -425,32 +457,51 @@ namespace Coherence
                 "For more information, check on GitHub.",
                 MessageType.Warning
             );
-
             DrawRunControls();
-
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Settings", EditorStyles.boldLabel);
-            using (new EditorGUI.IndentLevelScope())
+
+            showMainSettings = EditorGUILayout.BeginFoldoutHeaderGroup(
+                showMainSettings, "Settings"
+            );
+            if (showMainSettings)
             {
-                DrawBasic();
+                using (new EditorGUI.IndentLevelScope())
+                {
+                    DrawBasic();
+                }
             }
-
+            EditorGUILayout.EndFoldoutHeaderGroup();
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Material Settings", EditorStyles.boldLabel);
-            using (new EditorGUI.IndentLevelScope())
+
+            showMaterialSettings = EditorGUILayout.BeginFoldoutHeaderGroup(
+                showMaterialSettings, "Material Settings"
+            );
+            if (showMaterialSettings)
             {
-                DrawMaterialSettings();
+                using (new EditorGUI.IndentLevelScope())
+                {
+                    DrawMaterialSettings();
+                }
             }
-
+            EditorGUILayout.EndFoldoutHeaderGroup();
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Texture Sync", EditorStyles.boldLabel);
-            using (new EditorGUI.IndentLevelScope())
+
+            showTextureSyncSettings = EditorGUILayout.BeginFoldoutHeaderGroup(
+                showTextureSyncSettings, "Texture Sync"
+            );
+            if (showTextureSyncSettings)
             {
-                DrawTextureSettings();
+                using (new EditorGUI.IndentLevelScope())
+                {
+                    DrawTextureSettings();
+                }
             }
-
+            EditorGUILayout.EndFoldoutHeaderGroup();
             EditorGUILayout.Space();
-            showAdvancedSettings = EditorGUILayout.BeginFoldoutHeaderGroup(showAdvancedSettings, "Advanced Settings");
+
+            showAdvancedSettings = EditorGUILayout.BeginFoldoutHeaderGroup(
+                showAdvancedSettings, "Advanced Settings"
+            );
             if (showAdvancedSettings)
             {
                 using (new EditorGUI.IndentLevelScope())
@@ -459,9 +510,11 @@ namespace Coherence
                 }
             }
             EditorGUILayout.EndFoldoutHeaderGroup();
-
             EditorGUILayout.Space();
-            showExperimentalSettings = EditorGUILayout.BeginFoldoutHeaderGroup(showExperimentalSettings, "Experimental");
+
+            showExperimentalSettings = EditorGUILayout.BeginFoldoutHeaderGroup(
+                showExperimentalSettings, "Experimental"
+            );
             if (showExperimentalSettings)
             {
                 using (new EditorGUI.IndentLevelScope())

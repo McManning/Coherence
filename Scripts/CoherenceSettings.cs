@@ -102,6 +102,9 @@ namespace Coherence
 
         const string SETTINGS_ASSET_PATH = "Assets/Settings/Coherence.asset";
 
+        [SerializeField]
+        internal bool isStarted = false;
+
         public static CoherenceSettings Instance
         {
             get
@@ -133,7 +136,7 @@ namespace Coherence
         public string CalculateSharedMemoryUsage()
         {
             var bufferHeaderSize = FastStructure.SizeOf<SharedHeader>();
-            var messageBufferSize = NodeSizeBytes * nodeCount + bufferHeaderSize;
+            var messageBufferSize = nodeSize * nodeCount + bufferHeaderSize;
             var pixelsBufferSize = pixelsNodeCount * PixelsNodeSizeBytes + bufferHeaderSize;
 
             var expectedSharedMemorySize = (messageBufferSize + pixelsBufferSize) / 1024.0 / 1024.0;
@@ -148,33 +151,20 @@ namespace Coherence
             return $"{expectedSharedMemorySize:F2} {units}";
         }
 
-        /// <summary>
-        /// Global name of the shared message buffer
-        /// </summary>
+        [Tooltip("Global name of the shared message buffer")]
         public string bufferName = "Coherence";
 
-        /// <summary>
-        /// Number of nodes in the shared message buffer
-        /// </summary>
+        [Tooltip("Should Coherence restart if previously started after reloading scripts or entering game mode")]
+        public bool restartAfterAssemblyReload = true;
+
+        [Tooltip("Number of nodes in the shared message buffer")]
         [Range(2, 20)]
         public int nodeCount = 5;
 
-        /// <summary>
-        /// Size of each node in the shared message buffer in MB
-        /// </summary>
-        public int nodeSize = 4;
+        [Tooltip("Size of each node in the shared message buffer in bytes")]
+        public int nodeSize = 4*1024*1024;
 
-        public int NodeSizeBytes
-        {
-            get
-            {
-                return nodeSize * 1024 * 1024;
-            }
-        }
-
-        /// <summary>
-        /// Number of nodes in the pixel buffer for viewport textures
-        /// </summary>
+        [Tooltip("Number of nodes in the pixel buffer for viewport textures")]
         [Range(2, 20)]
         public int pixelsNodeCount = 2;
 

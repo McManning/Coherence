@@ -9,16 +9,44 @@ from .driver import (
 
 from util.registry import autoregister
 
+def draw_view3d_header(self, context):
+    """Draw a run toggle button in the header of Blender's View3D"""
+    layout = self.layout
+
+    # Hide if the user doesn't want to see the button
+    settings = context.scene.coherence
+    if not settings.show_view3d_controls:
+        return
+
+    if bridge_driver().is_running():
+        layout.operator('coherence.stop', icon='X')
+    else:
+        layout.operator('coherence.start', icon='PLAY')
+
+def draw_render_header(self, context):
+    """Draw a toggle button below engine selection in render settings"""
+    layout = self.layout
+    layout.use_property_split = True
+    layout.use_property_decorate = False
+
+    row = layout.row(align=True)
+    row.alignment = 'RIGHT'
+
+    if context.engine == 'COHERENCE':
+        if bridge_driver().is_running():
+            row.operator('coherence.stop', icon='X')
+        else:
+            row.operator('coherence.start', icon='PLAY')
+
 class BasePanel(Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = 'render'
-    COMPAT_ENGINES = 'coherence_renderer'
+    COMPAT_ENGINES = 'COHERENCE'
 
     @classmethod
     def poll(cls, context):
         return context.engine in cls.COMPAT_ENGINES
-
 
 @autoregister
 class COHERENCE_IMAGEPAINT_PT_texture_sync(Panel):
@@ -62,8 +90,8 @@ class COHERENCE_IMAGEPAINT_PT_texture_sync(Panel):
 
 @autoregister
 class COHERENCE_RENDER_PT_settings(BasePanel):
-    """Parent panel for renderer settings"""
-    bl_label = 'Coherence Renderer Settings'
+    """Panel for the main renderer settings"""
+    bl_label = 'Coherence Settings'
 
     def draw(self, context):
         layout = self.layout
@@ -72,29 +100,13 @@ class COHERENCE_RENDER_PT_settings(BasePanel):
 
         settings = context.scene.coherence
 
-        bridge = bridge_driver()
-
-        if bridge.is_running():
-            layout.label(text='Running Coherence')
-            layout.operator('scene.toggle_coherence', text='Stop Coherence')
-        else:
-            layout.operator('scene.toggle_coherence', text='Start Coherence')
-
-        if not bridge.is_connected():
-            layout.label(text='Not connected')
-        else:
-            layout.label(text='Connected to Unity')
-
-        col = layout.column(align=True)
-        col.prop(settings, 'connection_name')
-
-        col.prop(settings, 'texture_slot_update_frequency')
+        layout.prop(settings, 'show_view3d_controls')
 
 @autoregister
-class COHERENCE_RENDER_PT_settings_viewport(BasePanel):
-    """Global viewport configurations"""
-    bl_label = 'Viewport'
+class COHERENCE_RENDER_PT_settings_advanced(BasePanel):
+    bl_label = 'Advanced Settings'
     bl_parent_id = 'COHERENCE_RENDER_PT_settings'
+    bl_options = { 'DEFAULT_CLOSED' }
 
     def draw(self, context):
         layout = self.layout
@@ -103,8 +115,16 @@ class COHERENCE_RENDER_PT_settings_viewport(BasePanel):
 
         settings = context.scene.coherence
 
-        col = layout.column(align=True)
-        col.prop(settings, 'clear_color')
+        connected = bridge_driver().is_connected()
+
+        if connected:
+            layout.label(text='The below settings cannot be modified while Coherence is running', icon='ERROR')
+
+        layout.enabled = not connected
+
+        # col = layout.column(align=True)
+        layout.prop(settings, 'connection_name')
+        layout.prop(settings, 'texture_slot_update_frequency')
 
 @autoregister
 class COHERENCE_LIGHT_PT_light(BasePanel):
@@ -144,7 +164,7 @@ class COHERENCE_OBJECT_PT_settings(BasePanel):
 
 @autoregister
 class COHERENCE_MATERIAL_PT_settings(BasePanel):
-    bl_label = 'Unity Material Settings'
+    bl_label = 'Coherence Settings'
     bl_context = 'material'
 
     @classmethod
@@ -164,46 +184,6 @@ class COHERENCE_MATERIAL_PT_settings(BasePanel):
         # col.prop(settings, 'use_override_name')
         # if settings.use_override_name:
         #    col.prop(settings, 'override_name')
-
-@autoregister
-class COHERENCE_MATERIAL_PT_settings_sync(BasePanel):
-    bl_label = 'Texture Sync'
-    bl_parent_id = 'COHERENCE_MATERIAL_PT_settings'
-
-    def draw_header(self,context):
-        self.layout.prop(context.material.coherence, 'use_sync_texture', text="", toggle=False)
-
-    def draw(self, context):
-        mat = context.material
-        settings = mat.coherence
-
-        layout = self.layout
-        layout.use_property_split = True
-        layout.use_property_decorate = False
-
-        col = layout.column()
-
-        # TODO: If enabled, no other material can have this enabled.
-        # ... in theory. That is. There's not *really* a reason we can't
-        # have multiple materials enable sync except for a painful
-        # initial load.
-        if settings.use_sync_texture:
-            col.label(text='')
-
-            col.prop(settings, 'sync_texture_map')
-            map_name = settings.sync_texture_map
-
-            if map_name == 'CUSTOM':
-                col.prop(settings, 'custom_sync_texture_map')
-                map_name = settings.custom_sync_texture_map
-
-            col.template_ID(
-                settings,
-                'sync_texture',
-                new='image.new',
-                open='image.open',
-                text='Image'
-            )
 
 @autoregister
 class COHERENCE_PT_context_material(BasePanel):

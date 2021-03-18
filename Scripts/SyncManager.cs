@@ -92,8 +92,6 @@ namespace Coherence
 
             IsRunning = true;
 
-            Debug.Log("Setting up shared memory space");
-
             var settings = CoherenceSettings.Instance;
             var name = settings.bufferName;
 
@@ -105,7 +103,7 @@ namespace Coherence
                     name + BLENDER_MESSAGES_BUFFER,
                     name + UNITY_MESSAGES_BUFFER,
                     settings.nodeCount,
-                    settings.NodeSizeBytes
+                    settings.nodeSize
                 );
             }
             catch (Exception e)
@@ -151,8 +149,6 @@ namespace Coherence
             }
 
             IsRunning = false;
-
-            Debug.Log("Tearing down shared memory space");
 
             AssemblyReloadEvents.beforeAssemblyReload -= OnBeforeAssemblyReload;
             EditorApplication.update -= OnEditorUpdate;
@@ -525,14 +521,12 @@ namespace Coherence
         }
 
         /// <summary>
-        /// Make sure we teardown our connection on reload to avoid an invalid state.
-        ///
-        /// Hopefully (eventually) we can support keeping the connection alive during reloads.
-        /// But right now there's too many uncertainties to do that safely.
+        /// Make sure we teardown our connection on reload to avoid
+        /// entering an invalid state between assembly reloads
+        /// (as things could be unloaded/reset by dependent scripts)
         /// </summary>
         private void OnBeforeAssemblyReload()
         {
-            Debug.LogWarning("Tearing down Coherence shared memory space due to assembly reload");
             Teardown();
         }
 

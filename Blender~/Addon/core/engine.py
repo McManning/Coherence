@@ -52,8 +52,8 @@ from util.registry import autoregister
 
 @autoregister
 class CoherenceRenderEngine(bpy.types.RenderEngine):
-    bl_idname = "coherence_renderer"
-    bl_label = "Coherence"
+    bl_idname = 'COHERENCE'
+    bl_label = 'Coherence'
     bl_use_preview = False
 
     # Panels that we don't register this engine with
@@ -146,8 +146,11 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
             Update method called from the main driver on_tick.
             Performs all sync work with the bridge
         """
-        lib = bridge_driver().lib
-        lib.SetViewportCamera(self.viewport_id, self.camera)
+        self.connected = bridge_driver().is_connected()
+
+        if self.connected:
+            lib = bridge_driver().lib
+            lib.SetViewportCamera(self.viewport_id, self.camera)
 
         # # Poll for a new render texture image and upload
         # # to the GPU once we acquire a lock on the texture buffer
@@ -272,6 +275,7 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
         self.camera.isPerspective = region3d.is_perspective
         #self.camera.viewDistance = region3d.view_distance
         self.camera.viewDistance = 1.0 / region3d.window_matrix[1][1]
+
         self.camera.position = to_interop_vector3(region3d.view_matrix.inverted().translation)
         self.camera.forward = to_interop_vector3(region3d.view_rotation @ Vector((0.0, 0.0, -1.0)))
         self.camera.up = to_interop_vector3(region3d.view_rotation @ Vector((0.0, 1.0, 0.0)))
@@ -334,13 +338,14 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
         self.batch.draw(self.shader)
 
     def draw_disconnected_view(self):
-        #glClearColor(0, 0, 0, 1.0)
-        #glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        glClearColor(0, 0, 0, 1.0)
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
         blf.position(0, 15, 30, 0)
         blf.size(0, 20, 72)
         blf.color(0, 0.8, 0, 0, 1.0)
         blf.draw(0, 'Not Connected to Unity')
+
 
     def view_draw(self, context, depsgraph):
         """Called whenever Blender redraws the 3D viewport"""
