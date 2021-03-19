@@ -26,7 +26,7 @@ def generate_unique_id():
 def is_supported_object(obj):
     """Test if the given object can be sent to the bridge
 
-    Parameters:
+    Args:
         obj (bpy.types.Object)
 
     Returns:
@@ -47,7 +47,7 @@ def is_renamed(obj):
     This will constantly return true until apply_rename()
     is called on the object.
 
-    Parameters:
+    Args:
         obj (bpy.types.Object)
 
     Returns:
@@ -69,7 +69,7 @@ def is_renamed(obj):
 def apply_rename(obj):
     """Apply a rename to an object so that is_renamed() no longer returns true.
 
-    Parameters:
+    Args:
         obj (bpy.types.Object)
     """
     obj['prev_name'] = obj.name
@@ -78,7 +78,7 @@ def apply_rename(obj):
 def get_objects_with_material(mat):
     """Aggregation for objects with a material reference
 
-    Parameters:
+    Args:
         mat (bpy.types.Material)
 
     Returns:

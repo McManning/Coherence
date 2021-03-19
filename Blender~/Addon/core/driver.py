@@ -31,7 +31,8 @@ from bpy.types import (
 )
 
 from bpy.app.handlers import (
-    depsgraph_update_post
+    depsgraph_update_post,
+    load_pre
 )
 
 from .utils import (
@@ -161,7 +162,11 @@ class BridgeDriver:
         for render_engine in self.viewports.values():
             self.add_viewport(render_engine)
 
-        bpy.app.handlers.depsgraph_update_post.append(self.on_depsgraph_update)
+        # Register listeners for Blender events
+        depsgraph_update_post.append(self.on_depsgraph_update)
+        load_pre.append(self.on_load_pre)
+
+        # Register timers for frequent updates
         bpy.app.timers.register(self.on_tick)
         bpy.app.timers.register(self.check_texture_sync)
 
@@ -197,6 +202,9 @@ class BridgeDriver:
 
         if self.on_depsgraph_update in depsgraph_update_post:
             depsgraph_update_post.remove(self.on_depsgraph_update)
+
+        if self.on_load_pre in load_pre:
+            load_pre.remove(self.on_load_pre)
 
         if self.image_editor_handle:
             bpy.types.SpaceImageEditor.draw_handler_remove(self.image_editor_handle, 'WINDOW')
@@ -436,10 +444,18 @@ class BridgeDriver:
         if space.mode == 'PAINT' and space.image:
             self.sync_texture(space.image)
 
+    def on_load_pre(self, *args, **kwargs):
+        """Stop Coherence when our Blender file changes.
+
+        This is to prevent Coherence from entering some invalid state where
+        synced objects/viewports no longer exist in the Blender sync.
+        """
+        self.stop()
+
     def on_depsgraph_update(self, scene, depsgraph):
         """Sync the bridge with the scene's dependency graph on each update
 
-        Parameters:
+        Args:
             scene (bpy.types.Scene)
             depsgraph (bpy.types.Depsgraph)
         """
@@ -521,7 +537,7 @@ class BridgeDriver:
     def on_remove_object(self, name):
         """Notify the bridge that the object has been removed from the scene
 
-        Parameters:
+        Args:
             name (str): Unique object name shared with the Bridge
         """
         debug('on_remove_object - name={}'.format(name))
