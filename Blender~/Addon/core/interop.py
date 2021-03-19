@@ -98,6 +98,16 @@ def identity():
     mat.m33 = 1
     return mat
 
+def to_interop_type(obj) -> int:
+    """
+    Args:
+        obj (bpy.types.Object):
+
+    Returns:
+        int
+    """
+    return 1 # SceneObjectType.MESH - TODO: calculate from input object
+
 def to_interop_transform(obj):
     """Extract transformation (parent, position, euler angles, scale) from an object.
 

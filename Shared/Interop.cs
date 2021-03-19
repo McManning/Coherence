@@ -146,7 +146,16 @@ namespace Coherence
         UpdateSceneObject,
 
         /// <summary>
-        /// Notify Unity that a range of object vertices have been modified.
+        /// Notify Unity that a <see cref="InteropMesh"/> has updates.
+        ///
+        /// <para>
+        ///     Payload: <see cref="InteropMesh"/>
+        /// </para>
+        /// </summary>
+        UpdateMesh,
+
+        /// <summary>
+        /// Notify Unity that a range of mesh vertices have been modified.
         ///
         /// <para>
         ///     Payload: <see cref="InteropVector3"/>[]
@@ -155,7 +164,7 @@ namespace Coherence
         UpdateVertices,
 
         /// <summary>
-        /// Notify Unity that a range of object vertices have been modified.
+        /// Notify Unity that a range of mesh triangles have been modified.
         ///
         /// <para>
         ///     Payload: <see cref="int"/>[]
@@ -164,7 +173,7 @@ namespace Coherence
         UpdateTriangles,
 
         /// <summary>
-        /// Notify Unity that a range of vertex normals have been modified.
+        /// Notify Unity that a range of mesh normals have been modified.
         ///
         /// <para>
         ///     Payload: <see cref="InteropVector3"/>[]
@@ -173,7 +182,7 @@ namespace Coherence
         UpdateNormals,
 
         /// <summary>
-        /// Notify Unity that a range of object UVs have been modified.
+        /// Notify Unity that a range of mesh UVs have been modified.
         ///
         /// <para>
         ///     Payload: <see cref="InteropVector2"/>[]
@@ -182,7 +191,7 @@ namespace Coherence
         UpdateUV,
 
         /// <summary>
-        /// Notify Unity that a range of object UV2s have been modified.
+        /// Notify Unity that a range of mesh UV2s have been modified.
         ///
         /// <para>
         ///     Payload: <see cref="InteropVector2"/>[]
@@ -191,7 +200,7 @@ namespace Coherence
         UpdateUV2,
 
         /// <summary>
-        /// Notify Unity that a range of object UV3s have been modified.
+        /// Notify Unity that a range of mesh UV3s have been modified.
         ///
         /// <para>
         ///     Payload: <see cref="InteropVector2"/>[]
@@ -200,7 +209,7 @@ namespace Coherence
         UpdateUV3,
 
         /// <summary>
-        /// Notify Unity that a range of object UV4s have been modified.
+        /// Notify Unity that a range of mesh UV4s have been modified.
         ///
         /// <para>
         ///     Payload: <see cref="InteropVector2"/>[]
@@ -209,7 +218,7 @@ namespace Coherence
         UpdateUV4,
 
         /// <summary>
-        /// Notify Unity that a range of vertex colors have been modified.
+        /// Notify Unity that a range of mesh colors have been modified.
         ///
         /// <para>
         ///     Payload: <see cref="InteropColor32"/>[]
@@ -465,12 +474,13 @@ namespace Coherence
 
     /// <summary>
     /// Type information for <see cref="InteropSceneObject"/> so Unity
-    ///  knows how to represent the particular Blender object in the scene.
+    /// knows how to represent the particular Blender object in the scene.
     /// </summary>
     public enum SceneObjectType
     {
-        Mesh = 1,
-        Other,
+        Empty = 0,
+        Mesh,
+        Metaball,
     }
 
     /// <summary>
@@ -567,7 +577,18 @@ namespace Coherence
 
         public override bool Equals(object obj)
         {
-            return Value.Equals(obj);
+            if (obj is InteropString64 interop)
+            {
+                return Value == interop.Value;
+            }
+
+            if (obj is string str)
+            {
+                return Value == str;
+            }
+
+            InteropLogger.Debug($"Diff str {Value} != {obj}");
+            return false;
         }
 
         public override int GetHashCode()
@@ -612,6 +633,33 @@ namespace Coherence
         /// Name of the material used by this object
         /// </summary>
         public InteropString64 material;
+
+        /// <summary>
+        /// Name of the mesh used by this object
+        /// </summary>
+        public InteropString64 mesh;
+
+        public override int GetHashCode()
+        {
+            return base.GetHashCode();
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is InteropSceneObject o
+                && o.name.Equals(name)
+                && o.type.Equals(type)
+                && o.transform.Equals(transform)
+                && o.display.Equals(display)
+                && o.material.Equals(material)
+                && o.mesh.Equals(mesh);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct InteropMesh
+    {
+        public InteropString64 name;
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -916,7 +964,7 @@ namespace Coherence
 
     public static class InteropLogger
     {
-        [Conditional("COHERENCE_DEBUG")]
+        [Conditional("DEBUG")]
         public static void Debug(string message)
         {
         #if UNITY_EDITOR

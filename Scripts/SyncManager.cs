@@ -53,6 +53,7 @@ namespace Coherence
         /// </summary>
         readonly OrderedDictionary viewports = new OrderedDictionary();
         readonly Dictionary<string, ObjectController> objects = new Dictionary<string, ObjectController>();
+        readonly Dictionary<string, MeshController> meshes = new Dictionary<string, MeshController>();
 
         /// <summary>
         /// Objects added with parents that are not (yet) in the scene.
@@ -215,6 +216,11 @@ namespace Coherence
             {
                 obj.Sync();
             }
+
+            foreach (var mesh in meshes.Values)
+            {
+                mesh.Sync();
+            }
         }
 
         private void OnSceneUnloaded(Scene current, Scene next)
@@ -264,6 +270,7 @@ namespace Coherence
 
             viewports.Clear();
             objects.Clear();
+            meshes.Clear();
         }
 
         #region Viewports
@@ -356,6 +363,22 @@ namespace Coherence
 
         #endregion
 
+        #region Meshes
+
+        private MeshController GetOrCreateMesh(string name)
+        {
+            if (!meshes.ContainsKey(name))
+            {
+                var mesh = new MeshController(name);
+                meshes[name] = mesh;
+                return mesh;
+            }
+
+            return meshes[name];
+        }
+
+        #endregion
+
         #region Objects
 
         private ObjectController GetObject(string name)
@@ -381,6 +404,8 @@ namespace Coherence
                 objectsContainer.transform.parent = transform;
             }
 
+            // TODO: prefab per object type mapping
+
             var prefab = CoherenceSettings.Instance.sceneObjectPrefab;
             var go = prefab ? Instantiate(prefab) : new GameObject();
             var controller = go.AddComponent<ObjectController>();
@@ -389,6 +414,12 @@ namespace Coherence
 
             objects[name] = controller;
             controller.UpdateFromInterop(iso);
+
+            Debug.Log($"Add object {name} with mesh {iso.mesh}");
+            if (!string.IsNullOrEmpty(iso.mesh))
+            {
+                controller.SetMesh(GetOrCreateMesh(iso.mesh));
+            }
 
             ReparentObject(controller);
 
@@ -426,6 +457,15 @@ namespace Coherence
             var needsReparenting = !iso.transform.parent.Equals(obj.Data.transform.parent);
 
             obj.UpdateFromInterop(iso);
+
+            if (string.IsNullOrEmpty(iso.mesh))
+            {
+                obj.SetMesh(null);
+            }
+            else
+            {
+                obj.SetMesh(GetOrCreateMesh(iso.mesh));
+            }
 
             if (needsReparenting)
             {
@@ -604,55 +644,63 @@ namespace Coherence
                             FastStructure.PtrToStructure<InteropSceneObject>(ptr)
                         );
                         break;
+
+                    // Mesh messages
                     case RpcRequest.UpdateTriangles:
-                        GetObject(target)
+                        GetOrCreateMesh(target)
                             .triangles
                             .Resize(header.length)
                             .CopyFrom(ptr, header.index, header.count);
                         break;
                     case RpcRequest.UpdateVertices:
-                        GetObject(target)
+                        GetOrCreateMesh(target)
                             .vertices
                             .Resize(header.length)
                             .CopyFrom(ptr, header.index, header.count);
                         break;
                     case RpcRequest.UpdateNormals:
-                        GetObject(target)
+                        GetOrCreateMesh(target)
                             .normals
                             .Resize(header.length)
                             .CopyFrom(ptr, header.index, header.count);
                         break;
                     case RpcRequest.UpdateUV:
-                        GetObject(target)
+                        GetOrCreateMesh(target)
                             .uv
                             .Resize(header.length)
                             .CopyFrom(ptr, header.index, header.count);
                         break;
                     case RpcRequest.UpdateUV2:
-                        GetObject(target)
+                        GetOrCreateMesh(target)
                             .uv2
                             .Resize(header.length)
                             .CopyFrom(ptr, header.index, header.count);
                         break;
                     case RpcRequest.UpdateUV3:
-                        GetObject(target)
+                        GetOrCreateMesh(target)
                             .uv3
                             .Resize(header.length)
                             .CopyFrom(ptr, header.index, header.count);
                         break;
                     case RpcRequest.UpdateUV4:
-                        GetObject(target)
+                        GetOrCreateMesh(target)
                             .uv4
                             .Resize(header.length)
                             .CopyFrom(ptr, header.index, header.count);
                         break;
                     case RpcRequest.UpdateVertexColors:
-                        GetObject(target)
+                        GetOrCreateMesh(target)
                             .colors
                             .Resize(header.length)
                             .CopyFrom(ptr, header.index, header.count);
                         break;
                     // TODO: ... and so on for weights/bones/etc
+
+                    case RpcRequest.UpdateMesh:
+                        GetOrCreateMesh(target).UpdateFromInterop(
+                            FastStructure.PtrToStructure<InteropMesh>(ptr)
+                        );
+                        break;
 
                     // Texture messages
                     case RpcRequest.UpdateTexture:

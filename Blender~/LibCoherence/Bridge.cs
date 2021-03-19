@@ -48,9 +48,9 @@ namespace Coherence
         /// </summary>
         const int TIMEOUT_SECONDS = 10000;
 
-        Dictionary<int, Viewport> Viewports { get; set; }
-
-        Dictionary<string, SceneObject> Objects { get; set; }
+        readonly Dictionary<int, Viewport> viewports;
+        readonly Dictionary<string, SceneObject> objects;
+        readonly Dictionary<string, Mesh> meshes;
 
         InteropBlenderState blenderState;
         InteropUnityState unityState;
@@ -72,8 +72,9 @@ namespace Coherence
 
         public Bridge()
         {
-            Viewports = new Dictionary<int, Viewport>();
-            Objects = new Dictionary<string, SceneObject>();
+            viewports = new Dictionary<int, Viewport>();
+            objects = new Dictionary<string, SceneObject>();
+            meshes = new Dictionary<string, Mesh>();
 
             // Message handlers for everything that comes from Unity
             handlers = new Dictionary<RpcRequest, MessageHandler>
@@ -166,15 +167,16 @@ namespace Coherence
         /// </summary>
         public void Clear()
         {
-            Objects.Clear();
+            meshes.Clear();
+            objects.Clear();
 
             // Safely dispose all the viewport data before dereferencing
-            foreach (var viewport in Viewports)
+            foreach (var viewport in viewports)
             {
                 viewport.Value.Dispose();
             }
 
-            Viewports.Clear();
+            viewports.Clear();
         }
 
         /// <summary>
@@ -225,13 +227,13 @@ namespace Coherence
                 var headerSize = FastStructure.SizeOf<InteropRenderHeader>();
                 var header = FastStructure.PtrToStructure<InteropRenderHeader>(ptr);
 
-                if (!Viewports.ContainsKey(header.viewportId))
+                if (!viewports.ContainsKey(header.viewportId))
                 {
                     InteropLogger.Warning($"Got render texture for unknown viewport {header.viewportId}");
                     return headerSize;
                 }
 
-                var viewport = Viewports[header.viewportId];
+                var viewport = viewports[header.viewportId];
                 var pixelDataSize = viewport.ReadPixelData(header, ptr + headerSize);
 
                 return headerSize + pixelDataSize;
@@ -295,13 +297,13 @@ namespace Coherence
         private void SendAllSceneData()
         {
             // Send all objects currently in the scene
-            foreach (var obj in Objects)
+            foreach (var obj in objects)
             {
                 SendEntity(RpcRequest.AddObjectToScene, obj.Value);
             }
 
             // Send active viewports and their visibility lists
-            foreach (var vp in Viewports)
+            foreach (var vp in viewports)
             {
                 var viewport = vp.Value;
 
@@ -319,9 +321,9 @@ namespace Coherence
             // THEN send current mesh data for all objects with meshes.
             // We do this last so that we can ensure Unity is completely setup and
             // ready to start accepting large data chunks.
-            foreach (var obj in Objects.Values)
+            foreach (var mesh in meshes.Values)
             {
-                obj.SendAll();
+                mesh.SendAll();
             }
         }
 
@@ -337,8 +339,7 @@ namespace Coherence
                 return;
             }
 
-            // If we've timed out, close the connection and cleanup.
-
+            // TODO: If we've timed out, close the connection and cleanup.
         }
 
         #endregion
@@ -389,12 +390,12 @@ namespace Coherence
 
         public Viewport GetViewport(int id)
         {
-            if (!Viewports.ContainsKey(id))
+            if (!viewports.ContainsKey(id))
             {
                 throw new Exception($"Viewport {id} does not exist");
             }
 
-            return Viewports[id];
+            return viewports[id];
         }
 
         /// <summary>
@@ -405,13 +406,13 @@ namespace Coherence
         /// <param name="initialHeight"></param>
         internal void AddViewport(int id)
         {
-            if (Viewports.ContainsKey(id))
+            if (viewports.ContainsKey(id))
             {
                 throw new Exception($"Viewport {id} already exists");
             }
 
             var viewport = new Viewport(id);
-            Viewports[id] = viewport;
+            viewports[id] = viewport;
 
             SendEntity(RpcRequest.AddViewport, viewport);
         }
@@ -422,12 +423,28 @@ namespace Coherence
         /// <param name="id"></param>
         internal void RemoveViewport(int id)
         {
-            var viewport = Viewports[id];
+            var viewport = viewports[id];
 
             SendEntity(RpcRequest.RemoveViewport, viewport);
 
-            Viewports.Remove(id);
+            viewports.Remove(id);
             viewport.Dispose();
+        }
+
+        #endregion
+
+        #region Mesh Management
+
+        public Mesh GetOrCreateMesh(string name)
+        {
+            if (!meshes.ContainsKey(name))
+            {
+                var mesh = new Mesh(name);
+                meshes[name] = mesh;
+                return mesh;
+            }
+
+            return meshes[name];
         }
 
         #endregion
@@ -436,36 +453,36 @@ namespace Coherence
 
         public SceneObject GetObject(string name)
         {
-            if (!Objects.ContainsKey(name))
+            if (!objects.ContainsKey(name))
             {
                 throw new Exception($"Object `{name}` does not exist in the scene");
             }
 
-            return Objects[name];
+            return objects[name];
         }
 
         public void AddObject(SceneObject obj)
         {
-            if (Objects.ContainsKey(obj.Name))
+            if (objects.ContainsKey(obj.Name))
             {
                 throw new Exception($"Object `{obj.Name}` already exists in the scene");
             }
 
-            Objects[obj.Name] = obj;
+            objects[obj.Name] = obj;
 
             SendEntity(RpcRequest.AddObjectToScene, obj);
         }
 
         public void RemoveObject(string name)
         {
-            if (!Objects.ContainsKey(name))
+            if (!objects.ContainsKey(name))
             {
                 throw new Exception($"Object `{name}` does not exist in the scene");
             }
 
-            var obj = Objects[name];
+            var obj = objects[name];
             SendEntity(RpcRequest.RemoveObjectFromScene, obj);
-            Objects.Remove(name);
+            objects.Remove(name);
         }
 
         #endregion

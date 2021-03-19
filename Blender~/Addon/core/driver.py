@@ -41,7 +41,8 @@ from .utils import (
     error,
     is_supported_object,
     get_object_uid,
-    get_material_unity_name,
+    get_mesh_uid,
+    get_material_uid,
     get_string_buffer
 )
 
@@ -101,22 +102,6 @@ class BridgeDriver:
         )
         self.lib.UpdateTexturePixels.restype = c_int
 
-        self.lib.CopyMeshData.argtypes = (
-            c_void_p,   # name
-            c_uint,     # loopCount
-            c_void_p,   # loops
-            c_uint,     # trianglesCount
-            c_void_p,   # loopTris
-            c_uint,     # verticesCount
-            c_void_p,   # verts
-            c_void_p,   # loopCols
-            c_void_p,   # loopUVs
-            c_void_p,   # loopUV2s
-            c_void_p,   # loopUV3s
-            c_void_p,   # loopUV4s
-        )
-        self.lib.CopyMeshData.restype = c_int
-
         self.lib.CopyMeshDataNative.argtypes = (
             c_void_p,   # name
             c_void_p,   # loops
@@ -139,19 +124,18 @@ class BridgeDriver:
         self.lib.ReleaseRenderTextureLock.argtypes = (c_uint, )
         self.lib.ReleaseRenderTextureLock.restype = c_int
 
-        self.lib.AddMeshObjectToScene.argtypes = (
+        self.lib.AddObjectToScene.argtypes = (
             c_void_p,           # name
+            c_uint,             # SceneObjectType
             InteropTransform,   # transform
-            c_void_p,           # material name
         )
-        self.lib.AddMeshObjectToScene.restype = c_int
+        self.lib.AddObjectToScene.restype = c_int
 
         self.lib.SetObjectTransform.argtypes = (
             c_void_p,           # name
             InteropTransform,   # transform
         )
         self.lib.SetObjectTransform.restype = c_int
-
 
         # bpy.types.SpaceView3D.draw_handler_add(post_view_draw, (), 'WINDOW', 'POST_PIXEL')
 
@@ -462,8 +446,8 @@ class BridgeDriver:
         debug('on depsgraph update')
 
         # Only update metaballs as a whole once per tick
-        update_metaballs = False
-        first_metaball = None
+        has_metaball_updates = False
+        geometry_updates = {}
 
         self.sync_tracked_objects(scene, depsgraph)
 
@@ -471,28 +455,32 @@ class BridgeDriver:
         for update in depsgraph.updates:
             if type(update.id) == bpy.types.Material:
                 self.on_update_material(update.id)
-            #elif type(update.id) == bpy.types.MetaBall:
-            #    print('metaball update - skip')
-            # doesn't capture transforms
             elif type(update.id) == bpy.types.Object:
                 # Get the real object, not the copy in the update
                 obj = bpy.data.objects.get(update.id.name)
                 if obj.type == 'META':
-                    update_metaballs = True
-                else:
+                    has_metaball_updates = True
+                elif update.id.name in self.objects:
+                    # If it's a tracked object - update transform/geo/etc where appropriate
                     if update.is_updated_transform:
                         self.on_update_transform(obj)
 
                     if update.is_updated_geometry:
-                        self.on_update_geometry(obj, depsgraph)
+                        # Aggregate *unique* meshes that need to be updated this
+                        # frame. This de-duplicates any instanced meshes that all
+                        # fired the same is_updated_geometry update.
+                        geometry_updates[get_mesh_uid(obj)] = obj
 
-                    # A material association can change - which doesn't
-                    # trigger a material update but does trigger a
-                    # depsgraph update on the parent object.
-                    self.on_update_object_material(obj)
+                    # Push any other updates we may be tracking for this object
+                    self.on_update_properties(obj)
 
-        # A change to any metaball will trigger them all to re-evaluate
-        if update_metaballs:
+        # Handle all geometry updates
+        for uid, obj in geometry_updates.items():
+            debug('GEO UPDATE uid={}, obj={}'.format(uid, obj.name))
+            self.on_update_geometry(obj, depsgraph)
+
+        # A change to any metaball will trigger a re-evaluation of them all as one object
+        if has_metaball_updates:
             self.on_update_metaballs(scene, depsgraph)
 
     def on_add_object(self, obj, depsgraph):
@@ -502,7 +490,7 @@ class BridgeDriver:
             obj (bpy.types.Object):             The object that was added to the scene
             depsgraph (bpy.types.Depsgraph):    Dependency graph to use for generating a final mesh
         """
-        mat_name = get_material_unity_name(obj.active_material)
+        mat_name = get_material_uid(obj.active_material)
 
         debug('on_add_object - name={}, mat_name={}'.format(obj.name, mat_name))
 
@@ -512,21 +500,21 @@ class BridgeDriver:
         if obj.parent_type == 'OBJECT' and obj.parent is not None:
             parent_name = obj.parent.name
 
-        transform = to_interop_transform(obj)
-        self.lib.AddMeshObjectToScene(
+        self.lib.AddObjectToScene(
             get_string_buffer(obj.name),
-            transform,
-            get_string_buffer(mat_name)
+            to_interop_type(obj),
+            to_interop_transform(obj)
         )
 
         # When an object is renamed - it's treated as an add. But the rename
         # doesn't propagate any change events to children, so we need to manually
-        # trigger a transform update message for everything parented to this object.
+        # trigger a transform update for everything parented to this object
+        # so they can all update their parent name to match.
         for child in obj.children:
             if child.name in self.objects:
                 self.on_update_transform(child)
 
-        # Send up initial geometry and state as well
+        # Send up initial state and geometry
         self.on_update_properties(obj)
         self.on_update_geometry(obj, depsgraph)
 
@@ -554,13 +542,13 @@ class BridgeDriver:
         self.has_metaballs = True
         debug('on_add_metaballs')
 
-        mat_name = get_material_unity_name(obj.active_material)
+        mat_name = get_material_uid(obj.active_material)
 
         transform = to_interop_transform(obj)
-        self.lib.AddMeshObjectToScene(
+        self.lib.AddObjectToScene(
             self.METABALLS_OBJECT_NAME,
-            transform,
-            get_string_buffer(mat_name)
+            2, # SceneObject.Metaball - TODO: Don't hardcode this
+            transform
         )
 
         # Send an initial set of geometry - already done in update I think?
@@ -588,52 +576,52 @@ class BridgeDriver:
         )
 
     def on_update_properties(self, obj):
-        """Notify the bridge that additional per-object props have changed
+        """Notify Unity that object props may have changed
 
         Args:
             obj (bpy.types.Object): The object that was updated
         """
-        debug('on_update_properties - name={}'.format(obj.name))
+        mesh_uid = get_mesh_uid(obj)
+        mat_uid = get_material_uid(obj.active_material)
+
+        debug('on_update_properties - name={}, mesh={}, mat={}'.format(
+            obj.name,
+            mesh_uid,
+            mat_uid
+        ))
 
         self.lib.UpdateObjectProperties(
             get_string_buffer(obj.name),
             int(obj.coherence.display_mode),
-            int(obj.coherence.optimize_mesh)
+            get_string_buffer(mesh_uid),
+            get_string_buffer(mat_uid)
         )
 
     def on_update_geometry(self, obj, depsgraph):
-        """Notify the bridge that object geometry has changed
+        """Notify Unity that mesh geometry may have changed
+
+        An object is provided instead of the bpy.types.Mesh
+        to evaluate modifiers that need to be applied before
+        transferring mesh data to Unity.
 
         Args:
-            obj (bpy.types.Object):             The object that was updated
+            obj (bpy.types.Object):             The object that received the update
             depsgraph (bpy.types.Depsgraph):    Dependency graph to use for generating a final mesh
         """
-        debug('on_update_geometry - name={}'.format(obj.name))
+        mesh_uid = get_mesh_uid(obj)
 
-        name_buf = get_string_buffer(obj.name)
+        debug('on_update_geometry - name={}, mesh={}'.format(obj.name, mesh_uid))
+
+        # We need to do both evaluated_get() and preserve_all_data_layers=True to ensure
+        # that - if the mesh is instanced - modifiers are applied to the correct instances.
         eval_obj = obj.evaluated_get(depsgraph)
-        mesh = eval_obj.to_mesh()
+        mesh = eval_obj.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
+
+        # TODO: preserve_all_data_layers is only necessary if instanced and modifier
+        # stacks change per instance. Might be cheaper to turn this off if a mesh is used only once.
 
         # Ensure triangulated faces are available
         mesh.calc_loop_triangles()
-
-        # # Need both vertices and loops. Vertices store co/no information per-vertex
-        # # while loops align with loop_triangles
-        # debug('on_update_geometry - loops_len={}'.format(len(mesh.loops)))
-        # self.lib.CopyVertices(
-        #     name_buf,
-        #     mesh.loops[0].as_pointer(),
-        #     len(mesh.loops),
-        #     mesh.vertices[0].as_pointer(),
-        #     len(mesh.vertices)
-        # )
-
-        # debug('on_update_geometry - loop_triangles_len={} '.format(len(mesh.loop_triangles)))
-        # self.lib.CopyLoopTriangles(
-        #     name_buf,
-        #     mesh.loop_triangles[0].as_pointer(),
-        #     len(mesh.loop_triangles)
-        # )
 
         # A single (optional) vertex color layer can be passed through
         cols_ptr = None
@@ -646,26 +634,8 @@ class BridgeDriver:
             if len(mesh.uv_layers[layer].data) > 0:
                 uv_ptr[layer] = mesh.uv_layers[layer].data[0].as_pointer()
 
-        """
-        self.lib.CopyMeshData(
-            name_buf,
-            len(mesh.loops),
-            mesh.loops[0].as_pointer(),
-            len(mesh.loop_triangles),
-            mesh.loop_triangles[0].as_pointer(),
-            len(mesh.vertices),
-            mesh.vertices[0].as_pointer(),
-            cols_ptr,
-            uv_ptr[0],
-            uv_ptr[1],
-            uv_ptr[2],
-            uv_ptr[3]
-        )
-        """
-
-
         self.lib.CopyMeshDataNative(
-            name_buf,
+            get_string_buffer(mesh_uid),
             mesh.loops[0].as_pointer(),
             len(mesh.loops),
             mesh.loop_triangles[0].as_pointer(),
@@ -713,6 +683,7 @@ class BridgeDriver:
 
         self.lib.CopyMeshDataNative(
             self.METABALLS_OBJECT_NAME,
+            self.METABALLS_OBJECT_NAME,
             mesh.loops[0].as_pointer(),
             len(mesh.loops),
             mesh.loop_triangles[0].as_pointer(),
@@ -730,23 +701,6 @@ class BridgeDriver:
 
         eval_obj.to_mesh_clear()
 
-    def on_update_object_material(self, obj):
-        """Pass an object's material reference to the bridge
-
-        Args:
-            obj (bpy.types.Object): The object that was updated
-        """
-        debug('on_update_object_material - name={}'.format(obj.name))
-
-        mat_name_buf = get_string_buffer(
-            get_material_unity_name(obj.active_material)
-        )
-
-        self.lib.SetObjectMaterial(
-            get_string_buffer(obj.name),
-            mat_name_buf
-        )
-
     def on_update_material(self, mat):
         """
         Args:
@@ -754,19 +708,10 @@ class BridgeDriver:
         """
         debug('on_update_material - name={}'.format(mat.name))
 
-        mat_name_buf = get_string_buffer(
-            get_material_unity_name(mat)
-        )
-
-        # TODO: This may pass in objects that aren't tracked yet by the bridge.
-        # Is that fine? (Probably safe to ignore errors for these)
-        # Could also iterate self.objects here and pull each from bpy.data.objects
+        # Fire off an update for all objects that are using it
         for obj in bpy.context.scene.objects:
-            if obj.active_material == mat:
-                self.lib.SetObjectMaterial(
-                    get_string_buffer(obj.name),
-                    mat_name_buf
-                )
+            if obj.active_material == mat and obj.name in self.objects:
+                self.on_update_properties(obj)
 
 __singleton = BridgeDriver()
 

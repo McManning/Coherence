@@ -92,18 +92,17 @@ def get_objects_with_material(mat):
 
     return results
 
-def get_material_unity_name(mat) -> str:
-    """Retrieve the name of the Material exposed to Unity.
+def get_material_uid(mat) -> str:
+    """Retrieve the unique name of a Material for Unity.
 
     If the provided mat is None, a default will be returned.
 
-    Parameters:
+    Args:
         mat (bpy.types.Material|None)
 
     Returns:
         string
     """
-
     if not mat:
         return 'Default'
 
@@ -112,7 +111,7 @@ def get_material_unity_name(mat) -> str:
 def get_object_uid(obj) -> int:
     """Retrieve a unique identifier that exists throughout the lifetime of an object
 
-    Parameters:
+    Args:
         obj (bpy.types.Object)
     """
     # TODO: Improve on this. I can't guarantee that Blender
@@ -122,14 +121,37 @@ def get_object_uid(obj) -> int:
     # because a renamed object will just be a new object.
     return obj.as_pointer() & 0xffffffff
 
-def get_material_uid(mat) -> int:
-    """Retrieve a unique identifier that exists throughout the lifetime of a material
+def get_mesh_uid(obj) -> str:
+    """Retrieve a unique identifier for the mesh attached to the object
 
-    Parameters:
-        mat (bpy.types.Material)
+    If the object has modifiers applied - this will be unique for
+    that object. Otherwise - this may be a common mesh name that
+    is instanced between multiple objects in the scene.
+
+    Args:
+        obj (bpy.types.Object)
+
+    Returns:
+        string
     """
-    # TODO: Same as above
-    return mat.as_pointer() & 0xffffffff
+    if obj.type != 'MESH':
+        return None
+
+    has_modifiers = len(obj.modifiers) > 0
+
+    # If there are no modifiers - return the unique mesh name.
+    # This mesh may be instanced between multiple objects.
+    if not has_modifiers:
+        return obj.data.name
+
+    # If there are modifiers - we need to generate a unique
+    # name for this object + mesh combination.
+
+    # TODO: Better convention here. If this is > 63 characters
+    # it won't transfer. And this can still have a collision:
+    # Mesh named `foo__bar` can collide with a `foo` object
+    # with a `bar` mesh + modifiers.
+    return '{}__{}'.format(obj.name, obj.data.name)
 
 def log(msg):
     print(msg, flush = True)

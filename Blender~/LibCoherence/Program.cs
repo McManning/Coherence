@@ -1,7 +1,7 @@
 ﻿
 using System;
-using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using Coherence.BlenderDNA;
 
 #if !MOCKING
 using RGiesecke.DllExport;
@@ -342,16 +342,16 @@ namespace Coherence
         #region Scene Management API
 
         [DllExport]
-        public static int AddMeshObjectToScene(
+        public static int AddObjectToScene(
             [MarshalAs(UnmanagedType.LPStr)] string name,
-            InteropTransform transform,
-            [MarshalAs(UnmanagedType.LPStr)] string material
+            SceneObjectType type,
+            InteropTransform transform
         ) {
-            InteropLogger.Debug($"Adding mesh <name={name}, material={material}>");
+            InteropLogger.Debug($"Adding object <name={name}, type={type}>");
 
             try
             {
-                var obj = new SceneObject(SceneObjectType.Mesh, name, transform, material);
+                var obj = new SceneObject(name, type, transform);
 
                 Bridge.AddObject(obj);
                 return 1;
@@ -387,54 +387,32 @@ namespace Coherence
         }
 
         /// <summary>
-        /// Update common object properties and notify Unity.
-        ///
-        /// These are properties that don't have their own setters yet.
-        ///
-        /// Might eventually merge in <see cref="SetObjectMaterial(string, string)"/>
-        /// and <see cref="SetObjectTransform(string, InteropMatrix4x4)"/> into this
-        /// since they're all just <see cref="InteropSceneObject"/> fields.
+        /// Update scene object properties and notify Unity
         /// </summary>
         [DllExport]
         public static int UpdateObjectProperties(
             [MarshalAs(UnmanagedType.LPStr)] string name,
             ObjectDisplayMode display,
-            int optimizeMesh
-        ) {
-            try
-            {
-                var obj = Bridge.GetObject(name);
-
-                obj.data.display = display;
-                obj.optimize = optimizeMesh == 1;
-                // TODO: Whatever other nonsense.
-                // Materials?
-
-                Bridge.SendEntity(RpcRequest.UpdateSceneObject, obj);
-                return 1;
-            }
-            catch (Exception e)
-            {
-                SetLastError(e);
-                return -1;
-            }
-        }
-
-        /// <summary>
-        /// Update <see cref="InteropSceneObject.material" /> and notify Unity
-        /// </summary>
-        [DllExport]
-        public static int SetObjectMaterial(
-            [MarshalAs(UnmanagedType.LPStr)] string name,
+            [MarshalAs(UnmanagedType.LPStr)] string mesh,
             [MarshalAs(UnmanagedType.LPStr)] string material
         ) {
             try
             {
                 var obj = Bridge.GetObject(name);
 
-                if (material != obj.data.material)
+                var interopData = obj.data;
+
+                InteropLogger.Debug($"{name} - will it send? {interopData.display}, {interopData.mesh}, {interopData.material}");
+
+                interopData.display = display;
+                interopData.mesh = mesh;
+                interopData.material = material;
+
+                if (!interopData.Equals(obj.data))
                 {
-                    obj.data.material = material;
+                    InteropLogger.Debug($"{name} - it do! {display}, {mesh}, {material}");
+                    obj.data = interopData;
+
                     Bridge.SendEntity(RpcRequest.UpdateSceneObject, obj);
                 }
 
@@ -536,86 +514,6 @@ namespace Coherence
         /// <summary>
         /// Perform a copy of <b>all</b> available mesh data to Unity in one go.
         /// </summary>
-        [DllExport] // LEGACY
-        public static int CopyMeshData(
-            #pragma warning disable IDE0060 // Remove unused parameter
-                [MarshalAs(UnmanagedType.LPStr)] string name,
-                uint loopCount,
-                [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] MLoop[] loops,
-                uint trianglesCount,
-                [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 3)] MLoopTri[] loopTris,
-                uint verticesCount,
-                [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 5)] MVert[] verts,
-                // Only one vertex color layer is supported.
-                [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] MLoopCol[] loopCols,
-                // TODO: More dynamic UV support. Until then - we support up to 4 UV layers.
-                [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] MLoopUV[] loopUVs,
-                [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] MLoopUV[] loopUV2s,
-                [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] MLoopUV[] loopUV3s,
-                [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] MLoopUV[] loopUV4s
-            #pragma warning restore IDE0060 // Remove unused parameter
-        ) {
-            InteropLogger.Debug($"Copy {loops.Length} loops for `{name}`");
-
-            try
-            {
-                var obj = Bridge.GetObject(name);
-
-                // Make a list of lists for included UVs
-                var loopUVLayers = new List<MLoopUV[]>();
-                /*if (loopUVs != null) loopUVLayers.Add(loopUVs);
-                if (loopUV2s != null) loopUVLayers.Add(loopUV2s);
-                if (loopUV3s != null) loopUVLayers.Add(loopUV3s);
-                if (loopUV4s != null) loopUVLayers.Add(loopUV4s);*/
-
-                /*
-                obj.CopyMeshData(
-                    verts,
-                    loops,
-                    loopTris,
-                    loopCols,
-                    loopUVLayers
-                );
-                */
-
-                // TODO: Eventually make this just send deltas whenever possible
-                // assuming it's cheaper to calculate the deltas than to just send
-                // large mesh data as a whole.
-
-                // Or - we have a better process in place to identify what changed
-                // based on user action in Blender (e.g. any kind of UV editing operations
-                // on the active UV layer would then just send UV updates for that layer)
-                // and we just send those channels.
-
-                // The risk though is that we optimize vertex count on this end
-                // rather than sending Unity the full loops. So if we tried to
-                // update partial data, there's a lot of headache in determining
-                // whether those changes cause changes in other mesh data
-                // (e.g. by splitting a UV it's now created a new vertex, which then
-                // changes the triangle list and all other buffers, etc etc)
-
-                // Blender cheats this by duplicating data in loops - but that's about
-                // a 4x increase in storage space / transfer size, and work on Unity's
-                // end to still optimize those down while uploading to the GPU.
-
-                // Metaballs and sculpting also kind of throw us for a loop on
-                // this one - so maybe not worth the extra effort.
-
-                // Send ALL the data to Unity.
-                obj.SendAll();
-
-                return 1;
-            }
-            catch (Exception e)
-            {
-                SetLastError(e);
-                return -1;
-            }
-        }
-
-        /// <summary>
-        /// Perform a copy of <b>all</b> available mesh data to Unity in one go.
-        /// </summary>
         [DllExport]
         public static int CopyMeshDataNative(
             [MarshalAs(UnmanagedType.LPStr)] string name,
@@ -637,18 +535,18 @@ namespace Coherence
 
             try
             {
-                var obj = Bridge.GetObject(name);
+                var mesh = Bridge.GetOrCreateMesh(name);
 
-                obj.CopyMeshDataNative(
+                mesh.CopyMeshDataNative(
                     new NativeArray<MVert>(verts, vertsSize),
                     new NativeArray<MLoop>(loops, loopsSize),
                     new NativeArray<MLoopTri>(loopTris, loopTrisSize),
                     new NativeArray<MLoopCol>(loopCols, loopsSize),
                     new NativeArray<MLoopUV>(loopUVs, loopsSize)
                 );
+                // TODO: UV2-4
 
-                obj.SendDirty();
-
+                mesh.SendDirty();
                 return 1;
             }
             catch (Exception e)
