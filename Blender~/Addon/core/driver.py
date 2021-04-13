@@ -44,106 +44,59 @@ from .utils import (
     get_object_uid,
     get_mesh_uid,
     get_material_uid,
-    get_string_buffer
+    get_string_buffer,
+    SceneObjectCollection
 )
 
 from .interop import *
+
+from ..plugins.mesh import (
+    MeshPlugin
+)
 
 class BridgeDriver:
     """Respond to scene object changes and handle messaging through the Unity bridge"""
 
     # Location of the Coherence DLL - relative to addon root
-    DLL_PATH = 'lib/LibCoherence.dll';
-
-    METABALLS_OBJECT_NAME = get_string_buffer("__Metaballs")
+    DLL_PATH = 'lib/LibCoherence.dll'
 
     MAX_TEXTURE_SLOTS = 64
     UNASSIGNED_TEXTURE_SLOT_NAME = '-- Unassigned --'
 
-    running = False
-    lib = None
+    running: bool = False
+    lib = None # CDLL
     connection_name: str = None
     blender_version: str = None
-    has_metaballs: bool = False
 
+    # Draw handler for bpy.types.SpaceImageEditor
     image_editor_handle = None # <capsule object RNA_HANDLE>
+
+    # Numpy array referencing pixel data for the
+    # active bpy.types.Image to sync to Unity
     image_buffer = None # np.ndarray
 
-    # Mapping between viewport IDs and RenderEngine instances.
+    # Dict<int, RenderEngine> where key is a unique viewport ID per RenderEngine instance.
     # Weakref is used so that we don't hold onto RenderEngine references
     # since Blender uses __del__ to release them after use
     viewports = WeakValueDictionary()
 
-    # Tracked object names already synced to the DLL
-    objects = set()
+    objects = SceneObjectCollection()
+
+    # Dict<str, Plugin> where key is a plugin name
+    plugins = {}
+
+    # bpy.types.Object names currently tracked as being in the scene.
+    current = set()
 
     def __init__(self):
-        path = Path(__file__).parent.parent.joinpath(self.DLL_PATH).absolute()
-        log('Loading DLL from {}'.format(path))
-        self.lib = cdll.LoadLibrary(str(path))
-
-        # Typehint all the API calls we actually need to typehint
-        self.lib.Connect.restype = c_int
-        self.lib.Disconnect.restype = c_int
-        self.lib.Clear.restype = c_int
-        self.lib.SetViewportCamera.argtypes = (c_int, InteropCamera)
-
-
-        #self.lib.GetTextureSlots.argtypes = (
-        #    POINTER(InteropString64),   # Target buffer
-        #    c_int                       # size
-        #)
-        self.lib.GetTextureSlots.restype = c_int
-
-        self.lib.UpdateTexturePixels.argtypes = (
-            c_void_p,   # name
-            c_int,      # width
-            c_int,      # height
-            c_void_p    # pixels
-        )
-        self.lib.UpdateTexturePixels.restype = c_int
-
-        self.lib.CopyMeshDataNative.argtypes = (
-            c_void_p,   # name
-            c_void_p,   # loops
-            c_uint,     # loopSize
-            c_void_p,   # loopTris
-            c_uint,     # loopTrisSize
-            c_void_p,   # verts
-            c_uint,     # verticesSize
-            c_void_p,   # loopCols
-            c_void_p,   # loopUVs
-            c_void_p,   # loopUV2s
-            c_void_p,   # loopUV3s
-            c_void_p,   # loopUV4s
-        )
-        self.lib.CopyMeshDataNative.restype = c_int
-
-        self.lib.GetRenderTexture.argtypes = (c_uint, )
-        self.lib.GetRenderTexture.restype = RenderTextureData
-
-        self.lib.ReleaseRenderTextureLock.argtypes = (c_uint, )
-        self.lib.ReleaseRenderTextureLock.restype = c_int
-
-        self.lib.AddObjectToScene.argtypes = (
-            c_void_p,           # name
-            c_uint,             # SceneObjectType
-            InteropTransform,   # transform
-        )
-        self.lib.AddObjectToScene.restype = c_int
-
-        self.lib.SetObjectTransform.argtypes = (
-            c_void_p,           # name
-            InteropTransform,   # transform
-        )
-        self.lib.SetObjectTransform.restype = c_int
-
+        self.lib = load_library(self.DLL_PATH)
         # bpy.types.SpaceView3D.draw_handler_add(post_view_draw, (), 'WINDOW', 'POST_PIXEL')
 
+        # Add default plugins
+        self.register_plugin(MeshPlugin)
 
     def __del__(self):
         debug('__del__ on bridge')
-
         # bpy.types.SpaceView3D.draw_handler_remove(post_view_draw, 'WINDOW')
 
     def start(self):
@@ -162,7 +115,7 @@ class BridgeDriver:
         for render_engine in self.viewports.values():
             self.add_viewport(render_engine)
 
-        # Register listeners for Blender events
+        # Register handlers for Blender events
         depsgraph_update_post.append(self.on_depsgraph_update)
         load_pre.append(self.on_load_pre)
 
@@ -176,12 +129,17 @@ class BridgeDriver:
             'WINDOW', 'POST_PIXEL'
         )
 
-        # Sync the current scene state into the bridge
+        # Notify plugins
+        for plugin in self.plugins.values():
+            plugin.on_enable()
+
+        # Sync the current scene state
         self.sync_tracked_objects(
             bpy.context.scene,
             bpy.context.evaluated_depsgraph_get()
         )
 
+        # Notify viewports
         self.tag_redraw_viewports()
 
     def stop(self):
@@ -189,17 +147,26 @@ class BridgeDriver:
         if not self.is_running():
             return
 
+        # Safely cleanup if connected
+        if self.is_connected():
+            self.on_disconnected_from_unity()
+
+        # Disconnect the active connection
         log('DCC teardown')
         self.lib.Disconnect()
         self.lib.Clear()
 
         # Clear local tracking
-        self.objects = set()
-        self.has_metaballs = False
+        self.destroy_all_objects()
+
+        # Notify plugins
+        for plugin in self.plugins.values():
+            plugin.on_disable()
 
         # Turning off `running` will also destroy the `on_tick` timer.
         self.running = False
 
+        # Remove Blender event handlers
         if self.on_depsgraph_update in depsgraph_update_post:
             depsgraph_update_post.remove(self.on_depsgraph_update)
 
@@ -210,6 +177,7 @@ class BridgeDriver:
             bpy.types.SpaceImageEditor.draw_handler_remove(self.image_editor_handle, 'WINDOW')
             self.image_editor_handle = None
 
+        # Notify viewports
         self.tag_redraw_viewports()
 
     def free_lib(self): # UNUSED
@@ -289,10 +257,44 @@ class BridgeDriver:
         Args:
             uid (int): Unique identifier for the viewport RenderEngine
         """
-        log('***REMOVE VIEWPORT {}'.format(uid))
+        log('*** REMOVE VIEWPORT {}'.format(uid))
 
         del self.viewports[uid]
         self.lib.RemoveViewport(uid)
+
+    def add_plugin(self, plugin):
+        """Add a new plugin to be executed on events
+
+        """
+        log('*** ADD PLUGIN {}'.format(plugin))
+
+        instance = plugin()
+        self.plugins[plugin.__name__] = instance
+        instance.on_registered()
+
+        if self.is_running():
+            instance.on_enable()
+
+        if self.is_connected():
+            instance.on_connected_to_unity()
+
+    def unregister_plugin(self, plugin):
+        try:
+            instance = self.plugins[plugin.__name__]
+
+            if self.is_connected():
+                instance.on_disconnected_from_unity()
+
+            instance.destroy_all_objects()
+
+            if self.is_running():
+                instance.on_disable()
+
+            instance.on_unregistered()
+
+            del self.plugins[plugin.__name__]
+        except KeyError:
+            warning('Plugin {} is not installed'.format(plugin.__name__))
 
     def is_connected(self) -> bool:
         """Is the bridge currently connected to an instance of Unity
@@ -382,19 +384,22 @@ class BridgeDriver:
     def on_connected_to_unity(self):
         debug('on_connected_to_unity')
         self.tag_redraw_viewports()
-        pass
+
+        for plugin in self.plugins.values():
+            plugin.on_connected_to_unity()
 
     def on_connected_to_shared_memory(self):
         debug('on_connected_to_shared_memory')
-        pass
 
     def on_disconnected_from_unity(self):
         debug('on_disconnected_from_unity')
         self.tag_redraw_viewports()
-        pass
+
+        for plugin in self.plugins.values():
+            plugin.on_disconnected_from_unity()
 
     def tag_redraw_viewports(self):
-        """Tag all active render engines for a redraw"""
+        """Tag all active RenderEngines for a redraw"""
         for v in self.viewports.items():
             try:
                 v[1].on_update()
@@ -402,7 +407,7 @@ class BridgeDriver:
                 error(sys.exc_info()[0])
 
     def sync_tracked_objects(self, scene, depsgraph):
-        """Add/remove objects from the bridge to match the scene.
+        """Track add/remove of scene objects.
 
         Objects may be added/removed in case of undo, rename, etc.
 
@@ -410,31 +415,35 @@ class BridgeDriver:
             scene (bpy.types.Scene)
             depsgraph (bpy.types.Depsgraph)
         """
-        current = set() # Set of tracked object names
-        found_metaballs = False
+        current = set()
+
+        # TODO: Drill down into cross-scene objects to track.
+        # (E.g. something that's referencing a bunch of meshes
+        # via a collection in this scene into another scene)
 
         # Check for added objects
-        for obj in scene.objects:
-            if is_supported_object(obj):
-                if obj.name not in self.objects:
-                    self.on_add_object(obj, depsgraph)
-
-                current.add(obj.name)
-            elif obj.type == 'META':
-                found_metaballs = True
-                if not self.has_metaballs:
-                    self.on_add_metaballs(obj, depsgraph)
+        for bpy_obj in scene.objects:
+            if bpy_obj.name not in self.current:
+                self.on_add_bpy_object(obj)
 
         # Check for removed objects
-        removed = self.objects - current
+        removed = self.current - current
         for name in removed:
-            self.on_remove_object(name)
-
-        if not found_metaballs and self.has_metaballs:
-            self.on_remove_metaballs()
+            self.on_remove_bpy_object(name)
 
         # Update current tracked list
-        self.objects = current
+        self.current = current
+
+    def on_add_bpy_object(self, bpy_obj):
+        for plugin in self.plugins.values():
+            plugin.on_add_bpy_object(bpy_obj)
+
+    def on_remove_bpy_object(self, name):
+        obj = self.objects.find_by_bpy_name(name)
+        if obj: obj.destroy()
+
+        for plugin in self.plugins.values():
+            plugin.on_remove_bpy_object(name)
 
     def on_image_editor_update(self, context):
         space = context.space_data
@@ -461,8 +470,6 @@ class BridgeDriver:
         """
         debug('on depsgraph update')
 
-        # Only update metaballs as a whole once per tick
-        has_metaball_updates = False
         geometry_updates = {}
 
         self.sync_tracked_objects(scene, depsgraph)
@@ -471,263 +478,103 @@ class BridgeDriver:
         for update in depsgraph.updates:
             if type(update.id) == bpy.types.Material:
                 self.on_update_material(update.id)
-            elif type(update.id) == bpy.types.Object:
-                # Get the real object, not the copy in the update
-                obj = bpy.data.objects.get(update.id.name)
-                if obj.type == 'META':
-                    has_metaball_updates = True
-                elif update.id.name in self.objects:
-                    # If it's a tracked object - update transform/geo/etc where appropriate
-                    if update.is_updated_transform:
-                        self.on_update_transform(obj)
 
+            elif type(update.id) == bpy.types.Object:
+                # If it's a tracked object - update transform/geo/etc where appropriate
+                obj = self.objects.find_by_bpy_name(update.id.name)
+                if obj:
+                    if update.is_updated_transform:
+                        obj.update_transform()
+
+                    # Aggregate *unique* meshes that need to be updated this
+                    # frame. This de-duplicates any instanced meshes that all
+                    # fired the same is_updated_geometry update.
                     if update.is_updated_geometry:
-                        # Aggregate *unique* meshes that need to be updated this
-                        # frame. This de-duplicates any instanced meshes that all
-                        # fired the same is_updated_geometry update.
-                        geometry_updates[get_mesh_uid(obj)] = obj
+                        geometry_updates[obj.mesh_uid] = obj
 
                     # Push any other updates we may be tracking for this object
-                    self.on_update_properties(obj)
+                    obj.update_properties()
 
         # Handle all geometry updates
         for uid, obj in geometry_updates.items():
             debug('GEO UPDATE uid={}, obj={}'.format(uid, obj.name))
-            self.on_update_geometry(obj, depsgraph)
+            obj.update_mesh(depsgraph)
 
-        # A change to any metaball will trigger a re-evaluation of them all as one object
-        if has_metaball_updates:
-            self.on_update_metaballs(scene, depsgraph)
+        # Update all plugins
+        for plugin in self.plugins.values():
+            plugin.on_depsgraph_update(scene, depsgraph)
 
-    def on_add_object(self, obj, depsgraph):
-        """Notify the bridge that the object has been added to the scene
+    def add_object(self, obj):
+        """Add the given object to the tracked list and lib.
+
+        This does *not* fire any events for the added SceneObject.
 
         Args:
-            obj (bpy.types.Object):             The object that was added to the scene
-            depsgraph (bpy.types.Depsgraph):    Dependency graph to use for generating a final mesh
+            obj (SceneObject):
         """
-        mat_name = get_material_uid(obj.active_material)
+        debug('add_object - name={}'.format(obj.name))
+        self.objects.append(obj)
 
-        debug('on_add_object - name={}, mat_name={}'.format(obj.name, mat_name))
-
-        # TODO: Other object types
+        bpy_obj = obj.bpy_obj
 
         parent_name = ''
-        if obj.parent_type == 'OBJECT' and obj.parent is not None:
-            parent_name = obj.parent.name
+        if bpy_obj.parent_type == 'OBJECT' and bpy_obj.parent is not None:
+            parent_name = bpy_obj.parent.name
 
         self.lib.AddObjectToScene(
-            get_string_buffer(obj.name),
-            to_interop_type(obj),
-            to_interop_transform(obj)
+            obj.uid,
+            to_interop_type(bpy_obj), # TODO: Use SceneObject.kind instead
+            to_interop_transform(bpy_obj)
         )
 
         # When an object is renamed - it's treated as an add. But the rename
         # doesn't propagate any change events to children, so we need to manually
         # trigger a transform update for everything parented to this object
         # so they can all update their parent name to match.
-        for child in obj.children:
-            if child.name in self.objects:
-                self.on_update_transform(child)
+        for child in bpy_obj.children:
+            child_obj = self.objects.find_by_bpy_name(child.name)
+            if child_obj: child_obj.update_transform()
 
         # Send up initial state and geometry
-        self.on_update_properties(obj)
-        self.on_update_geometry(obj, depsgraph)
+        obj.update_properties()
+        obj.update_mesh(depsgraph)
 
-    def on_remove_object(self, name):
-        """Notify the bridge that the object has been removed from the scene
+    def remove_object(self, obj):
+        """Remove the given object from the tracked list and lib
 
-        Args:
-            name (str): Unique object name shared with the Bridge
-        """
-        debug('on_remove_object - name={}'.format(name))
-
-        self.lib.RemoveObjectFromScene(
-            get_string_buffer(name)
-        )
-
-    def on_add_metaballs(self, obj, depsgraph):
-        """Update our sync state when metaballs have been first added to the scene.
-
-        We treat all metaballs as a single entity synced with Unity.
+        This does *not* fire any events for the removed SceneObject.
 
         Args:
-            obj (bpy.types.Object): The first metaball object in the scene
-            depsgraph (bpy.types.Depsgraph):    Dependency graph to use for generating a final mesh
+            obj (SceneObject):
         """
-        self.has_metaballs = True
-        debug('on_add_metaballs')
+        debug('remove_object - name={}'.format(obj.name))
 
-        mat_name = get_material_uid(obj.active_material)
+        self.objects.remove(obj)
+        self.lib.RemoveObjectFromScene(obj.uid)
 
-        transform = to_interop_transform(obj)
-        self.lib.AddObjectToScene(
-            self.METABALLS_OBJECT_NAME,
-            2, # SceneObject.Metaball - TODO: Don't hardcode this
-            transform
-        )
+    def destroy_all_objects(self):
+        """Notify each Plugin to destroy its SceneObjects and clear tracking"""
+        for plugin in self.plugins:
+            plugin._destroy_all_silent()
 
-        # Send an initial set of geometry - already done in update I think?
-        # self.on_update_metaballs(obj, depsgraph)
-
-    def on_remove_metaballs(self):
-        """Update our sync state when all metaballs have been removed from the scene"""
-        self.has_metaballs = False
-        debug('on_remove_metaballs')
-
-        self.lib.RemoveObjectFromScene(self.METABALLS_OBJECT_NAME)
-
-    def on_update_transform(self, obj):
-        """Notify the bridge that the object has been transformed in the scene.
-
-        Args:
-            obj (bpy.types.Object): The object that was updated
-        """
-        debug('on_update_transform - name={}'.format(obj.name))
-
-        transform = to_interop_transform(obj)
-        self.lib.SetObjectTransform(
-            get_string_buffer(obj.name),
-            transform
-        )
-
-    def on_update_properties(self, obj):
-        """Notify Unity that object props may have changed
-
-        Args:
-            obj (bpy.types.Object): The object that was updated
-        """
-        mesh_uid = get_mesh_uid(obj)
-        mat_uid = get_material_uid(obj.active_material)
-
-        debug('on_update_properties - name={}, mesh={}, mat={}'.format(
-            obj.name,
-            mesh_uid,
-            mat_uid
-        ))
-
-        self.lib.UpdateObjectProperties(
-            get_string_buffer(obj.name),
-            int(obj.coherence.display_mode),
-            get_string_buffer(mesh_uid),
-            get_string_buffer(mat_uid)
-        )
-
-    def on_update_geometry(self, obj, depsgraph):
-        """Notify Unity that mesh geometry may have changed
-
-        An object is provided instead of the bpy.types.Mesh
-        to evaluate modifiers that need to be applied before
-        transferring mesh data to Unity.
-
-        Args:
-            obj (bpy.types.Object):             The object that received the update
-            depsgraph (bpy.types.Depsgraph):    Dependency graph to use for generating a final mesh
-        """
-        mesh_uid = get_mesh_uid(obj)
-
-        debug('on_update_geometry - name={}, mesh={}'.format(obj.name, mesh_uid))
-
-        # We need to do both evaluated_get() and preserve_all_data_layers=True to ensure
-        # that - if the mesh is instanced - modifiers are applied to the correct instances.
-        eval_obj = obj.evaluated_get(depsgraph)
-        mesh = eval_obj.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
-
-        # TODO: preserve_all_data_layers is only necessary if instanced and modifier
-        # stacks change per instance. Might be cheaper to turn this off if a mesh is used only once.
-
-        # Ensure triangulated faces are available
-        mesh.calc_loop_triangles()
-
-        # A single (optional) vertex color layer can be passed through
-        cols_ptr = None
-        if len(mesh.vertex_colors) > 0 and len(mesh.vertex_colors[0].data) > 0:
-            cols_ptr = mesh.vertex_colors[0].data[0].as_pointer()
-
-        # Up to 4 (optional) UV layers can be passed through
-        uv_ptr = [None] * 4
-        for layer in range(len(mesh.uv_layers)):
-            if len(mesh.uv_layers[layer].data) > 0:
-                uv_ptr[layer] = mesh.uv_layers[layer].data[0].as_pointer()
-
-        self.lib.CopyMeshDataNative(
-            get_string_buffer(mesh_uid),
-            mesh.loops[0].as_pointer(),
-            len(mesh.loops),
-            mesh.loop_triangles[0].as_pointer(),
-            len(mesh.loop_triangles),
-            mesh.vertices[0].as_pointer(),
-            len(mesh.vertices),
-            cols_ptr,
-            uv_ptr[0],
-            uv_ptr[1],
-            uv_ptr[2],
-            uv_ptr[3]
-        )
-
-        eval_obj.to_mesh_clear()
-
-    def on_update_metaballs(self, scene, depsgraph):
-        """Rebuild geometry from metaballs in the scene and send to Unity
-
-        Args:
-            scene (bpy.types.Scene):
-            depsgraph (bpy.types.Depsgraph):    Dependency graph to use for generating a final mesh
-        """
-        # We use the first found in the scene as the root
-        obj = None
-        for obj in scene.objects:
-            if obj.type == 'META':
-                break
-
-        debug('on_update_metaballs obj={}'.format(obj))
-
-        # Get the evaluated post-modifiers mesh
-        eval_obj = obj.evaluated_get(depsgraph)
-        mesh = eval_obj.to_mesh()
-
-        # Ensure triangulated faces are available
-        mesh.calc_loop_triangles()
-
-        # TODO: Don't do this repeately. Only if the root changes transform.
-        # seems to be lagging out the interop.
-        transform = to_interop_transform(obj)
-        self.lib.SetObjectTransform(
-            self.METABALLS_OBJECT_NAME,
-            transform
-        )
-
-        self.lib.CopyMeshDataNative(
-            self.METABALLS_OBJECT_NAME,
-            self.METABALLS_OBJECT_NAME,
-            mesh.loops[0].as_pointer(),
-            len(mesh.loops),
-            mesh.loop_triangles[0].as_pointer(),
-            len(mesh.loop_triangles),
-            mesh.vertices[0].as_pointer(),
-            len(mesh.vertices),
-            # Metaballs don't have UV/Vertex Color information,
-            # So we skip all that on upload
-            None,   # loopCols
-            None,   # uv
-            None,   # uv2
-            None,   # uv3
-            None    # uv4
-        )
-
-        eval_obj.to_mesh_clear()
+        # Clear all tracking
+        self.objects.clear()
+        self.current = set()
 
     def on_update_material(self, mat):
-        """
+        """Trigger a `SceneObject.update_properties()` for all objects using this material
+
         Args:
             mat (bpy.types.Material)
         """
         debug('on_update_material - name={}'.format(mat.name))
 
-        # Fire off an update for all objects that are using it
-        for obj in bpy.context.scene.objects:
-            if obj.active_material == mat and obj.name in self.objects:
-                self.on_update_properties(obj)
+        # Fire off an update for all objects that are using this material
+        for bpy_obj in bpy.context.scene.objects:
+            if bpy_obj.active_material == mat:
+                obj = self.objects.find_by_bpy_name(bpy_obj.name)
+                if obj: obj.update_properties()
+
 
 __singleton = BridgeDriver()
 

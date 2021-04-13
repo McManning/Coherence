@@ -2,7 +2,10 @@
 from ctypes import *
 import math
 from mathutils import Vector, Matrix, Quaternion
-from .utils import get_string_buffer
+from .utils import (
+    get_string_buffer,
+    log
+)
 
 class InteropString64(Structure):
     _fields_ = [
@@ -272,3 +275,73 @@ def to_interop_int_array(arr):
         result[i] = arr[i]
 
     return result
+
+def load_library(path: str):
+    """Load LibCoherence and typehint methods
+    Args:
+        path (str): Location of LibCoherence.dll
+
+    Returns:
+        CDLL
+    """
+    path = Path(__file__).parent.parent.joinpath(path).absolute()
+    log('Loading DLL from {}'.format(path))
+
+    lib = cdll.LoadLibrary(str(path))
+
+    # Typehint all the API calls we actually need to typehint
+    lib.Connect.restype = c_int
+    lib.Disconnect.restype = c_int
+    lib.Clear.restype = c_int
+    lib.SetViewportCamera.argtypes = (c_int, InteropCamera)
+
+    #self.lib.GetTextureSlots.argtypes = (
+    #    POINTER(InteropString64),   # Target buffer
+    #    c_int                       # size
+    #)
+    lib.GetTextureSlots.restype = c_int
+
+    lib.UpdateTexturePixels.argtypes = (
+        c_void_p,   # name
+        c_int,      # width
+        c_int,      # height
+        c_void_p    # pixels
+    )
+    lib.UpdateTexturePixels.restype = c_int
+
+    lib.CopyMeshDataNative.argtypes = (
+        c_void_p,   # name
+        c_void_p,   # loops
+        c_uint,     # loopSize
+        c_void_p,   # loopTris
+        c_uint,     # loopTrisSize
+        c_void_p,   # verts
+        c_uint,     # verticesSize
+        c_void_p,   # loopCols
+        c_void_p,   # loopUVs
+        c_void_p,   # loopUV2s
+        c_void_p,   # loopUV3s
+        c_void_p,   # loopUV4s
+    )
+    lib.CopyMeshDataNative.restype = c_int
+
+    lib.GetRenderTexture.argtypes = (c_uint, )
+    lib.GetRenderTexture.restype = RenderTextureData
+
+    lib.ReleaseRenderTextureLock.argtypes = (c_uint, )
+    lib.ReleaseRenderTextureLock.restype = c_int
+
+    lib.AddObjectToScene.argtypes = (
+        c_void_p,           # name
+        c_uint,             # SceneObjectType
+        InteropTransform,   # transform
+    )
+    lib.AddObjectToScene.restype = c_int
+
+    lib.SetObjectTransform.argtypes = (
+        c_void_p,           # name
+        InteropTransform,   # transform
+    )
+    lib.SetObjectTransform.restype = c_int
+
+    return lib

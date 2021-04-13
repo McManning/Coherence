@@ -48,7 +48,8 @@ def update_object_properties(self, context):
         self (CoherenceObjectSettings)
         context (bpy.types.Context)
     """
-    bridge_driver().on_update_properties(context.object)
+    obj = bridge_driver().find_object(context.object)
+    if obj: obj.update_properties()
 
 @autoregister
 class CoherenceRendererSettings(PropertyGroup):
