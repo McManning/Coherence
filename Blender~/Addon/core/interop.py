@@ -1,6 +1,7 @@
 
 from ctypes import *
 import math
+from pathlib import Path
 from mathutils import Vector, Matrix, Quaternion
 from .utils import (
     get_string_buffer,
@@ -104,7 +105,7 @@ def identity():
 def to_interop_type(obj) -> int:
     """
     Args:
-        obj (bpy.types.Object):
+        obj (SceneObject):
 
     Returns:
         int

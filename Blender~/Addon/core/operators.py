@@ -2,10 +2,8 @@
 from bpy.types import (
     Operator
 )
-from .driver import (
-    bridge_driver
-)
 
+from . import runtime
 from util.registry import autoregister
 
 @autoregister
@@ -16,11 +14,10 @@ class StartCoherenceOperator(Operator):
 
     @classmethod
     def poll(cls, context):
-        bridge = bridge_driver()
-        return not bridge.is_running()
+        return not runtime.instance.is_running()
 
     def execute(self, context):
-        bridge_driver().start()
+        runtime.instance.start()
 
         context.scene.render.engine = 'COHERENCE'
 
@@ -39,9 +36,8 @@ class StopCoherenceOperator(Operator):
 
     @classmethod
     def poll(cls, context):
-        bridge = bridge_driver()
-        return bridge.is_running()
+        return runtime.instance.is_running()
 
     def execute(self, context):
-        bridge_driver().stop()
+        runtime.instance.stop()
         return { 'FINISHED' }

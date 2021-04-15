@@ -1,6 +1,6 @@
-
+import bpy
 from ..core.plugin import Plugin
-from ..core.scene_object import SceneObject
+from ..core.scene import SceneObject
 
 class Mesh(SceneObject):
     pass

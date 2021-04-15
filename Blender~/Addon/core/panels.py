@@ -3,10 +3,7 @@ from bpy.types import (
     Panel
 )
 
-from .driver import (
-    bridge_driver
-)
-
+from . import runtime
 from util.registry import autoregister
 
 def draw_view3d_header(self, context):
@@ -18,7 +15,7 @@ def draw_view3d_header(self, context):
     if not settings.show_view3d_controls:
         return
 
-    if bridge_driver().is_running():
+    if runtime.instance.is_running():
         layout.operator('coherence.stop', icon='X')
     else:
         layout.operator('coherence.start', icon='PLAY')
@@ -33,7 +30,7 @@ def draw_render_header(self, context):
     row.alignment = 'RIGHT'
 
     if context.engine == 'COHERENCE':
-        if bridge_driver().is_running():
+        if runtime.instance.is_running():
             row.operator('coherence.stop', icon='X')
         else:
             row.operator('coherence.start', icon='PLAY')
@@ -79,7 +76,7 @@ class COHERENCE_IMAGEPAINT_PT_texture_sync(Panel):
         if settings.error:
             layout.label(text=settings.error, icon='ERROR')
 
-        if not bridge_driver().is_connected():
+        if not runtime.instance.is_connected():
             layout.label(
                 text='Not connected to Unity.',
                 icon='ERROR'
@@ -115,7 +112,7 @@ class COHERENCE_RENDER_PT_settings_advanced(BasePanel):
 
         settings = context.scene.coherence
 
-        connected = bridge_driver().is_connected()
+        connected = runtime.instance.is_connected()
 
         if connected:
             layout.label(text='The below settings cannot be modified while Coherence is running', icon='ERROR')

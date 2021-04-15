@@ -1,11 +1,6 @@
 
-from .scene_object import SceneObject
-from .utils import (
-    SceneObjectCollection
-)
-from .driver import (
-    bridge_driver
-)
+from . import runtime
+from . import scene
 
 class Plugin:
     """
@@ -17,33 +12,38 @@ class Plugin:
     * Custom vertex data streams for injecting additional data during geometry updates
     """
 
-    _objects: SceneObjectCollection
+    _objects: scene.SceneObjectCollection
 
     def __init__(self):
-        self._objects = SceneObjectCollection()
+        self._objects = scene.SceneObjectCollection()
 
     @property
     def objects(self):
         """All currently valid scene objects created through `instantiate()`
 
         Returns:
-            list of SceneObject
+            dict_values[SceneObject]
         """
-        return self._objects
+        return self._objects.values()
 
-    def destroy_all_objects(self):
-        """Destroy all tracked objects"""
-        for obj in self._objects.values():
+    def enable(self):
+        self.enabled = True
+        self.on_enable()
+
+    def disable(self):
+        self.enabled = False
+
+        for obj in self.objects:
             obj.destroy()
 
         self._objects.clear()
+        self.on_disable()
 
-    def _destroy_all_silent(self):
-        """Destroy all tracked objects without updating Coherence"""
-        for obj in self._objects.values():
-            obj._destroy_silent()
+    def registered(self):
+        self.on_registered()
 
-        self._objects.clear()
+    def unregistered(self):
+        self.on_unregistered()
 
     # Plugin gets some basic event callbacks.
     # You can register for more complicated ones.
@@ -139,7 +139,7 @@ class Plugin:
         """
         pass
 
-    def instantiate(self, obj_type, name: str, bpy_obj = None) -> SceneObject:
+    def instantiate(self, obj_type, name: str, bpy_obj = None):
         """Add a new object to be synced to Unity.
 
         If `bpy_obj` is provided then the object will automatically sync mesh
@@ -163,8 +163,11 @@ class Plugin:
         Returns:
             SceneObject: Instance that has been synced to the scene
         """
+        if not self.enabled:
+            raise Exception('Cannot instantiate objects while a plugin is disabled')
+
         instance = obj_type(name, bpy_obj, self)
         self._objects.append(instance)
-        bridge_driver().add_object(instance)
+        runtime.instance.add_object(instance)
         instance.on_create()
         return instance

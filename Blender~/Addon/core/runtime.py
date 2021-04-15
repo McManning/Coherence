@@ -1,34 +1,9 @@
 
-import os
 from ctypes import *
-from ctypes import wintypes
 import bpy
 import numpy as np
-import gpu
-from pathlib import Path
 from bgl import *
-from gpu_extras.batch import batch_for_shader
-from mathutils import Vector, Matrix, Quaternion
-from math import cos
-from copy import copy
 from weakref import WeakValueDictionary
-import threading
-
-from bpy.props import (
-    BoolProperty,
-    CollectionProperty,
-    EnumProperty,
-    FloatProperty,
-    FloatVectorProperty,
-    IntProperty,
-    PointerProperty,
-    StringProperty,
-)
-
-from bpy.types import (
-    PropertyGroup,
-    Panel
-)
 
 from bpy.app.handlers import (
     depsgraph_update_post,
@@ -40,31 +15,24 @@ from .utils import (
     debug,
     warning,
     error,
-    is_supported_object,
-    get_object_uid,
-    get_mesh_uid,
-    get_material_uid,
-    get_string_buffer,
-    SceneObjectCollection
+    get_string_buffer
 )
+
+from .scene import SceneObjectCollection
 
 from .interop import *
 
-from ..plugins.mesh import (
-    MeshPlugin
-)
+# Location of the Coherence DLL - relative to addon root
+DLL_PATH = 'lib/LibCoherence.dll'
 
-class BridgeDriver:
+lib = load_library(DLL_PATH)
+
+class Runtime:
     """Respond to scene object changes and handle messaging through the Unity bridge"""
-
-    # Location of the Coherence DLL - relative to addon root
-    DLL_PATH = 'lib/LibCoherence.dll'
-
     MAX_TEXTURE_SLOTS = 64
     UNASSIGNED_TEXTURE_SLOT_NAME = '-- Unassigned --'
 
     running: bool = False
-    lib = None # CDLL
     connection_name: str = None
     blender_version: str = None
 
@@ -86,18 +54,17 @@ class BridgeDriver:
     plugins = {}
 
     # bpy.types.Object names currently tracked as being in the scene.
-    current = set()
+    current_names = set()
 
-    def __init__(self):
-        self.lib = load_library(self.DLL_PATH)
-        # bpy.types.SpaceView3D.draw_handler_add(post_view_draw, (), 'WINDOW', 'POST_PIXEL')
+    # SceneObjects invalidated this update
+    invalidated_objects = set()
 
-        # Add default plugins
-        self.register_plugin(MeshPlugin)
+    # Depsgraph we're currently evaluating within
+    # (if methods are being executed from within a Depsgraph update)
+    current_depsgraph = None
 
-    def __del__(self):
-        debug('__del__ on bridge')
-        # bpy.types.SpaceView3D.draw_handler_remove(post_view_draw, 'WINDOW')
+    # def __init__(self):
+    #     lib = load_library(self.DLL_PATH)
 
     def start(self):
         """Start trying to connect to Unity"""
@@ -131,7 +98,7 @@ class BridgeDriver:
 
         # Notify plugins
         for plugin in self.plugins.values():
-            plugin.on_enable()
+            plugin.enable()
 
         # Sync the current scene state
         self.sync_tracked_objects(
@@ -153,15 +120,14 @@ class BridgeDriver:
 
         # Disconnect the active connection
         log('DCC teardown')
-        self.lib.Disconnect()
-        self.lib.Clear()
-
-        # Clear local tracking
-        self.destroy_all_objects()
+        lib.Disconnect()
 
         # Notify plugins
         for plugin in self.plugins.values():
-            plugin.on_disable()
+            plugin.disable()
+
+        # Clear local tracking
+        self.cleanup()
 
         # Turning off `running` will also destroy the `on_tick` timer.
         self.running = False
@@ -180,17 +146,16 @@ class BridgeDriver:
         # Notify viewports
         self.tag_redraw_viewports()
 
-    def free_lib(self): # UNUSED
-        pass
-        # # Windows-specific handling for freeing the DLL.
-        # # See: https://stackoverflow.com/questions/359498/how-can-i-unload-a-dll-using-ctypes-in-python
-        # handle = self.lib._handle
-        # del self.lib
-        # self.lib = None
+    # def free_lib(self):
+    #     # Windows-specific handling for freeing the DLL.
+    #     # See: https://stackoverflow.com/questions/359498/how-can-i-unload-a-dll-using-ctypes-in-python
+    #     handle = lib._handle
+    #     del lib
+    #     lib = None
 
-        # kernel32 = WinDLL('kernel32', use_last_error=True)
-        # kernel32.FreeLibrary.argtypes = [wintypes.HMODULE]
-        # kernel32.FreeLibrary(handle)
+    #     kernel32 = WinDLL('kernel32', use_last_error=True)
+    #     kernel32.FreeLibrary.argtypes = [wintypes.HMODULE]
+    #     kernel32.FreeLibrary(handle)
 
     def get_texture_slots(self) -> list:
         """Return all sync-able texture slot names exposed by Unity
@@ -202,7 +167,7 @@ class BridgeDriver:
             return []
 
         buffer = (InteropString64 * self.MAX_TEXTURE_SLOTS)()
-        size = self.lib.GetTextureSlots(buffer, len(buffer))
+        size = lib.GetTextureSlots(buffer, len(buffer))
 
         # Convert byte arrays to a list of strings.
         return [self.UNASSIGNED_TEXTURE_SLOT_NAME] + [buffer[i].buffer.decode('utf-8') for i in range(size)]
@@ -230,7 +195,7 @@ class BridgeDriver:
         image.pixels.foreach_get(self.image_buffer)
         pixels_ptr = self.image_buffer.ctypes.data
 
-        self.lib.UpdateTexturePixels(
+        lib.UpdateTexturePixels(
             get_string_buffer(settings.texture_slot),
             image.size[0],
             image.size[1],
@@ -249,7 +214,7 @@ class BridgeDriver:
         ))
 
         self.viewports[render_engine.viewport_id] = render_engine
-        self.lib.AddViewport(render_engine.viewport_id)
+        lib.AddViewport(render_engine.viewport_id)
 
     def remove_viewport(self, uid):
         """Remove a RenderEngine instance as a tracked viewport
@@ -260,41 +225,46 @@ class BridgeDriver:
         log('*** REMOVE VIEWPORT {}'.format(uid))
 
         del self.viewports[uid]
-        self.lib.RemoveViewport(uid)
+        lib.RemoveViewport(uid)
 
-    def add_plugin(self, plugin):
+    def register_plugin(self, plugin):
         """Add a new plugin to be executed on events
 
         """
-        log('*** ADD PLUGIN {}'.format(plugin))
+        log('*** REGISTER PLUGIN {}'.format(plugin))
 
         instance = plugin()
-        self.plugins[plugin.__name__] = instance
-        instance.on_registered()
+        self.plugins[plugin] = instance
+        instance.registered()
 
         if self.is_running():
-            instance.on_enable()
+            instance.enable()
 
         if self.is_connected():
             instance.on_connected_to_unity()
 
     def unregister_plugin(self, plugin):
         try:
-            instance = self.plugins[plugin.__name__]
+            instance = self.plugins[plugin]
 
             if self.is_connected():
                 instance.on_disconnected_from_unity()
 
-            instance.destroy_all_objects()
-
             if self.is_running():
-                instance.on_disable()
+                instance.disable()
 
-            instance.on_unregistered()
+            instance.unregistered()
 
-            del self.plugins[plugin.__name__]
+            del self.plugins[plugin]
         except KeyError:
-            warning('Plugin {} is not installed'.format(plugin.__name__))
+            warning('Plugin {} is not installed'.format(plugin))
+        except Exception as e:
+            error('Exception ignored in Plugin [{}] while unregistering'.format(plugin))
+            print(e)
+
+    def unregister_all_plugins(self):
+        for plugin in list(self.plugins.values()):
+            self.unregister_plugin(plugin)
 
     def is_connected(self) -> bool:
         """Is the bridge currently connected to an instance of Unity
@@ -302,7 +272,7 @@ class BridgeDriver:
         Returns:
             bool
         """
-        return self.running and self.lib.IsConnectedToUnity()
+        return self.running and lib.IsConnectedToUnity()
 
     def is_running(self) -> bool:
         """Is the driver actively trying to / is connected to Unity
@@ -327,8 +297,8 @@ class BridgeDriver:
         # While actively connected to Unity, send typical IO,
         # get viewport renders, and run as fast as possible
         if self.is_connected():
-            self.lib.Update()
-            self.lib.ConsumeRenderTextures()
+            lib.Update()
+            lib.ConsumeRenderTextures()
 
             self.tag_redraw_viewports()
 
@@ -341,8 +311,8 @@ class BridgeDriver:
             return 0.008 # 120 FPS
 
         # Attempt to connect to shared memory if not already
-        if not self.lib.IsConnectedToSharedMemory():
-            response = self.lib.Connect(self.connection_name, self.blender_version)
+        if not lib.IsConnectedToSharedMemory():
+            response = lib.Connect(self.connection_name, self.blender_version)
             if response == 1:
                 self.on_connected_to_shared_memory()
             elif response == -1:
@@ -351,7 +321,7 @@ class BridgeDriver:
             # else the space doesn't exist.
 
         # Poll for updates from Unity until we get one.
-        self.lib.Update()
+        lib.Update()
 
         if self.is_connected():
             self.on_connected_to_unity()
@@ -423,16 +393,17 @@ class BridgeDriver:
 
         # Check for added objects
         for bpy_obj in scene.objects:
-            if bpy_obj.name not in self.current:
-                self.on_add_bpy_object(obj)
+            current.add(bpy_obj.name)
+            if bpy_obj.name not in self.current_names:
+                self.on_add_bpy_object(bpy_obj)
 
         # Check for removed objects
-        removed = self.current - current
+        removed = self.current_names - current
         for name in removed:
             self.on_remove_bpy_object(name)
 
         # Update current tracked list
-        self.current = current
+        self.current_names = current
 
     def on_add_bpy_object(self, bpy_obj):
         for plugin in self.plugins.values():
@@ -472,6 +443,7 @@ class BridgeDriver:
 
         geometry_updates = {}
 
+        self.current_depsgraph = depsgraph
         self.sync_tracked_objects(scene, depsgraph)
 
         # Check for updates to objects (geometry changes, transform changes, etc)
@@ -490,6 +462,7 @@ class BridgeDriver:
                     # frame. This de-duplicates any instanced meshes that all
                     # fired the same is_updated_geometry update.
                     if update.is_updated_geometry:
+                        debug('Geo update event for obj={} uid={}'.format(obj, obj.mesh_uid))
                         geometry_updates[obj.mesh_uid] = obj
 
                     # Push any other updates we may be tracking for this object
@@ -497,12 +470,17 @@ class BridgeDriver:
 
         # Handle all geometry updates
         for uid, obj in geometry_updates.items():
-            debug('GEO UPDATE uid={}, obj={}'.format(uid, obj.name))
+            debug('GEO UPDATE uid={}, obj={}, type={}'.format(uid, obj.name, obj))
             obj.update_mesh(depsgraph)
 
         # Update all plugins
         for plugin in self.plugins.values():
             plugin.on_depsgraph_update(scene, depsgraph)
+
+        self.current_depsgraph = None
+
+        # Clear everything that may have invalidated this update
+        self.remove_all_invalid_objects()
 
     def add_object(self, obj):
         """Add the given object to the tracked list and lib.
@@ -516,50 +494,54 @@ class BridgeDriver:
         self.objects.append(obj)
 
         bpy_obj = obj.bpy_obj
+        transform = to_interop_transform(bpy_obj) if bpy_obj else InteropTransform()
 
-        parent_name = ''
-        if bpy_obj.parent_type == 'OBJECT' and bpy_obj.parent is not None:
-            parent_name = bpy_obj.parent.name
-
-        self.lib.AddObjectToScene(
-            obj.uid,
+        lib.AddObjectToScene(
+            get_string_buffer(obj.uid),
             to_interop_type(bpy_obj), # TODO: Use SceneObject.kind instead
-            to_interop_transform(bpy_obj)
+            transform
         )
 
         # When an object is renamed - it's treated as an add. But the rename
         # doesn't propagate any change events to children, so we need to manually
         # trigger a transform update for everything parented to this object
         # so they can all update their parent name to match.
-        for child in bpy_obj.children:
-            child_obj = self.objects.find_by_bpy_name(child.name)
-            if child_obj: child_obj.update_transform()
+        if bpy_obj:
+            for child in bpy_obj.children:
+                child_obj = self.objects.find_by_bpy_name(child.name)
+                if child_obj: child_obj.update_transform()
 
         # Send up initial state and geometry
         obj.update_properties()
-        obj.update_mesh(depsgraph)
+        obj.update_mesh(self.current_depsgraph or bpy.context.evaluated_depsgraph_get())
+        # TODO: Depsgraph isn't available because this may not get executed
+        # within an depsgraph update. So we use the context depsgraph. Is this fine?
 
-    def remove_object(self, obj):
-        """Remove the given object from the tracked list and lib
+    # def remove_object(self, obj):
+    #     """Remove the given object from the tracked list and lib
 
-        This does *not* fire any events for the removed SceneObject.
+    #     This does *not* fire any events for the removed SceneObject.
 
-        Args:
-            obj (SceneObject):
-        """
-        debug('remove_object - name={}'.format(obj.name))
+    #     Args:
+    #         obj (SceneObject):
+    #     """
+    #     debug('remove_object - name={}'.format(obj.name))
 
-        self.objects.remove(obj)
-        self.lib.RemoveObjectFromScene(obj.uid)
+    #     lib.RemoveObjectFromScene(get_string_buffer(obj.uid))
 
-    def destroy_all_objects(self):
-        """Notify each Plugin to destroy its SceneObjects and clear tracking"""
-        for plugin in self.plugins:
-            plugin._destroy_all_silent()
+    def remove_all_invalid_objects(self):
+        for obj in self.invalidated_objects:
+            obj.plugin._objects.remove(obj)
+            self.objects.remove(obj)
 
-        # Clear all tracking
+        self.invalidated_objects.clear()
+
+    def cleanup(self):
+        # Clear all object tracking
+        self.current_names.clear()
         self.objects.clear()
-        self.current = set()
+        self.invalidated_objects.clear()
+        lib.Clear()
 
     def on_update_material(self, mat):
         """Trigger a `SceneObject.update_properties()` for all objects using this material
@@ -576,12 +558,4 @@ class BridgeDriver:
                 if obj: obj.update_properties()
 
 
-__singleton = BridgeDriver()
-
-def bridge_driver() -> BridgeDriver:
-    """Retrieve the active driver singleton
-
-    Returns:
-        BridgeDriver
-    """
-    return __singleton
+instance = Runtime()

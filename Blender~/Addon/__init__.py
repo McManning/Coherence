@@ -24,28 +24,35 @@ if 'bpy' in locals():
     importlib.reload(util)
     util.registry.Registry.clear()
     importlib.reload(core)
+    importlib.reload(plugins)
+    importlib.reload(api)
 else:
     import bpy
     from . import util
     from . import core
-
-import bpy
+    from . import plugins
+    from . import api
 
 from util.registry import Registry
-from core.panels import (
-    draw_view3d_header,
-    draw_render_header
-)
+
 
 def register():
-    bpy.types.VIEW3D_HT_header.append(draw_view3d_header)
-    bpy.types.RENDER_PT_context.append(draw_render_header)
+    bpy.types.VIEW3D_HT_header.append(core.panels.draw_view3d_header)
+    bpy.types.RENDER_PT_context.append(core.panels.draw_render_header)
 
+    # Register everything tagged with @autoregister
     Registry.register()
 
+    # Register builtin plugins
+    api.register_plugin(plugins.mesh.MeshPlugin)
+    api.register_plugin(plugins.metaballs.MetaballsPlugin)
+
 def unregister():
-    bpy.types.VIEW3D_HT_header.remove(draw_view3d_header)
-    bpy.types.RENDER_PT_context.remove(draw_render_header)
+    # Unregister *all* plugins, including 3rd party
+    core.runtime.instance.unregister_all_plugins()
+
+    bpy.types.VIEW3D_HT_header.remove(core.panels.draw_view3d_header)
+    bpy.types.RENDER_PT_context.remove(core.panels.draw_render_header)
     Registry.unregister()
 
 if __name__ == '__main__':

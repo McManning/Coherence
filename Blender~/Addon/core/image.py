@@ -1,5 +1,5 @@
 
-from .driver import bridge_driver
+from . import runtime
 
 class ImageEditing:
     def __init__(self, context):
@@ -21,7 +21,7 @@ class ImageEditing:
         if space.mode == 'PAINT' and space.image:
             settings = space.image.coherence
             if settings.texture_slot[0] != '-': # TODO: Better "if defined..."
-                bridge_driver().sync_texture(settings.texture_slot, space.image)
+                runtime.instance.sync_texture(settings.texture_slot, space.image)
 
     def remove_handle(self):
         bpy.types.SpaceImageEditor.draw_handler_remove(self.handle, 'WINDOW')

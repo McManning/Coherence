@@ -1,49 +1,19 @@
 
 import os
 from ctypes import *
-from ctypes import wintypes
 import bpy
 import numpy as np
 import gpu
 import blf
 from bgl import *
 from gpu_extras.batch import batch_for_shader
-from mathutils import Vector, Matrix, Quaternion
-from math import cos
-from copy import copy
-from weakref import WeakValueDictionary
-import threading
+from mathutils import Vector
 
-from bpy.props import (
-    BoolProperty,
-    CollectionProperty,
-    EnumProperty,
-    FloatProperty,
-    FloatVectorProperty,
-    IntProperty,
-    PointerProperty,
-    StringProperty,
-)
-
-from bpy.types import (
-    PropertyGroup,
-    Panel
-)
-
-from bpy.app.handlers import (
-    depsgraph_update_post
-)
-
-from .driver import (
-    bridge_driver
-)
+from . import runtime
 
 from .utils import (
     log,
-    debug,
-    warning,
-    error,
-    get_object_uid
+    debug
 )
 
 from .interop import *
@@ -99,7 +69,7 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
         self.camera.width = 100
         self.camera.height = 100
 
-        bridge_driver().add_viewport(self)
+        runtime.instance.add_viewport(self)
 
         # TODO: I don't like forcing this on someone, but
         # this color space transform has to happen to sync up
@@ -113,7 +83,7 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
         """Notify the bridge that this viewport is going away"""
         try:
             # TODO: Release GL texture?
-            bridge_driver().remove_viewport(self.viewport_id)
+            runtime.instance.remove_viewport(self.viewport_id)
         except:
             pass
 
@@ -134,7 +104,7 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
         #   visible_ids.append(uid)
 
         # Track bridge's connection status to determine how this VP renders
-        self.connected = bridge_driver().is_connected()
+        self.connected = runtime.instance.is_connected()
 
         # Only notify for a change if the list was modified
         #visible_ids.sort()
@@ -146,11 +116,10 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
             Update method called from the main driver on_tick.
             Performs all sync work with the bridge
         """
-        self.connected = bridge_driver().is_connected()
+        self.connected = runtime.instance.is_connected()
 
         if self.connected:
-            lib = bridge_driver().lib
-            lib.SetViewportCamera(self.viewport_id, self.camera)
+            runtime.lib.SetViewportCamera(self.viewport_id, self.camera)
 
         # # Poll for a new render texture image and upload
         # # to the GPU once we acquire a lock on the texture buffer
@@ -253,7 +222,7 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
         #self.visible_ids = visible_ids
 
         #visible_ids_ptr = (c_int * len(visible_ids))(*visible_ids)
-        #bridge_driver().lib.SetVisibleObjects(
+        #runtime.lib.SetVisibleObjects(
         #    self.viewport_id,
         #    visible_ids_ptr,
         #    len(visible_ids)
@@ -311,8 +280,7 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
     #     )
 
     def update_render_texture(self):
-        lib = bridge_driver().lib
-        rt = lib.GetRenderTexture(self.viewport_id)
+        rt = runtime.lib.GetRenderTexture(self.viewport_id)
 
         # pixels = Buffer(GL_UNSIGNED_BYTE, rt.width * rt.height * 3, rt.pixels)
         p_pixels = cast(rt.pixels, c_void_p).value
@@ -326,7 +294,7 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
 
         # TODO: Dealloc the replacement memory manually?
 
-        lib.ReleaseRenderTextureLock(self.viewport_id)
+        runtime.lib.ReleaseRenderTextureLock(self.viewport_id)
 
     def draw_unity_view(self):
         self.shader.bind()
@@ -341,7 +309,7 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
         glClearColor(0, 0, 0, 1.0)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
-        blf.position(0, 15, 30, 0)
+        blf.position(0, 45, 30, 0)
         blf.size(0, 20, 72)
         blf.color(0, 0.8, 0, 0, 1.0)
         blf.draw(0, 'Not Connected to Unity')

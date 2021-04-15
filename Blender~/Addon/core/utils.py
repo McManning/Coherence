@@ -7,6 +7,9 @@ def get_string_buffer(value: str):
     """Use a cache to reuse C string buffers wherever possible"""
     global __string_buffer_cache
 
+    if value is None:
+        return None
+
     # TODO: Is this any faster than just create_string_buffer?
     # timeit plz.
     try:
@@ -160,73 +163,14 @@ def debug(msg):
     print(msg, flush = True)
     pass
 
-def error(msg):
+def error(msg, exception = None):
     print('ERROR: ' + msg, flush = True)
+    if exception:
+        print(exception)
 
 def warning(msg):
     print('WARNING: ' + msg, flush = True)
 
-# TODO: Not in Utils. Maybe a collections.py ?
-class SceneObjectCollection:
-    """Collection of SceneObjects with fast lookups by different properties"""
-
-    # Dict<str, SceneObject> where key is a unique object name
-    _objects: dict
-
-    # Dict<str, SceneObject> where key is a bpy.types.Object.name
-    # and value is the SceneObject referencing the bpy.types.Object.
-    _objects_by_bpy_name: dict
-
-    def __init__(self):
-        self._objects = {}
-        self._objects_by_bpy_name = {}
-
-    def find_by_bpy_name(bpy_name: str):
-        """
-
-        Args:
-            bpy_name (str):
-
-        Returns:
-            SceneObject|None
-        """
-        return self._objects_by_bpy_name.get(bpy_name)
-
-    def append(self, obj):
-        """
-        Args:
-            obj (SceneObject):
-        """
-        name = obj.name
-        if name in self._objects:
-            raise Exception('Object named [{}] is already registered'.format(
-                name
-            ))
-
-        bpy_name = obj.bpy_name
-        if bpy_name and bpy_name in self._objects_by_bpy_name:
-            raise Exception('Blender object [{}] already has an attached SceneObject'.format(
-                bpy_name
-            ))
-
-        self._objects[name] = obj
-        if bpy_name:
-            self._objects_by_bpy_name[bpy_name] = obj
-
-    def remove(self, obj):
-        if obj.name in self._objects:
-            del self._objects[obj.name]
-
-        bpy_name = obj.bpy_name
-        if bpy_name and bpy_name in self._objects_by_bpy_name:
-            del self._objects_by_bpy_name[bpy_name]
-
-    def clear(self):
-        self._objects = {}
-        self._objects_by_bpy_name = {}
-
-    def values(self):
-        return self._objects.values()
 
 class EventObservers:
     """Basic observer list for a set of event callbacks"""

@@ -15,32 +15,8 @@ from bpy.types import (
     PropertyGroup
 )
 
+from . import runtime
 from util.registry import autoregister
-
-from .driver import (
-    bridge_driver
-)
-
-def change_sync_texture(self, context):
-    """
-    Args:
-        self (CoherenceMaterialSettings)
-        context (bpy.types.Context)
-    """
-    img = self.sync_texture # bpy.types.Image
-
-    print('CHANGE Texture2D Sync image={}'.format(img))
-
-def update_sync_texture_settings(self, context):
-    mat = context.material
-    uid = get_material_uid(mat)
-
-    name = mat.name
-
-    if self.use_sync_texture:
-        print('UPDATE Texture2D sync for uid={}, name={}'.format(uid, name))
-    else:
-        print('DISABLE/SKIP Texture2D sync for uid={}, name={}'.format(uid, name))
 
 def update_object_properties(self, context):
     """
@@ -48,7 +24,7 @@ def update_object_properties(self, context):
         self (CoherenceObjectSettings)
         context (bpy.types.Context)
     """
-    obj = bridge_driver().find_object(context.object)
+    obj = runtime.instance.objects.find_by_bpy_name(context.object.name)
     if obj: obj.update_properties()
 
 @autoregister
@@ -151,7 +127,7 @@ def validate_image_for_sync(img) -> str:
     return ''
 
 def texture_slot_enum_items(self, context):
-    slots = bridge_driver().get_texture_slots()
+    slots = runtime.instance.get_texture_slots()
     return [(name, name, '') for name in slots]
 
 def on_update_texture_slot(self, context):
@@ -162,7 +138,7 @@ def on_update_texture_slot(self, context):
     self.error = validate_image_for_sync(image)
 
     # Sync immediately to the target slot once changed
-    bridge_driver().sync_texture(image)
+    runtime.instance.sync_texture(image)
 
 
 @autoregister

@@ -1,23 +1,38 @@
-
+import bpy
 from ..core.plugin import Plugin
-from ..core.scene_object import SceneObject
+from ..core.scene import SceneObject
 
 class Metaball(SceneObject):
+    """Single metaball mesh object that represents all metaballs in the Blender scene"""
+    @property
+    def mesh_uid(self) -> str:
+        return '__METABALLS'
+
     def on_destroy(self):
         """If the root metaball ends up destroyed - find a new root"""
-        self.plugin.recalculate_root()
+        print('DESTROY META INSTANCE')
+
+# what if, instead, each metaball is a transform with some properties
+# but we only actually track the mesh on one of them (a root one)
 
 class MetaballsPlugin(Plugin):
     """
     Plugin to generate a single Metaball mesh object that contains
     the geometry of all metaballs in the scene.
     """
-    OBJECT_NAME = '__METABALLS'
+    meta: Metaball = None
+    dirty: bool = False
 
-    meta: Metaball
+    def on_add_bpy_object(self, bpy_obj):
+        """
+        Args:
+            bpy_obj (bpy.types.Object)
+        """
+        if bpy_obj.type == 'META':
+            self.dirty = True
 
-    def on_enable(self):
-        self.recalculate_root()
+    def on_remove_bpy_object(self, name):
+        self.dirty = True
 
     def on_depsgraph_update(self, scene, depsgraph):
         """Handle changes to metaballs in the scene
@@ -26,34 +41,30 @@ class MetaballsPlugin(Plugin):
             scene (bpy.types.Scene)
             depsgraph (bpy.types.Depsgraph)
         """
+        meta = None
         for update in depsgraph.updates:
             if type(update.id) == bpy.types.Object and update.id.type == 'META':
-                self.update_metaballs(update.id, depsgraph)
-                return
+                self.dirty = True
+                break
 
-    def update_metaballs(self, obj, depsgraph):
+        if self.dirty:
+            self.update_metaballs(depsgraph)
+            self.dirty = False
+
+    def update_metaballs(self, depsgraph):
         """
         Args:
-            obj (bpy.types.Object):             META type object that triggered the update
             depsgraph (bpy.types.Depsgraph):    Depsgraph used for evaluating metaballs
         """
-        # If we don't have a metaballs scene object, use the input
-        if not self.meta:
-            self.meta = self.instantiate(Metaball, self.OBJECT_NAME, obj)
+        # If our metaball object invalidated, find a new root
+        if not self.meta or not self.meta.valid:
+            for bpy_obj in bpy.data.objects:
+                if bpy_obj.type == 'META':
+                    self.meta = self.instantiate(Metaball, bpy_obj.name, bpy_obj)
+                    break
+            else:
+                self.meta = None
 
-        # Mesh can (and will) change when *any* metaballs transform.
-        # So we always push a recalculation update.
-        self.meta.update_transform()
-        self.meta.update_mesh(depsgraph)
-
-    def recalculate_root(self):
-        """Find a new "root" metaball in the scene"""
-        self.meta = None
-
-        for bpy_obj in bpy.context.scene.objects:
-            if bpy_obj.type == 'META':
-                self.update_metaballs(
-                    bpy_obj,
-                    bpy.context.evaluated_depsgraph_get()
-                )
-                break
+        if self.meta:
+            self.meta.update_transform()
+            self.meta.update_mesh(depsgraph)

@@ -82,8 +82,6 @@ namespace Coherence
 
         public void SetMesh(MeshController mesh)
         {
-            Debug.Log($"Set {name} mesh to {mesh.Data.name}");
-
             if (Mesh == mesh)
             {
                 return;
