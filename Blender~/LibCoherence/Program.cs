@@ -344,14 +344,14 @@ namespace Coherence
         [DllExport]
         public static int AddObjectToScene(
             [MarshalAs(UnmanagedType.LPStr)] string name,
-            SceneObjectType type,
+            [MarshalAs(UnmanagedType.LPStr)] string kind,
             InteropTransform transform
         ) {
-            InteropLogger.Debug($"Adding object <name={name}, type={type}>");
+            InteropLogger.Debug($"Adding object <name={name}, kind={kind}>");
 
             try
             {
-                var obj = new SceneObject(name, type, transform);
+                var obj = new SceneObject(name, kind, transform);
 
                 Bridge.AddObject(obj);
                 return 1;

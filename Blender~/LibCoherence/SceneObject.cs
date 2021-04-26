@@ -17,14 +17,14 @@ namespace Coherence
 
         public string Name { get; set; }
 
-        internal SceneObject(string name, SceneObjectType type, InteropTransform transform)
+        internal SceneObject(string name, string kind, InteropTransform transform)
         {
             Name = name;
 
             data = new InteropSceneObject
             {
                 name = name,
-                type = type,
+                kind = kind,
                 transform = transform
             };
         }

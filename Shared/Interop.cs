@@ -461,29 +461,6 @@ namespace Coherence
     }
 
     /// <summary>
-    /// Blender scene metadata
-    /// </summary>
-    [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    public struct InteropScene // DEPRECATED
-    {
-        /// <summary>
-        /// Number of BlenderObject instances in the scene
-        /// </summary>
-        public int objectCount;
-    }
-
-    /// <summary>
-    /// Type information for <see cref="InteropSceneObject"/> so Unity
-    /// knows how to represent the particular Blender object in the scene.
-    /// </summary>
-    public enum SceneObjectType
-    {
-        Empty = 0,
-        Mesh,
-        Metaball,
-    }
-
-    /// <summary>
     /// How to display an object within Unity - controllable from Blender.
     /// Specific render modes would override all materials for that object.
     /// </summary>
@@ -615,9 +592,15 @@ namespace Coherence
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct InteropSceneObject
     {
+        /// <summary>
+        /// Unique name within Blender
+        /// </summary>
         public InteropString64 name;
 
-        public SceneObjectType type;
+        /// <summary>
+        /// What kind of object (Mesh, Metaball, etc) is represented.
+        /// </summary>
+        public InteropString64 kind;
 
         /// <summary>
         /// Object transform in the scene
@@ -648,7 +631,7 @@ namespace Coherence
         {
             return obj is InteropSceneObject o
                 && o.name.Equals(name)
-                && o.type.Equals(type)
+                && o.kind.Equals(kind)
                 && o.transform.Equals(transform)
                 && o.display.Equals(display)
                 && o.material.Equals(material)
