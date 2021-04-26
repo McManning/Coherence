@@ -8,7 +8,7 @@ class Plugin:
 
     Features:
     * Event handlers (connect, disconnect, etc)
-    * Custom object management for syncing anything not supported by default
+    * Custom object management for syncing custom scene objects
     * Custom vertex data streams for injecting additional data during geometry updates
     """
 
@@ -56,25 +56,25 @@ class Plugin:
         """Perform any cleanup that needs to be done before unloading this plugin"""
         pass
 
-    def on_connected_to_unity(self):
-        """Perform any additional work after Coherence establishes a connection with Unity"""
+    def on_connected(self):
+        """Perform any additional work after Coherence establishes a connection"""
         pass
 
-    def on_disconnected_from_unity(self):
-        """Perform any cleanup after Coherence disconnects from Unity."""
+    def on_disconnected(self):
+        """Perform any cleanup after Coherence disconnects from the host."""
         pass
 
     def on_enable(self):
         """Called when the Coherence connection has been enabled.
 
-        This will be followed by `on_connected_to_unity()` once a connection can be made.
+        This will be followed by `on_connected()` once a connection can be made.
         """
         pass
 
     def on_disable(self):
         """Called when the Coherence connection is turned off.
 
-        This will be preceded by a `on_disconnected_from_unity()` if previously connected.
+        This will be preceded by a `on_disconnected()` if previously connected.
 
         At this point, any scene objects created by this plugin are invalidated.
         """
@@ -140,13 +140,13 @@ class Plugin:
         pass
 
     def instantiate(self, obj_type, name: str, bpy_obj = None):
-        """Add a new object to be synced to Unity.
+        """Add a new object to be synced.
 
         If `bpy_obj` is provided then the object will automatically sync mesh
-        and transformation data with Unity where possible.
+        and transformation data where possible.
 
         Otherwise - the object will not have a scene presence and will be treated
-        as an arbitrary data stream with Unity (e.g. just for `send_message`
+        as an arbitrary data stream (e.g. just for `send_message`
         and `on_message` communication)
 
         Args:

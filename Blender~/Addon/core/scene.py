@@ -4,8 +4,6 @@ import bpy
 from . import runtime
 
 from .utils import (
-    get_mesh_uid,
-    get_material_uid,
     get_string_buffer,
     debug,
     error
@@ -33,10 +31,12 @@ class SceneObject:
 
     @property
     def kind(self) -> str:
-        """Get what type of object this is
+        """Get what kind of object this is.
+
+        By default this uses the Python class `__name__`
 
         Returns:
-            str: One of MESH|METABALL|CUSTOM
+            str
         """
         return self.__name__
 
@@ -130,8 +130,10 @@ class SceneObject:
         if not bpy_obj:
             return None
 
-        # TODO: Cache
-        return get_material_uid(bpy_obj.active_material)
+        if not mat:
+            return 'Default'
+
+        return bpy_obj.active_material.name
 
     @property
     def plugin(self):

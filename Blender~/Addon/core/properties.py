@@ -38,8 +38,8 @@ class CoherenceRendererSettings(PropertyGroup):
     )
 
     texture_slot_update_frequency: FloatProperty(
-        name='TSUF',
-        description='How frequently (in seconds) to sync image pixel data to Unity while actively using the Image Paint tool',
+        name='Image Update Frequency',
+        description='How frequently (in seconds) to sync image pixel data while actively using the Image Paint tool',
         default=0.05
     )
 

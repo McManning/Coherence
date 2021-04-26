@@ -1,7 +1,5 @@
 from . import core
 
-# Re-define classes that can be extended by 3rd party plugins.
-
 class SceneObject(core.scene.SceneObject):
     pass
 

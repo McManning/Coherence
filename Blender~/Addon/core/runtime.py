@@ -28,7 +28,7 @@ DLL_PATH = 'lib/LibCoherence.dll'
 lib = load_library(DLL_PATH)
 
 class Runtime:
-    """Respond to scene object changes and handle messaging through the Unity bridge"""
+    """Respond to scene object changes and handle messaging through the DLL"""
     MAX_TEXTURE_SLOTS = 64
     UNASSIGNED_TEXTURE_SLOT_NAME = '-- Unassigned --'
 
@@ -40,7 +40,7 @@ class Runtime:
     image_editor_handle = None # <capsule object RNA_HANDLE>
 
     # Numpy array referencing pixel data for the
-    # active bpy.types.Image to sync to Unity
+    # active bpy.types.Image to sync
     image_buffer = None # np.ndarray
 
     # Dict<int, RenderEngine> where key is a unique viewport ID per RenderEngine instance.
@@ -48,6 +48,7 @@ class Runtime:
     # since Blender uses __del__ to release them after use
     viewports = WeakValueDictionary()
 
+    # All tracked SceneObject instances synced (or to be synced) with the host
     objects = SceneObjectCollection()
 
     # Dict<str, Plugin> where key is a plugin name
@@ -67,7 +68,7 @@ class Runtime:
     #     lib = load_library(self.DLL_PATH)
 
     def start(self):
-        """Start trying to connect to Unity"""
+        """Start trying to connect to the host"""
         if self.is_running():
             return
 
@@ -110,7 +111,7 @@ class Runtime:
         self.tag_redraw_viewports()
 
     def stop(self):
-        """Disconnect from Unity and cleanup synced objects"""
+        """Disconnect from the host and cleanup synced objects"""
         if not self.is_running():
             return
 
@@ -146,19 +147,8 @@ class Runtime:
         # Notify viewports
         self.tag_redraw_viewports()
 
-    # def free_lib(self):
-    #     # Windows-specific handling for freeing the DLL.
-    #     # See: https://stackoverflow.com/questions/359498/how-can-i-unload-a-dll-using-ctypes-in-python
-    #     handle = lib._handle
-    #     del lib
-    #     lib = None
-
-    #     kernel32 = WinDLL('kernel32', use_last_error=True)
-    #     kernel32.FreeLibrary.argtypes = [wintypes.HMODULE]
-    #     kernel32.FreeLibrary(handle)
-
     def get_texture_slots(self) -> list:
-        """Return all sync-able texture slot names exposed by Unity
+        """Return all sync-able texture slot names exposed by the host
 
         Returns:
             list[str]
@@ -174,7 +164,7 @@ class Runtime:
 
 
     def sync_texture(self, image):
-        """Send updated pixel data for a texture to Unity
+        """Send updated pixel data for a texture to the host
 
         Args:
             image (bpy.types.Image): The image to sync
@@ -241,14 +231,14 @@ class Runtime:
             instance.enable()
 
         if self.is_connected():
-            instance.on_connected_to_unity()
+            instance.on_connected()
 
     def unregister_plugin(self, plugin):
         try:
             instance = self.plugins[plugin]
 
             if self.is_connected():
-                instance.on_disconnected_from_unity()
+                instance.on_disconnected()
 
             if self.is_running():
                 instance.disable()
@@ -267,7 +257,7 @@ class Runtime:
             self.unregister_plugin(plugin)
 
     def is_connected(self) -> bool:
-        """Is the bridge currently connected to an instance of Unity
+        """Is the bridge currently connected to a host
 
         Returns:
             bool
@@ -275,7 +265,7 @@ class Runtime:
         return self.running and lib.IsConnectedToUnity()
 
     def is_running(self) -> bool:
-        """Is the driver actively trying to / is connected to Unity
+        """Is the driver actively trying to / is connected
 
         Returns:
             bool
@@ -285,7 +275,7 @@ class Runtime:
     def on_tick(self):
         """
             Timer registered through bpy.app.timers to handle
-            connecting/reconnecting to Unity and processing messages
+            connecting/reconnecting to the host and processing messages
 
         Returns:
             float for next time to run the timer, or None to destroy it
@@ -294,7 +284,7 @@ class Runtime:
             log('Deactivating on_tick timer')
             return None
 
-        # While actively connected to Unity, send typical IO,
+        # While actively connected send typical IO,
         # get viewport renders, and run as fast as possible
         if self.is_connected():
             lib.Update()
@@ -320,7 +310,7 @@ class Runtime:
                 exit()
             # else the space doesn't exist.
 
-        # Poll for updates from Unity until we get one.
+        # Poll for updates until we get one.
         lib.Update()
 
         if self.is_connected():
@@ -329,7 +319,7 @@ class Runtime:
         return 0.05
 
     def check_texture_sync(self) -> float:
-        """Push image updates to Unity if we're actively drawing
+        """Push image updates to the host if we're actively drawing
             on an image bound to one of the synced texture slots
 
         Returns:
@@ -498,7 +488,7 @@ class Runtime:
 
         lib.AddObjectToScene(
             get_string_buffer(obj.uid),
-            to_interop_type(bpy_obj), # TODO: Use SceneObject.kind instead
+            get_string_buffer(obj.kind),
             transform
         )
 
@@ -516,18 +506,6 @@ class Runtime:
         obj.update_mesh(self.current_depsgraph or bpy.context.evaluated_depsgraph_get())
         # TODO: Depsgraph isn't available because this may not get executed
         # within an depsgraph update. So we use the context depsgraph. Is this fine?
-
-    # def remove_object(self, obj):
-    #     """Remove the given object from the tracked list and lib
-
-    #     This does *not* fire any events for the removed SceneObject.
-
-    #     Args:
-    #         obj (SceneObject):
-    #     """
-    #     debug('remove_object - name={}'.format(obj.name))
-
-    #     lib.RemoveObjectFromScene(get_string_buffer(obj.uid))
 
     def remove_all_invalid_objects(self):
         for obj in self.invalidated_objects:

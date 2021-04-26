@@ -1,4 +1,9 @@
 
+##############################################
+# ctypes data structures to match Interop.cs
+# and DLL load/unload wrappers.
+##############################################
+
 from ctypes import *
 import math
 from pathlib import Path
@@ -334,7 +339,7 @@ def load_library(path: str):
 
     lib.AddObjectToScene.argtypes = (
         c_void_p,           # name
-        c_uint,             # SceneObjectType
+        c_void_p,           # Type
         InteropTransform,   # transform
     )
     lib.AddObjectToScene.restype = c_int
@@ -346,3 +351,14 @@ def load_library(path: str):
     lib.SetObjectTransform.restype = c_int
 
     return lib
+
+# def free_lib(self):
+#     # Windows-specific handling for freeing the DLL.
+#     # See: https://stackoverflow.com/questions/359498/how-can-i-unload-a-dll-using-ctypes-in-python
+#     handle = lib._handle
+#     del lib
+#     lib = None
+
+#     kernel32 = WinDLL('kernel32', use_last_error=True)
+#     kernel32.FreeLibrary.argtypes = [wintypes.HMODULE]
+#     kernel32.FreeLibrary(handle)
