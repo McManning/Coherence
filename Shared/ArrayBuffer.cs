@@ -331,6 +331,18 @@ namespace Coherence
             return data;
         }
 
+        /// <summary>
+        /// Reinterpret the underlying storage type of this buffer
+        ///
+        /// ... might belong in NativeArray instead.
+        /// </summary>
+        /// <typeparam name="N"></typeparam>
+        /// <returns></returns>
+        public ArrayBuffer<N> Reinterpret<N>() where N : struct
+        {
+            throw new NotImplementedException();
+        }
+
         public ArrayBuffer<T> GetDirtyRange()
         {
             if (!IsDirty)

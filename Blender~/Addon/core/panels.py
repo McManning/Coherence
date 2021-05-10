@@ -7,7 +7,10 @@ from . import runtime
 from util.registry import autoregister
 
 def draw_view3d_header(self, context):
-    """Draw a run toggle button in the header of Blender's View3D"""
+    """Draw a toggle button in the header of Blender's View3D
+
+    This callback is added to :class:`bpy.types.VIEW3D_HT_header` on startup.
+    """
     layout = self.layout
 
     # Hide if the user doesn't want to see the button
@@ -21,7 +24,10 @@ def draw_view3d_header(self, context):
         layout.operator('coherence.start', icon='PLAY')
 
 def draw_render_header(self, context):
-    """Draw a toggle button below engine selection in render settings"""
+    """Draw a toggle button below engine selection in render settings.
+
+    This callback is added to :class:`bpy.types.RENDER_PT_context` on startup.
+    """
     layout = self.layout
     layout.use_property_split = True
     layout.use_property_decorate = False
@@ -47,7 +53,7 @@ class BasePanel(Panel):
 
 @autoregister
 class COHERENCE_IMAGEPAINT_PT_texture_sync(Panel):
-    """Creates a Panel in the scene context of the properties editor"""
+    """Panel in the Image Editor space to modify image sync settings"""
     bl_label = 'Coherence Texture Sync'
 
     bl_space_type = 'IMAGE_EDITOR'
@@ -87,7 +93,7 @@ class COHERENCE_IMAGEPAINT_PT_texture_sync(Panel):
 
 @autoregister
 class COHERENCE_RENDER_PT_settings(BasePanel):
-    """Panel for the main renderer settings"""
+    """Panel containing basic connection settings"""
     bl_label = 'Coherence Settings'
 
     def draw(self, context):
@@ -101,6 +107,7 @@ class COHERENCE_RENDER_PT_settings(BasePanel):
 
 @autoregister
 class COHERENCE_RENDER_PT_settings_advanced(BasePanel):
+    """Panel containing advanced connection settings"""
     bl_label = 'Advanced Settings'
     bl_parent_id = 'COHERENCE_RENDER_PT_settings'
     bl_options = { 'DEFAULT_CLOSED' }
@@ -125,7 +132,7 @@ class COHERENCE_RENDER_PT_settings_advanced(BasePanel):
 
 @autoregister
 class COHERENCE_LIGHT_PT_light(BasePanel):
-    """Custom per-light settings editor for this render engine"""
+    """Panel to disable most light settings as Blender lights are not supported by default"""
     bl_label = 'Light'
     bl_context = 'data'
 
@@ -139,6 +146,7 @@ class COHERENCE_LIGHT_PT_light(BasePanel):
 
 @autoregister
 class COHERENCE_OBJECT_PT_settings(BasePanel):
+    """Panel with settings for objects tied to :class:`.SceneObject`"""
     bl_label = 'Coherence Settings'
     bl_context = 'object'
 
@@ -184,7 +192,7 @@ class COHERENCE_MATERIAL_PT_settings(BasePanel):
 
 @autoregister
 class COHERENCE_PT_context_material(BasePanel):
-    """This is based on CYCLES_PT_context_material to provide the same material selector menu"""
+    """Panel based on `CYCLES_PT_context_material` to provide a similar material selector menu"""
     bl_label = ''
     bl_context = 'material'
     bl_options = {'HIDE_HEADER'}

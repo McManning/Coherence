@@ -11,14 +11,12 @@ from bpy.props import (
 
 import bpy
 
-from bpy.types import (
-    PropertyGroup
-)
+from bpy.types import PropertyGroup
 
 from . import runtime
 from util.registry import autoregister
 
-def update_object_properties(self, context):
+def _update_object_properties(self, context):
     """
     Args:
         self (CoherenceObjectSettings)
@@ -28,21 +26,24 @@ def update_object_properties(self, context):
     if obj: obj.update_properties()
 
 @autoregister
-class CoherenceRendererSettings(PropertyGroup):
-    """Collection of user configurable settings for the renderer"""
+class CoherenceSceneProperties(PropertyGroup):
+    """The primary Coherence connection settings"""
 
+    #: str, default ``Coherence``: Shared connection name that matches with Unity's Coherence Settings window
     connection_name: StringProperty(
         name='Buffer Name',
         default='Coherence',
         description='This name must match the buffer name in Unity\'s Coherence Settings window'
     )
 
+    #: float, default 0.05: How frequently (in seconds) to sync image pixel data while actively using the Image Paint tool
     texture_slot_update_frequency: FloatProperty(
         name='Image Update Frequency',
         description='How frequently (in seconds) to sync image pixel data while actively using the Image Paint tool',
         default=0.05
     )
 
+    #: bool, default True: Show the Coherence toggle button in the viewport controls menu
     show_view3d_controls: BoolProperty(
         name='Show Viewport Controls',
         description='Show the Coherence toggle button in the viewport controls menu',
@@ -63,6 +64,7 @@ class CoherenceRendererSettings(PropertyGroup):
 
 @autoregister
 class CoherenceObjectProperties(PropertyGroup):
+    #: enum, default 0: Technique used to render this object within Unity
     display_mode: EnumProperty(
         name='Unity Display Mode',
         description='Technique used to render this object within Unity',
@@ -80,16 +82,17 @@ class CoherenceObjectProperties(PropertyGroup):
 
             ('100', 'Hidden', 'Do not render this object in Unity', 100),
         ],
-        update=update_object_properties
+        update=_update_object_properties
     )
 
+    #: bool, default True: Optimize (compress) vertex data prior to sending to Unity.
     optimize_mesh: BoolProperty(
         name='Optimize Mesh',
         description='Optimize (compress) vertex data prior to sending to Unity. ' +
                     'With this option turned off - full loops will be transmitted which may negatively ' +
                     'impact performance or lookdev in Unity when compared with an export of the same mesh',
         default=True,
-        update=update_object_properties
+        update=_update_object_properties
     )
 
     @classmethod
@@ -105,6 +108,7 @@ class CoherenceObjectProperties(PropertyGroup):
         del bpy.types.Object.coherence
 
 
+# TODO: Move to image.py
 def validate_image_for_sync(img) -> str:
     """Check if an image can be synced with Unity
 
@@ -127,10 +131,23 @@ def validate_image_for_sync(img) -> str:
     return ''
 
 def texture_slot_enum_items(self, context):
+    """Generate an `EnumProperty` items list from Coherence texture slots
+
+    Args:
+        context (:mod:`bpy.context`)
+
+    Returns:
+        list of [(slot, slot, ''), ...]
+    """
     slots = runtime.instance.get_texture_slots()
     return [(name, name, '') for name in slots]
 
-def on_update_texture_slot(self, context):
+def _on_update_texture_slot(self, context):
+    """
+
+    Args:
+        context (:mod:`bpy.context`)
+    """
     image = self.id_data
 
     # Re-validate prior to trying to sync
@@ -142,7 +159,8 @@ def on_update_texture_slot(self, context):
 
 
 @autoregister
-class CoherenceImageSettings(PropertyGroup):
+class CoherenceImageProperties(PropertyGroup):
+    #: str, default None: An error with the source image that prevents syncing with Unity
     error: StringProperty(
         name='Source Image Error',
         description='An error with the source image that prevents syncing with Unity',
@@ -151,11 +169,12 @@ class CoherenceImageSettings(PropertyGroup):
         options={'SKIP_SAVE'}
     )
 
+    #: str, default None: The named texture slot to sync the active image
     texture_slot: EnumProperty(
         name='Slot',
-        description='',
+        description='The named texture slot to sync the active image',
         items=texture_slot_enum_items,
-        update=on_update_texture_slot,
+        update=_on_update_texture_slot,
         default=0,
         # Don't persist slot targets between Blender saves,
         # as these may be modified within Unity.

@@ -55,7 +55,7 @@ namespace Coherence
         /// <summary>
         /// Test case to ensure library compilation worked
         /// </summary>
-        /// <returns></returns>
+        /// <returns>14</returns>
         [DllExport]
         public static int Fourteen()
         {
@@ -127,20 +127,20 @@ namespace Coherence
         }
 
         /// <summary>
-        /// Pull data from read buffers and update local state
+        /// Push/pull messages between Unity and update our state.
         /// </summary>
+        /// <returns>The last message read from Unity for further processing in Python</returns>
         [DllExport]
-        public static int Update()
+        public static InteropMessage Update()
         {
             try
             {
-                Bridge.Update();
-                return 1;
+                return Bridge.Update();
             }
             catch (Exception e)
             {
                 SetLastError(e);
-                return -1;
+                return InteropMessage.Invalid;
             }
         }
 

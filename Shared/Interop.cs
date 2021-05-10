@@ -107,15 +107,6 @@ namespace Coherence
         UpdateVisibleObjects,
 
         /// <summary>
-        /// Notify Unity of an updated <see cref="InteropScene"/>.
-        ///
-        /// <para>
-        ///     Payload: <see cref="InteropScene"/>
-        /// </para>
-        /// </summary>
-        UpdateScene, // DEPRECATED.
-
-        /// <summary>
         /// Notify Unity that a <see cref="InteropSceneObject"/>
         /// has been added to the scene.
         ///
@@ -251,6 +242,39 @@ namespace Coherence
         /// </para>
         /// </summary>
         UpdateTextureData,
+
+        /// <summary>
+        /// A third party plugin message from either Unity or Blender
+        ///
+        /// <para>
+        ///     Payload:<see cref="InteropPluginMessage"/>
+        /// </para>
+        /// </summary>
+        PluginMessage = 255,
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct InteropPluginMessage
+    {
+        /// <summary>
+        /// Target SceneObject for this message, if applicable.
+        /// </summary>
+        public InteropString64 target;
+
+        /// <summary>
+        /// Custom ID for this message
+        /// </summary>
+        public InteropString64 id;
+
+        /// <summary>
+        /// Size of the payload contained in this message
+        /// </summary>
+        public int size;
+
+        /// <summary>
+        /// Pointer to the start of the payload
+        /// </summary>
+        public IntPtr data;
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -294,6 +318,16 @@ namespace Coherence
                 && o.length == length
                 && o.count == count;
         }
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct InteropMessage
+    {
+        public static InteropMessage Invalid { get; } = new InteropMessage();
+
+        public InteropMessageHeader header;
+        public InteropString64 target;
+        public IntPtr data;
     }
 
     /// <summary>
@@ -912,7 +946,7 @@ namespace Coherence
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct RenderTextureData // TODO: InteropViewportTexture?
     {
-        public static RenderTextureData Invalid = new RenderTextureData
+        public static RenderTextureData Invalid { get; } = new RenderTextureData
         {
             viewportId = -1,
             width = 0,
@@ -990,7 +1024,12 @@ namespace Coherence
         CircularBuffer messageProducer;
         CircularBuffer messageConsumer;
 
-        internal class InteropMessage
+        /// <summary>
+        /// Last message received by <see cref="Read(Func{string, InteropMessageHeader, IntPtr, int})"/>
+        /// </summary>
+        public InteropMessage Last { get; private set; }
+
+        internal class OutboundMessage
         {
             internal string target;
             internal InteropMessageHeader header;
@@ -998,20 +1037,20 @@ namespace Coherence
             internal InteropMessageProducer producer;
         }
 
-        Queue<InteropMessage> outboundQueue;
+        Queue<OutboundMessage> outboundQueue;
 
         public void ConnectAsMaster(string consumerId, string producerId, int nodeCount, int nodeBufferSize)
         {
             messageProducer = new CircularBuffer(producerId, nodeCount, nodeBufferSize);
             messageConsumer = new CircularBuffer(consumerId, nodeCount, nodeBufferSize);
-            outboundQueue = new Queue<InteropMessage>();
+            outboundQueue = new Queue<OutboundMessage>();
         }
 
         public void ConnectAsSlave(string consumerId, string producerId)
         {
             messageProducer = new CircularBuffer(producerId);
             messageConsumer = new CircularBuffer(consumerId);
-            outboundQueue = new Queue<InteropMessage>();
+            outboundQueue = new Queue<OutboundMessage>();
         }
 
         public void Dispose()
@@ -1035,7 +1074,7 @@ namespace Coherence
         public void Queue<T>(RpcRequest type, string target, ref T data) where T : struct
         {
             InteropLogger.Debug($"    Q-> {target}:{type:F}");
-            outboundQueue.Enqueue(new InteropMessage
+            outboundQueue.Enqueue(new OutboundMessage
             {
                 target = target,
                 header = new InteropMessageHeader {
@@ -1074,7 +1113,7 @@ namespace Coherence
 
 
             InteropLogger.Debug($"    ROQ-> {target}:{header.type:F}");
-            outboundQueue.Enqueue(new InteropMessage
+            outboundQueue.Enqueue(new OutboundMessage
             {
                 target = target,
                 header = header,
@@ -1084,7 +1123,7 @@ namespace Coherence
             return false;
         }
 
-        private InteropMessage FindQueuedMessage(string target, ref InteropMessageHeader header)
+        private OutboundMessage FindQueuedMessage(string target, ref InteropMessageHeader header)
         {
             foreach (var message in outboundQueue)
             {
@@ -1099,7 +1138,7 @@ namespace Coherence
 
         private void RemoveQueuedMessage(string target, ref InteropMessageHeader header)
         {
-            var replacement = new Queue<InteropMessage>();
+            var replacement = new Queue<OutboundMessage>();
             foreach (var message in outboundQueue)
             {
                 if (message.target != target || !message.header.Equals(header))
@@ -1140,7 +1179,7 @@ namespace Coherence
             RemoveQueuedMessage(target, ref header);
 
             InteropLogger.Debug($"    QA-> {target}:{type:F}");
-            outboundQueue.Enqueue(new InteropMessage
+            outboundQueue.Enqueue(new OutboundMessage
             {
                 target = target,
                 header = header,
@@ -1158,6 +1197,7 @@ namespace Coherence
         /// consumed, sans the header.
         /// </summary>
         /// <param name="consumer"></param>
+        /// <returns>Nonzero if a message was read, with message info copied to <see cref="Last"/>.</returns>
         public int Read(Func<string, InteropMessageHeader, IntPtr, int> consumer)
         {
             return messageConsumer.Read((ptr) =>
@@ -1165,7 +1205,7 @@ namespace Coherence
                 int bytesRead = 0;
 
                 // Read target name (varying length string)
-                int targetSize = FastStructure.PtrToStructure<int>(ptr + bytesRead);
+                int targetSize = FastStructure.PtrToStructure<int>(ptr);
                 bytesRead += FastStructure.SizeOf<int>();
 
                 string targetName = "";
@@ -1173,18 +1213,26 @@ namespace Coherence
                 {
                     byte[] target = new byte[targetSize];
 
-                    FastStructure.ReadBytes(target, ptr + bytesRead, 0, targetSize);
+                    FastStructure.ReadBytes(target, IntPtr.Add(ptr, bytesRead), 0, targetSize);
                     targetName = Encoding.UTF8.GetString(target);
                     bytesRead += targetSize;
                 }
 
                 // Read message header
                 var headerSize = FastStructure.SizeOf<InteropMessageHeader>();
-                var header = FastStructure.PtrToStructure<InteropMessageHeader>(ptr + bytesRead);
+                var header = FastStructure.PtrToStructure<InteropMessageHeader>(IntPtr.Add(ptr, bytesRead));
                 bytesRead += headerSize;
 
+                // Update the last message received
+                Last = new InteropMessage
+                {
+                    target = targetName,
+                    header = header,
+                    data = IntPtr.Add(ptr, bytesRead),
+                };
+
                 // Call consumer to handle the rest of the payload
-                bytesRead += consumer(targetName, header, ptr + bytesRead);
+                bytesRead += consumer(targetName, header, IntPtr.Add(ptr, bytesRead));
 
                 // InteropLogger.Debug($"Consume {bytesRead} bytes - {header.type} for `{targetName}`");
 
@@ -1201,7 +1249,7 @@ namespace Coherence
             // give us a better chance at firing it off.
             int bytesWritten = messageProducer.Write((ptr) =>
             {
-                var message = new InteropMessage()
+                var message = new OutboundMessage()
                 {
                     target = "",
                     header = new InteropMessageHeader
@@ -1225,7 +1273,7 @@ namespace Coherence
         /// <param name="message"></param>
         /// <param name="ptr"></param>
         /// <returns></returns>
-        private int WriteMessage(InteropMessage message, IntPtr ptr)
+        private int WriteMessage(OutboundMessage message, IntPtr ptr)
         {
             int bytesWritten = 0;
 

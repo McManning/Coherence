@@ -22,6 +22,10 @@ from util.registry import autoregister
 
 @autoregister
 class CoherenceRenderEngine(bpy.types.RenderEngine):
+    """
+    Blender :class:`bpy.types.RenderEngine` responsible for syncing a viewport camera
+    state with Coherence and displaying the resulting realtime render coming from Unity.
+    """
     bl_idname = 'COHERENCE'
     bl_label = 'Coherence'
     bl_use_preview = False
@@ -35,15 +39,16 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
         # TODO: Remove Color Management panel - done via Unity
     }
 
+    #: int: Unique viewport ID tracked by the :class:`Runtime`.
     viewport_id: int
 
-    # GLSL texture bind code
+    #: int: GLSL texture bind code
     bindcode: int
 
     def __init__(self):
-        """Called when a new render engine instance is created.
+        """Called when a new render engine instance is created by Blender.
 
-        Note that multiple instances can exist @ once, e.g. a viewport and final render
+        Note that multiple instances can exist at once, e.g. a viewport and final render
         """
         log('Init RenderEngine at {}'.format(id(self)))
 
@@ -78,9 +83,9 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
         bpy.context.scene.view_settings.view_transform = 'Raw'
 
     def __del__(self):
+        """Notify the bridge that this viewport is going away"""
         log('Shutdown RenderEngine at {}'.format(id(self)))
 
-        """Notify the bridge that this viewport is going away"""
         try:
             # TODO: Release GL texture?
             runtime.instance.remove_viewport(self.viewport_id)
@@ -88,12 +93,21 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
             pass
 
     def render(self, depsgraph):
-        """Handle final render (F12) and material preview window renders"""
+        """Handle final render (F12) and material preview window renders
+
+        Args:
+            depsgraph (bpy.types.Depsgraph)
+        """
         # Not relevant here - since we're working in viewport/realtime
         pass
 
     def view_update(self, context, depsgraph):
-        """Called when a scene or 3D viewport changes"""
+        """Called when a scene or 3D viewport changes
+
+        Args:
+            context (bpy.context): SceneView3D area context
+            depsgraph (bpy.types.Depsgraph)
+        """
         # Update our list of objects visible to this viewport
         # visible_ids = []
         # for obj in depsgraph.scene.objects:
@@ -112,10 +126,7 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
         #    self.on_changed_visible_ids(visible_ids)
 
     def on_update(self):
-        """
-            Update method called from the main driver on_tick.
-            Performs all sync work with the bridge
-        """
+        """Sync the current camera position with Coherence"""
         self.connected = runtime.instance.is_connected()
 
         if self.connected:
@@ -213,7 +224,7 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
         """Notify the bridge that the visibility list has changed
 
         Args:
-            visible_ids (List[int])
+            visible_ids (:obj:`list[int]`)
         """
         debug('BRIDGE: Update Visible ID List {}'.format(visible_ids))
 
@@ -232,7 +243,7 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
         """Update the current InteropCamera instance from the render thread context
 
         Args:
-            context (bpy.types.Context): Render thread context
+            context (bpy.context): Render thread context
         """
         space = context.space_data
         region3d = space.region_3d # or just context.region_3d?
@@ -316,7 +327,12 @@ class CoherenceRenderEngine(bpy.types.RenderEngine):
 
 
     def view_draw(self, context, depsgraph):
-        """Called whenever Blender redraws the 3D viewport"""
+        """Called when Blender redraws the 3D viewport
+
+        Args:
+            context (bpy.context): SceneView3D area context
+            depsgraph (bpy.types.Depsgraph)
+        """
         scene = depsgraph.scene
 
         self.bind_display_space_shader(scene)

@@ -4,7 +4,7 @@
 
 Load up a Unity scene and connect to Blender to sync your Blender scene directly with Unity in realtime.
 
-![Coherence Demo](Documentation~/demo.gif)
+![Coherence Demo](Documentation~/images/demo.gif)
 
 (For additional videos, check out [https://twitter.com/cmcmanning](https://twitter.com/cmcmanning))
 

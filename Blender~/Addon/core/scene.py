@@ -6,24 +6,30 @@ from . import runtime
 from .utils import (
     get_string_buffer,
     debug,
-    error
+    error,
+    PluginMessageHandler,
 )
 
 from .interop import (
     to_interop_transform
 )
 
-class SceneObject:
+class SceneObject(PluginMessageHandler):
     """
     An object synced through Coherence that contains a transform and optional mesh.
     """
-    def __init__(self, name, bpy_obj, plugin):
+    def __init__(self, name: str, bpy_obj, plugin):
         """
+        Warning:
+            Do not instantiate directly.
+            Instead, call :meth:`.Plugin.instantiate()` from within your plugin.
+
         Args:
             name (str):                         Unique object name
-            bpy_obj (bpy.types.Object|None):    Associated Blender object
-            plugin (Plugin):                    Instantiating plugin
+            bpy_obj (Union[:class:`bpy.types.Object`, None]):    Associated Blender object
+            plugin (Plugin):               Instantiating plugin
         """
+        # TODO: Hide the above docs from Sphinx somehow
         self._name = name
         self._bpy_name = bpy_obj.name if bpy_obj else None
         self._plugin = plugin
@@ -31,50 +37,32 @@ class SceneObject:
 
     @property
     def kind(self) -> str:
-        """Get what kind of object this is.
-
-        By default this uses the Python class `__name__`
-
-        Returns:
-            str
-        """
+        """str, default ``self.__name__``: The kind of object that is currently being synced"""
         return self.__name__
 
     @property
     def name(self) -> str:
+        """str: Unique name for this object"""
         return self._name
 
     @property
     def uid(self) -> str:
-        """Get a unique identifier for this SceneObject
-
-        Returns:
-            str
-        """
+        """str: Unique identifier"""
         # TODO: Cache and make more unique
         # (multiple objects could have the same name across different plugins)
         return self.name
 
     @property
     def bpy_name(self) -> str:
-        """
-        Name of the associated `bpy.types.Object` or `None` if this is
-        independent of any Blender scene object.
-
-        Returns:
-            str|None
-        """
+        """Union[str, None]: Name of the associated :class:`bpy.types.Object` if one exists"""
         return self._bpy_name
 
     @property
     def bpy_obj(self):
-        """Get the Blender object associated with this instance.
+        """Union[:class:`bpy.types.Object`, None]: Get the Blender object associated with this instance.
 
         Avoid holding onto a reference to this value long term, as it
         will invalidate out from under you like other StructRNA references.
-
-        Returns:
-            bpy.types.Object|None
         """
         if not self._bpy_name:
             return None
@@ -84,14 +72,11 @@ class SceneObject:
 
     @property
     def mesh_uid(self) -> str:
-        """Retrieve a unique identifier for the mesh attached to the object
+        """str: Unique identifier for the mesh attached to the object
 
         If the object has modifiers applied - this will be unique for
         that object. Otherwise - this may be a common mesh name that
         is instanced between multiple objects in the scene.
-
-        Returns:
-            string|None
         """
         bpy_obj = self.bpy_obj
         if not bpy_obj:
@@ -121,11 +106,7 @@ class SceneObject:
 
     @property
     def mat_uid(self) -> str:
-        """Retrieve a unique identifier for the object's Material, if set
-
-        Returns:
-            str|None
-        """
+        """Union[str, None]: Retrieve a unique identifier for the object's Material, if applicable"""
         bpy_obj = self.bpy_obj
         if not bpy_obj:
             return None
@@ -137,18 +118,15 @@ class SceneObject:
 
     @property
     def plugin(self):
-        """
-        Returns:
-            Plugin
-        """
+        """:class:`.Plugin`: The plugin that instantiated this object"""
         return self._plugin
 
     @property
     def valid(self) -> bool:
         """Returns true if this object is still valid in the synced scene.
 
-        Objects will be invalidated when .destroy is called on them.
-        An object must be recreated through `Plugin.instantiate()` once invalidated.
+        Objects will be invalidated when :meth:`destroy()` is called on them.
+        An object must be recreated through :meth:`.Plugin.instantiate()` once invalidated.
 
         Returns:
             bool
@@ -156,42 +134,77 @@ class SceneObject:
         return self._valid
 
     def on_create(self):
-        """Executes after the object has been created and synced to Coherence."""
+        """
+        Executes after the object has been created through :meth:`.Plugin.instantiate()`
+        and synced to Coherence.
+        """
         pass
 
     def on_destroy(self):
         """
         Executes when this object has been destroyed, either through
-        calling `.destroy()` or by a desync within Coherence.
+        calling :meth:`destroy()`, a desync within Coherence, or
+        the associated :attr:`bpy_obj` has been removed from the scene.
         """
         pass
 
-    def on_message(self, id: str, callback):
+    def add_custom_vertex_data_stream(self, id: str, size: int, callback):
         """
-        Add an event handler for when Unity sends a custom
-        message for this object (e.g. through a Unity-side plugin
-        that handles these specific custom objects)
+        Add a callback to be executed every time vertex data needs to be synced.
 
-        `def callback(id: str, data: ctypes.Structure)`
+        Note:
+            Not yet implemented
+
+        The callback has the following definition::
+
+            def callback(mesh: bpy.types.Mesh) -> Tuple[ctypes.void_p, int]:
+                \"""
+                Args:
+                    mesh (bpy.types.Mesh):      The evaluated mesh instance in the
+                                                current Depsgraph.
+
+                Returns:
+                    Tuple[ctypes.void_p, int]:  Tuple containing a pointer to the start of the
+                                                vertex data array and the number of bytes per
+                                                element in that array.
+                \"""
+                # ... logic here ...
+
+        Data returned by the callback **must be aligned to loops** for the given mesh.
+        That is, your element count must equal ``len(mesh.loops)``
+
+        Warning:
+            Instancing is disabled for meshes with custom vertex data streams. Each instance
+            will be evaluated and sent to Unity as a separate meshes.
+
+        Warning:
+            The callback is given a temporary mesh that was created **after** evaluating
+            all Blender modifiers through the active Depsgraph. The number of elements
+            in your array must match the number of loops after the evaluation.
 
         Args:
-            id (str):   Unique message ID
-            callback:   Callback to execute when receiving the message
+            id (str):
+            size (int):             Number of bytes in the data stream per loop index
+            callback (callable):    Callable that returns a pointer to the data stream
         """
-        pass
+        # Maybe an optional align to loops vs align to unique vertex index option?
+        # I can see use cases for both and it wouldn't be too difficult (if aligned
+        # to verts we can totally skip the mapping from loops[i].v step)
 
-    def send_message(self, id: str, data):
-        """
-        Send an arbitrary block of memory to Unity
+        # TODO: Needs to actually return a tuple probably (pointer + size)
+        # because I have no idea how big these custom per-vertex data points are.
+        raise NotImplementedError
+
+    def remove_custom_vertex_data_stream(self, id: str):
+        """Remove a previously registered vertex data stream
+
+        Note:
+            Not implemented
 
         Args:
-            id (str):                   Unique message ID
-            data (ctypes.Structure):    CTypes structure to copy to Unity
-
-        Returns:
-            int: non-zero on failure
+            id (str):
         """
-        pass
+        raise NotImplementedError
 
     def update_mesh(self, depsgraph, preserve_all_data_layers: bool = True):
         """
@@ -201,6 +214,13 @@ class SceneObject:
         Note that if this object's mesh is instanced, only *one* instance will
         execute this update method if it's determined to be non-unique
         (e.g. same modifiers as another instance)
+
+        Args:
+            depsgraph (bpy.types.Depsgraph): Evaluated dependency graph
+            preserve_all_data_layers (bool): Preserve all data layers in the mesh, like UV maps
+                                            and vertex groups. By default Blender only computes
+                                            the subset of data layers needed for viewport display
+                                            and rendering, for better performance.
         """
         mesh_uid = self.mesh_uid
         if not mesh_uid:
@@ -253,17 +273,17 @@ class SceneObject:
                 uv_ptr[3]
             )
 
-            # TODO: This would also then aggregate custom vertex data streams
-            # from ALL plugins into a structure that can get uploaded alongside
-            # the rest of the data above.
-            # These vertex streams can then be executed from C# per vertex and
-            # added as part of the dataset sent to Unity.
+            # TODO: This would also aggregate custom vertex data streams
+            # for all SceneObjects that are referencing the same bpy_obj.
+            # We'd also need to disable instancing if there's any registered streams
+            # since we can't guarantee that data isn't different per instance.
+            # Streams need to be converted to some struct containing the stream info
+            # (id, size, ptr) and pushed up to C# for diffing and syncing.
 
             # Release the temporary mesh
             eval_obj.to_mesh_clear()
         except Exception as e:
             error('Could not update mesh', e)
-
 
     def update_transform(self):
         """Trigger a sync of this object's transform to Unity.
@@ -281,7 +301,7 @@ class SceneObject:
         )
 
     def update_properties(self):
-        """Notify Unity that object props may have changed
+        """Notify Unity that object properties (transform, display mode, etc) have changed
         """
         if not self.bpy_obj:
             return
@@ -295,15 +315,10 @@ class SceneObject:
             get_string_buffer(self.mat_uid)
         )
 
-    def remove_on_message(self, callback):
-        """Remove a callback previously added with `on_message()`
-        """
-        pass
-
     def destroy(self):
         """Destroy this SceneObject
 
-        This will call `on_destroy()` to perform any additional
+        This will call :meth:`on_destroy()` to perform any additional
         cleanup needed after it's been removed.
         """
         self._valid = False
@@ -315,11 +330,11 @@ class SceneObject:
 class SceneObjectCollection:
     """Collection of SceneObjects with fast lookups by different properties"""
 
-    # Dict<str, SceneObject> where key is a unique object name
+    #: dict[str, :class:`.SceneObject`]: Where key is a unique object name
     _objects: dict
 
-    # Dict<str, SceneObject> where key is a bpy.types.Object.name
-    # and value is the SceneObject referencing the bpy.types.Object.
+    #: dict[str, :class:`.SceneObject`]: Where key is a :attr:`bpy.types.Object.name`
+    # and value is the :class:`SceneObject` referencing the `bpy.types.Object`.
     _objects_by_bpy_name: dict
 
     def __init__(self):
@@ -327,15 +342,26 @@ class SceneObjectCollection:
         self._objects_by_bpy_name = {}
 
     def find_by_bpy_name(self, bpy_name: str):
-        """
+        """Find an object by the name of the associated :class:`bpy.types.Object`
 
         Args:
             bpy_name (str):
 
         Returns:
-            SceneObject|None
+            Union[:class:`SceneObject`, None]
         """
         return self._objects_by_bpy_name.get(bpy_name)
+
+    def find(self, name: str):
+        """Find an object by name
+
+        Args:
+            name (str):
+
+        Returns:
+            Union[:class:`SceneObject`, None]
+        """
+        return self._objects.get(name)
 
     def append(self, obj):
         """
@@ -359,6 +385,16 @@ class SceneObjectCollection:
             self._objects_by_bpy_name[bpy_name] = obj
 
     def remove(self, obj):
+        """Remove an object from this collection
+
+        Warning:
+            This does not execute the object lifecycle method :meth:`.SceneObject.destroy()`
+
+            To safely remove an object as part of a plugin's logic, call destroy on the instance.
+
+        Args:
+            obj (SceneObject):
+        """
         if obj.name in self._objects:
             del self._objects[obj.name]
 
@@ -367,12 +403,21 @@ class SceneObjectCollection:
             del self._objects_by_bpy_name[bpy_name]
 
     def clear(self):
+        """Remove all objects from this collection.
+
+        Warning:
+            This does not execute the object lifecycle method :meth:`.SceneObject.destroy()`
+
+            To safely remove all objects as part of a plugin's logic, iterate the collection
+            and destroy each object individually.
+        """
+
         self._objects = {}
         self._objects_by_bpy_name = {}
 
     def values(self):
         """
         Returns:
-            dict_values[SceneObject]
+            dict_values[:class:`SceneObject`]
         """
         return self._objects.values()

@@ -1,6 +1,7 @@
 ﻿using SharedMemory;
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 
@@ -327,7 +328,6 @@ namespace Coherence
 
         #endregion
 
-
         // TODO: Metaballs
         // material / GO prefab
         // going to convert to mesh in Blender first probably. Don't want
@@ -347,14 +347,211 @@ namespace Coherence
         // Alternatively - I'd like to be able to pull in a model from blender,
         // move it around in Unity, and then move around in blender independently.
 
-        // Question is though, transform sync mode universal or per-object?
+        #region Plugin Management
 
-        // TODO: Supporting instancing (e.g. all trees in a scene with a
-        // shared blender mesh). Probably a new object type we're passing
-        // from Blender that just contains instance data (root object's name,
-        // transform info, etc)
+        /// <summary>
+        /// Delegate is listening to a Coherence event
+        /// </summary>
+        struct EventHandler
+        {
+            public IPlugin plugin;
+            public Action callable;
+        }
 
-        // TODO: Axis transform setting? Can we guarantee (or assume) it's
-        // coming in from a particular up axis?
+        /// <summary>
+        /// Plugins instances actively listening to Coherence events (OnDisconnect, OnConnect, etc)
+        /// </summary>
+        internal DictionarySet<string, IPlugin> EventHandlers { get; } = new DictionarySet<string, IPlugin>();
+
+        /// <summary>
+        /// Get a list of all plugins, regardless of registration state
+        /// </summary>
+        internal Dictionary<string, PluginInfo> Plugins {
+            get {
+                // If we came out of an assembly reload, try to restore.
+                if (plugins == null)
+                {
+                    RestorePlugins();
+                }
+                return plugins;
+            }
+        }
+
+        private Dictionary<string, PluginInfo> plugins;
+
+        internal Dictionary<string, PluginInfo> RegisteredPlugins
+        {
+            get
+            {
+                if (registeredPlugins == null)
+                {
+                    RestorePlugins();
+                }
+                return registeredPlugins;
+            }
+        }
+
+        private Dictionary<string, PluginInfo> registeredPlugins;
+
+        /// <summary>
+        /// Name of registered plugins stored between assembly reloads
+        /// </summary>
+        [SerializeField]
+        private List<string> registeredPluginNames;
+
+        /// <summary>
+        /// Populate the list of event delegates with all event methods
+        /// that can be executed on the plugin instance.
+        /// </summary>
+        internal void BindEventHandlers(PluginInfo plugin, IPlugin instance)
+        {
+            foreach (var method in plugin.EventMethods.Items(instance.GetType()))
+            {
+                EventHandlers.Add(method.Name, instance);
+                instance.AddEventDelegate(method);
+            }
+        }
+
+        /// <summary>
+        /// Remove a plugin from all event handlers
+        /// </summary>
+        internal void UnbindEventHandlers(IPlugin instance)
+        {
+            EventHandlers.RemoveAll(instance);
+            instance.ClearEventDelegates();
+        }
+
+        /// <summary>
+        /// Dispatch a named event (e.g. "OnConnected") to all plugins with a matching method.
+        /// </summary>
+        /// <param name="eventName"></param>
+        internal void DispatchEvent(string eventName)
+        {
+            foreach (var plugin in EventHandlers.Items(eventName))
+            {
+                plugin.DispatchEvent(eventName);
+            }
+        }
+
+        /* This all probably belongs in Sync. Since it's the only thing that manages objects.
+            Sans global plugins...
+
+        /// <summary>
+        /// Instantiate a plugin into the global scope
+        /// </summary>
+        internal void InstantiateGlobalPlugin(string name)
+        {
+            var plugin = FindPlugin(name);
+            var instance = plugin.Instantiate(this);
+
+            BindEventHandlers(plugin, instance);
+        }
+
+        internal void DestroyGlobalPlugin(string name)
+        {
+            var plugin = FindPlugin(name);
+
+            UnbindEventHandlers(plugin.Instances[0]);
+
+            plugin.DestroyAllInstances();
+        }
+
+        internal void InstantiateSceneObjectPlugin(ObjectController target, string name, string kind)
+        {
+            var plugin = FindPlugin(name, kind);
+            var instance = plugin.Instantiate(this, target);
+
+            BindEventHandlers(plugin, instance);
+        }
+
+        internal void DestroySceneObjectPlugin(ObjectController target, string name, string kind)
+        {
+            var plugin = FindPlugin(name, kind);
+
+            throw new NotImplementedException("need to figure this out");
+            // UnbindEventHandlers(plugin.Inxxstances[0]);
+
+            plugin.DestroyInstance(target);
+        }
+        */
+
+        internal void RegisterPlugin(string name)
+        {
+            var plugin = Plugins[name];
+            RegisteredPlugins.Add(name, plugin);
+            registeredPluginNames.Add(name);
+        }
+
+        internal void UnregisterPlugin(string name)
+        {
+            RegisteredPlugins.Remove(name);
+            registeredPluginNames.Remove(name);
+        }
+
+        /// <summary>
+        /// Restore previously registered plugins after an assembly reload
+        /// </summary>
+        internal void RestorePlugins()
+        {
+            plugins = new Dictionary<string, PluginInfo>();
+            registeredPlugins = new Dictionary<string, PluginInfo>();
+
+            var pluginType = typeof(IPlugin);
+
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                foreach (var type in assembly.GetTypes())
+                {
+                    if (pluginType.IsAssignableFrom(type) && !type.IsInterface)
+                    {
+                        AddPluginInfo(type);
+                    }
+                }
+            }
+
+            // Register everything previously added
+            var prevRegisteredPlugins = registeredPluginNames;
+            registeredPluginNames = new List<string>();
+
+            foreach (var name in prevRegisteredPlugins)
+            {
+                if (!plugins.ContainsKey(name))
+                {
+                    Debug.LogError($"Could not restore plugin [{name}] - missing after assembly reload");
+                }
+                else
+                {
+                    RegisterPlugin(name);
+                }
+            }
+        }
+
+        private void AddPluginInfo(Type type)
+        {
+            var attr = type.GetCustomAttribute<PluginAttribute>();
+            if (attr == null)
+            {
+                Debug.LogError("missing attr"); // TODO: message
+                return;
+            }
+
+            if (!Plugins.TryGetValue(attr.Name, out PluginInfo plugin))
+            {
+                plugin = new PluginInfo();
+                plugin.Name = attr.Name;
+                Plugins.Add(attr.Name, plugin);
+            }
+
+            if (string.IsNullOrEmpty(attr.Kind))
+            {
+                plugin.SetGlobal(type);
+            }
+            else
+            {
+                plugin.AddKind(attr.Kind, type);
+            }
+        }
+
+        #endregion
     }
 }

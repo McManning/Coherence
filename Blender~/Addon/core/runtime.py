@@ -1,5 +1,4 @@
 
-from ctypes import *
 import bpy
 import numpy as np
 from bgl import *
@@ -28,44 +27,45 @@ DLL_PATH = 'lib/LibCoherence.dll'
 lib = load_library(DLL_PATH)
 
 class Runtime:
-    """Respond to scene object changes and handle messaging through the DLL"""
+    """Runtime bridge between Python and LibCoherence
+
+    This contains the main event handlers, pumping messages to
+    and from LibCoherence, plugin management, viewport and
+    scene object tracking, etc.
+    """
     MAX_TEXTURE_SLOTS = 64
     UNASSIGNED_TEXTURE_SLOT_NAME = '-- Unassigned --'
 
+    #: bool: True if Coherence is currently running
     running: bool = False
-    connection_name: str = None
-    blender_version: str = None
 
-    # Draw handler for bpy.types.SpaceImageEditor
-    image_editor_handle = None # <capsule object RNA_HANDLE>
+    connection_name = None
+    blender_version = None
+
+    #: Draw handler for :class:`bpy.types.SpaceImageEditor`
+    image_editor_handle = None
 
     # Numpy array referencing pixel data for the
     # active bpy.types.Image to sync
     image_buffer = None # np.ndarray
 
-    # Dict<int, RenderEngine> where key is a unique viewport ID per RenderEngine instance.
-    # Weakref is used so that we don't hold onto RenderEngine references
-    # since Blender uses __del__ to release them after use
+    #: WeakValueDictionary[int, :class:`.CoherenceRenderEngine`]: Mapping viewport ID -> Render Engine
     viewports = WeakValueDictionary()
 
-    # All tracked SceneObject instances synced (or to be synced) with the host
+    #: All tracked SceneObject instances synced (or to be synced) with the host
     objects = SceneObjectCollection()
 
-    # Dict<str, Plugin> where key is a plugin name
+    #: dict[str, Plugin]: Currently registered plugins
     plugins = {}
 
-    # bpy.types.Object names currently tracked as being in the scene.
+    #: set(str): :class:`bpy.types.Object` names currently tracked as being in the scene.
     current_names = set()
 
-    # SceneObjects invalidated this update
+    #: set(SceneObject): Objects invalidated during the last update
     invalidated_objects = set()
 
-    # Depsgraph we're currently evaluating within
-    # (if methods are being executed from within a Depsgraph update)
+    #: Union[:class:`bpy.types.Despgraph`, None]: Depsgraph we're currently executing within
     current_depsgraph = None
-
-    # def __init__(self):
-    #     lib = load_library(self.DLL_PATH)
 
     def start(self):
         """Start trying to connect to the host"""
@@ -218,8 +218,16 @@ class Runtime:
         lib.RemoveViewport(uid)
 
     def register_plugin(self, plugin):
-        """Add a new plugin to be executed on events
+        """Register a third party plugin with the Coherence API.
 
+        This will call the following event chain for the plugin:
+
+        1. :meth:`.Plugin.on_registered()`
+        2. :meth:`.Plugin.on_enable()` - if Coherence is currently running
+        3. :meth:`.Plugin.on_connected()` - if Coherence is currently connected to Unity
+
+        Args:
+            plugin (inherited class of :class:`.Plugin`)
         """
         log('*** REGISTER PLUGIN {}'.format(plugin))
 
@@ -233,9 +241,24 @@ class Runtime:
         if self.is_connected():
             instance.on_connected()
 
-    def unregister_plugin(self, plugin):
+    def unregister_plugin(self, cls):
+        """Unregister a third party plugin from the Coherence API.
+
+        The following event chain is called on the plugin when unregistered:
+
+        1. :meth:`.Plugin.on_disconnected()` - if Coherence is currently connected to Unity
+        2. :meth:`.Plugin.on_disable()` - if Coherence is currently running.
+
+            This will also execute :meth:`.SceneObject.on_destroy()` for all
+            objects associated with this plugin.
+
+        3. :meth:`.Plugin.on_unregistered()`
+
+        Args:
+            cls (inherited class of :class:`.Plugin`)
+        """
         try:
-            instance = self.plugins[plugin]
+            instance = self.plugins[cls]
 
             if self.is_connected():
                 instance.on_disconnected()
@@ -245,14 +268,18 @@ class Runtime:
 
             instance.unregistered()
 
-            del self.plugins[plugin]
+            del self.plugins[cls]
         except KeyError:
-            warning('Plugin {} is not installed'.format(plugin))
+            warning('Plugin {} is not installed'.format(cls))
         except Exception as e:
-            error('Exception ignored in Plugin [{}] while unregistering'.format(plugin))
+            error('Exception ignored in Plugin [{}] while unregistering'.format(cls))
             print(e)
 
     def unregister_all_plugins(self):
+        """Remove all third party plugins currently registered.
+
+        This will call the same event chain as :meth:`unregister_plugin()` for each one.
+        """
         for plugin in list(self.plugins.values()):
             self.unregister_plugin(plugin)
 
@@ -278,7 +305,7 @@ class Runtime:
             connecting/reconnecting to the host and processing messages
 
         Returns:
-            float for next time to run the timer, or None to destroy it
+            Union[float, None]: Next time to run the timer or None to destroy it
         """
         if not self.running:
             log('Deactivating on_tick timer')
@@ -287,7 +314,9 @@ class Runtime:
         # While actively connected send typical IO,
         # get viewport renders, and run as fast as possible
         if self.is_connected():
-            lib.Update()
+            msg = lib.Update()
+            self.on_message(msg)
+
             lib.ConsumeRenderTextures()
 
             self.tag_redraw_viewports()
@@ -302,7 +331,11 @@ class Runtime:
 
         # Attempt to connect to shared memory if not already
         if not lib.IsConnectedToSharedMemory():
-            response = lib.Connect(self.connection_name, self.blender_version)
+            response = lib.Connect(
+                self.connection_name,
+                self.blender_version
+            )
+
             if response == 1:
                 self.on_connected_to_shared_memory()
             elif response == -1:
@@ -311,16 +344,43 @@ class Runtime:
             # else the space doesn't exist.
 
         # Poll for updates until we get one.
-        lib.Update()
+        msg = lib.Update()
+        self.on_message(msg)
 
+        # TODO: Could replace this with a handshake message from Unity.
         if self.is_connected():
             self.on_connected_to_unity()
 
         return 0.05
 
+    def on_message(self, message):
+        """Forward inbound messages to plugins
+
+        Args:
+            message (InteropMessage)
+        """
+        if message.invalid:
+            return
+
+        plugin_msg = message.as_plugin_message()
+        if not plugin_msg:
+            return
+
+        try:
+            # Determine if it's a message to a SceneObject or Plugin
+            if not plugin_msg.target.empty:
+                target = self.objects.find(plugin_msg.target.value)
+            else:
+                target = self.plugins[message.target]
+
+            target._dispatch(plugin_msg)
+        except KeyError as e:
+            error('Error while routing message to plugin [{}]'.format(message.target, e))
+
     def check_texture_sync(self) -> float:
-        """Push image updates to the host if we're actively drawing
-            on an image bound to one of the synced texture slots
+        """
+        Push image updates to the host if we're actively drawing
+        on an image bound to one of the synced texture slots
 
         Returns:
             float: Milliseconds until the next check
@@ -342,6 +402,7 @@ class Runtime:
         return delay
 
     def on_connected_to_unity(self):
+        """Notify plugins that we've connected to an instance of Unity"""
         debug('on_connected_to_unity')
         self.tag_redraw_viewports()
 
@@ -350,8 +411,10 @@ class Runtime:
 
     def on_connected_to_shared_memory(self):
         debug('on_connected_to_shared_memory')
+        # TODO: Needed anymore?
 
     def on_disconnected_from_unity(self):
+        """Notify plugins that we've disconnected from an instance of Unity"""
         debug('on_disconnected_from_unity')
         self.tag_redraw_viewports()
 
@@ -396,10 +459,20 @@ class Runtime:
         self.current_names = current
 
     def on_add_bpy_object(self, bpy_obj):
+        """Notify plugins that an object has been added to the scene
+
+        Args:
+            bpy_obj (bpy.types.Object)
+        """
         for plugin in self.plugins.values():
             plugin.on_add_bpy_object(bpy_obj)
 
     def on_remove_bpy_object(self, name):
+        """Destroy an associated SceneObject and notify plugins of removal
+
+        Args:
+            name (str): Object name that has been removed.
+        """
         obj = self.objects.find_by_bpy_name(name)
         if obj: obj.destroy()
 
@@ -407,6 +480,10 @@ class Runtime:
             plugin.on_remove_bpy_object(name)
 
     def on_image_editor_update(self, context):
+        """
+        Args:
+            context (:mod:`bpy.context`): Image Editor area context
+        """
         space = context.space_data
 
         # Only try to sync updates if we're actively painting
@@ -417,7 +494,7 @@ class Runtime:
     def on_load_pre(self, *args, **kwargs):
         """Stop Coherence when our Blender file changes.
 
-        This is to prevent Coherence from entering some invalid state where
+        This is to prevent Coherence from entering an invalid state where
         synced objects/viewports no longer exist in the Blender sync.
         """
         self.stop()
@@ -478,7 +555,7 @@ class Runtime:
         This does *not* fire any events for the added SceneObject.
 
         Args:
-            obj (SceneObject):
+            obj (SceneObject)
         """
         debug('add_object - name={}'.format(obj.name))
         self.objects.append(obj)
@@ -501,13 +578,19 @@ class Runtime:
                 child_obj = self.objects.find_by_bpy_name(child.name)
                 if child_obj: child_obj.update_transform()
 
+        if not self.current_depsgraph:
+            warning('No current_depsgraph during add_object')
+
         # Send up initial state and geometry
         obj.update_properties()
-        obj.update_mesh(self.current_depsgraph or bpy.context.evaluated_depsgraph_get())
-        # TODO: Depsgraph isn't available because this may not get executed
-        # within an depsgraph update. So we use the context depsgraph. Is this fine?
+        obj.update_mesh(
+            # TODO: Depsgraph isn't available because this may not get executed
+            # within an depsgraph update. So we use the context depsgraph. Is this fine?
+            self.current_depsgraph or bpy.context.evaluated_depsgraph_get()
+        )
 
     def remove_all_invalid_objects(self):
+        """Remove references to SceneObjects that were previously invalidated"""
         for obj in self.invalidated_objects:
             obj.plugin._objects.remove(obj)
             self.objects.remove(obj)
@@ -515,14 +598,14 @@ class Runtime:
         self.invalidated_objects.clear()
 
     def cleanup(self):
-        # Clear all object tracking
+        """Clear all object tracking"""
         self.current_names.clear()
         self.objects.clear()
         self.invalidated_objects.clear()
         lib.Clear()
 
     def on_update_material(self, mat):
-        """Trigger a `SceneObject.update_properties()` for all objects using this material
+        """Trigger a call to :meth:`.SceneObject.update_properties` for all objects using this material
 
         Args:
             mat (bpy.types.Material)

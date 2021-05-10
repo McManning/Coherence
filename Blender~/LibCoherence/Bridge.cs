@@ -11,6 +11,7 @@ namespace Coherence
     /// <summary>
     /// Manage shared memory buffers and messages between Blender and Unity
     /// </summary>
+    ///
     class Bridge : IDisposable
     {
         public static Bridge Instance
@@ -82,6 +83,7 @@ namespace Coherence
                 [RpcRequest.Connect] = OnConnect,
                 [RpcRequest.Disconnect] = OnDisconnect,
                 [RpcRequest.UpdateUnityState] = OnUpdateUnityState,
+                // [RpcRequest.PluginMessage] = OnPluginMessage,
             };
         }
 
@@ -183,7 +185,7 @@ namespace Coherence
         /// Send queued messages and read new messages and render texture data from Unity
         /// </summary>
         [HandleProcessCorruptedStateExceptions]
-        internal void Update()
+        internal InteropMessage Update()
         {
             try
             {
@@ -192,6 +194,7 @@ namespace Coherence
                     messages.ProcessOutboundQueue();
                     ConsumeMessage();
                     CheckForTimeout();
+                    return messages.Last;
                 }
             }
             catch (AccessViolationException)
@@ -209,6 +212,8 @@ namespace Coherence
                 InteropLogger.Error($"Access Violation doing IO to the shared memory - disconnecting");
                 Disconnect();
             }
+
+            return InteropMessage.Invalid;
         }
 
         /// <summary>
@@ -248,6 +253,12 @@ namespace Coherence
             messages.Read((target, header, ptr) =>
             {
                 lastUpdateFromUnity = DateTime.Now;
+
+                // Message to be handled within Python.
+                if (header.type == RpcRequest.PluginMessage)
+                {
+                    return 0;
+                }
 
                 if (!handlers.ContainsKey(header.type))
                 {
@@ -340,11 +351,12 @@ namespace Coherence
             }
 
             // TODO: If we've timed out, close the connection and cleanup.
+            InteropLogger.Debug($"Unity timeout. TODO: Handle this.");
         }
 
         #endregion
 
-        #region Unity Message Handlers
+        #region Inbound Message Handlers
 
         private int OnConnect(string target, IntPtr ptr)
         {
@@ -383,6 +395,23 @@ namespace Coherence
 
             return FastStructure.SizeOf<InteropUnityState>();
         }
+
+        /*/// <summary>
+        /// Message for a third party plugin in Python
+        /// </summary>
+        private int OnPluginMessage(string target, IntPtr ptr)
+        {
+            var message = new InteropPluginMessage();
+
+            var offset = 0;
+            message.target = FastStructure.PtrToStructure<InteropString64>(ptr);
+            offset += FastStructure.SizeOf<InteropString64>();
+
+            message.size = FastStructure.PtrToStructure<int>(IntPtr.Add(ptr, offset));
+            offset += FastStructure.SizeOf<int>();
+
+            // rather than handling, can't I just delegate and parse in Python?
+        }*/
 
         #endregion
 

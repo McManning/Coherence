@@ -71,3 +71,6 @@ __pycache__
 
 # DLL builds
 Blender~/Addon/lib/
+
+# Documentation build
+_build

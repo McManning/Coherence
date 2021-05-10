@@ -192,3 +192,82 @@ class EventObservers:
             except:
                 # TODO: Error handling for failed handlers that don't break others.
                 pass
+
+class PluginMessageHandler:
+    """Entity that can send and receive :class:`.InteropPluginMessage`
+
+    Example:
+        ::
+
+            class MyObj(PluginMessageHandler):
+                def __init__(self):
+                    self.add_handler('Foo', self.on_foo)
+
+                def on_foo(self, id: str, size: int, data: c_void_p):
+                    ...
+    """
+
+    #: dict[str, set]: Message ID mapped to a set of callback methods
+    _handlers: dict
+
+    def add_handler(self, id: str, callback):
+        """
+        Add an event handler for when Unity sends a custom message
+        for this object (e.g. through a associated Unity plugin)
+
+        Args:
+            id (str):   Unique message ID
+            callback:   Callback to execute when receiving the message
+        """
+        if not self._handlers:
+            self._handlers = {}
+
+        handlers = self._handlers.get(id, set())
+        self._handlers.add(callback)
+        self._handlers[id] = handlers
+
+    def remove_handler(self, id: str, callback):
+        """Remove a callback previously added with :meth:`add_handler()`
+
+        Args:
+            id (str):   Unique message ID
+            callback:   Callback to execute when receiving the message
+
+        Raises:
+            KeyError:   If the handler was not registered
+        """
+        self._handlers[id].remove(callback)
+
+    def remove_all_handlers(self):
+        """Remove all callbacks for inbound messages"""
+        self._handlers = {}
+
+    def send_event(self, id: str, size: int, data):
+        """Send an arbitrary block of data to Unity.
+
+        Data sent will be associated with this object on the Unity side.
+
+        Args:
+            id (str):           Unique message ID
+            size (int):         Size of the payload to send
+            data (c_void_p):    Payload to send
+
+        Returns:
+            int: non-zero on failure
+        """
+        raise NotImplementedError
+
+    def _dispatch(self, message):
+        """Dispatch a message to all listeners
+
+        Args:
+            message (:class:`.InteropPluginMessage`)
+
+        Raises:
+            KeyError: If no handler is registered for inbound message ID
+        """
+        self._handlers[message.id].dispatch(
+            message.id,
+            message.size,
+            message.data
+        )

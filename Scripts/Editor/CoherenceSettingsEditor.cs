@@ -4,6 +4,7 @@ using UnityEditorInternal;
 using System.Runtime.InteropServices;
 using SharedMemory;
 using MessageType = UnityEditor.MessageType;
+using System.Collections.Generic;
 
 namespace Coherence
 {
@@ -12,6 +13,7 @@ namespace Coherence
     {
         private bool showMainSettings = true;
         private bool showMaterialSettings = true;
+        private bool showPlugins = true;
         private bool showTextureSyncSettings = true;
         private bool showAdvancedSettings = false;
         private bool showExperimentalSettings = false;
@@ -164,6 +166,130 @@ namespace Coherence
                     MessageType.Warning
                 );
             }
+        }
+
+        private void DrawPlugin(PluginInfo plugin)
+        {
+            EditorGUI.BeginChangeCheck();
+
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+            // Header
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.LabelField(plugin.Name, EditorStyles.boldLabel);
+                GUILayout.FlexibleSpace();
+
+                if (GUILayout.Button("Unregister"))
+                {
+                    CoherenceSettings.Instance.UnregisterPlugin(plugin.Name);
+                }
+
+                if (plugin.globalType != null && GUILayout.Button("Edit"))
+                {
+                    // open script
+                }
+            }
+
+            // High level information
+            if (plugin.globalType != null)
+            {
+                EditorGUILayout.LabelField(
+                    $"Global={plugin.globalType}"
+                );
+            }
+
+            // Registered SceneObject.kind scripts
+            if (plugin.kindTypes.Count > 0)
+            {
+                DrawPluginKinds(plugin);
+            }
+
+            EditorGUILayout.EndVertical();
+
+            if (EditorGUI.EndChangeCheck())
+            {
+                // Debug.LogWarning("Changed");
+                // TODO
+            }
+        }
+
+        private void DrawPluginKinds(PluginInfo plugin)
+        {
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Kinds", EditorStyles.boldLabel);
+
+            foreach (var kind in plugin.kindTypes)
+            {
+                var rect = EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
+
+                EditorGUILayout.PrefixLabel(kind.Key);
+
+                var instances = 0;
+                if (plugin.kindInstances.ContainsKey(kind.Key))
+                {
+                    instances = plugin.kindInstances[kind.Key].Count;
+                }
+
+                if (GUILayout.Button($"{instances} objects"))
+                {
+                    // select instances
+                }
+
+                if (GUILayout.Button("Edit"))
+                {
+                    // open script
+                }
+
+                EditorGUILayout.EndHorizontal();
+            }
+        }
+
+        private void DrawPlugins()
+        {
+            var plugins = CoherenceSettings.Instance.Plugins;
+            var registered = CoherenceSettings.Instance.RegisteredPlugins;
+
+            foreach (var plugin in plugins)
+            {
+                if (registered.ContainsKey(plugin.Key))
+                {
+                    DrawPlugin(plugin.Value);
+                    EditorGUILayout.Space();
+                }
+            }
+
+            var rect = EditorGUILayout.BeginHorizontal();
+
+            if (EditorGUILayout.DropdownButton(
+                new GUIContent("Register Plugin"),
+                FocusType.Passive
+            )) {
+                GenericMenu menu = new GenericMenu();
+
+                foreach (var name in plugins.Keys)
+                {
+                    if (!registered.ContainsKey(name))
+                    {
+                        menu.AddItem(
+                            new GUIContent(name),
+                            false,
+                            () => CoherenceSettings.Instance.RegisterPlugin(name)
+                        );
+                    }
+                }
+
+                if (menu.GetItemCount() < 1)
+                {
+                    menu.AddItem(new GUIContent("No unregistered plugins"), false, null);
+                }
+
+                menu.DropDown(rect);
+            }
+
+            GUILayout.FlexibleSpace();
+
+            EditorGUILayout.EndHorizontal();
         }
 
         private void DrawMaterialSettings()
@@ -468,6 +594,19 @@ namespace Coherence
                 using (new EditorGUI.IndentLevelScope())
                 {
                     DrawBasic();
+                }
+            }
+            EditorGUILayout.EndFoldoutHeaderGroup();
+            EditorGUILayout.Space();
+
+            showPlugins = EditorGUILayout.BeginFoldoutHeaderGroup(
+                showPlugins, "Plugins"
+            );
+            if (showPlugins)
+            {
+                using (new EditorGUI.IndentLevelScope())
+                {
+                    DrawPlugins();
                 }
             }
             EditorGUILayout.EndFoldoutHeaderGroup();

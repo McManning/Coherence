@@ -18,6 +18,14 @@ class InteropString64(Structure):
         ('buffer', c_char * 64)
     ]
 
+    @property
+    def empty(self):
+        return self.buffer[0] == 0
+
+    @property
+    def value(self) -> str:
+        return self.buffer.value
+
 class InteropMatrix4x4(Structure):
     _fields_ = [
         ('m00', c_float),
@@ -99,23 +107,61 @@ class RenderTextureData(Structure):
         ('pixels', POINTER(c_ubyte))
     ]
 
+# RpcMessage ID for InteropPluginMessage payloads.
+RPC_PLUGIN_MESSAGE_ID = 255
+
+class InteropPluginMessage(Structure):
+    _fields_ = [
+        ('target', InteropString64),
+        ('id', InteropString64),
+        ('size', c_int),
+        ('data', POINTER(c_byte))
+    ]
+
+
+class InteropMessageHeader(Structure):
+    _fields_ = [
+        ('type', c_byte),
+        ('index', c_int),
+        ('length', c_int),
+        ('count', c_int),
+    ]
+
+class InteropMessage(Structure):
+    _fields_ = [
+        ('header', InteropMessageHeader),
+        ('target', InteropString64),
+        ('data', POINTER(c_byte)),
+    ]
+
+    @property
+    def invalid(self):
+        return self.header.type < 1
+
+    def as_plugin_message(self):
+        """Reinterpret as InteropPluginMessage
+
+        Returns:
+            Union[:class:`.InteropPluginMessage`, None]
+        """
+        if self.header.type != RPC_PLUGIN_MESSAGE_ID:
+            return None
+
+        plugin_msg = InteropPluginMessage.from_address(self.data)
+        return plugin_msg
+
 def identity():
+    """Get the identity matrix
+
+    Returns:
+        :class:`.InteropMatrix4x4`
+    """
     mat = InteropMatrix4x4()
     mat.m00 = 1
     mat.m11 = 1
     mat.m22 = 1
     mat.m33 = 1
     return mat
-
-def to_interop_type(obj) -> int:
-    """
-    Args:
-        obj (SceneObject):
-
-    Returns:
-        int
-    """
-    return 1 # SceneObjectType.MESH - TODO: calculate from input object
 
 def to_interop_transform(obj):
     """Extract transformation (parent, position, euler angles, scale) from an object.
@@ -127,7 +173,7 @@ def to_interop_transform(obj):
         obj (bpy.types.Object): The object to extract transform from
 
     Returns:
-        InteropTransform
+        :class:`.InteropTransform`
     """
     mat = Matrix(obj.matrix_world)
 
@@ -163,7 +209,7 @@ def to_interop_matrix4x4(mat):
         mat (float[]):  float multi-dimensional array of 4 * 4 items in [-inf, inf]. E.g.
                         ((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0), (0.0, 0.0, 0.0, 1.0))
     Returns:
-        InteropMatrix4x4
+        :class:`.InteropMatrix4x4`
     """
     raise NotImplementedError('Matrices not supported anymore due to laziness. Upgrade.')
 
@@ -231,10 +277,10 @@ def to_interop_vector3(vec):
     """Convert a Blender Vector to an interop type for C#
 
     Args:
-        vec (mathutils.Vector)
+        vec (:class:`.mathutils.Vector`)
 
     Returns:
-        InteropVector3
+        :class:`.InteropVector3`
     """
     return InteropVector3(vec[0], vec[1], vec[2])
 
@@ -244,10 +290,10 @@ def to_interop_quaternion(rot):
     This automatically converts rotation space to match Unity
 
     Args:
-        rot (mathutils.Quaternion)
+        rot (:class:`mathutils.Quaternion`)
 
-    returns:
-        InteropQuaternion
+    Returns:
+        :class:`.InteropQuaternion`
     """
     raise NotImplementedError('Need use cases before reimplementing')
     return InteropQuaternion(rot.x, rot.z, -rot.y, rot.w)
@@ -256,10 +302,10 @@ def to_interop_vector2(vec):
     """Convert a Blender Vector to an interop type for C#
 
     Args:
-        vec (mathutils.Vector)
+        vec (:class:`mathutils.Vector`)
 
     Returns:
-        InteropVector2
+        :class:`.InteropVector2`
     """
     result = InteropVector2()
     result.x = vec[0]
@@ -274,7 +320,7 @@ def to_interop_int_array(arr):
         arr (int[])
 
     Returns:
-        c_int*
+        ctypes.POINTER(c_int)
     """
     result = (c_int*len(arr))()
     for i in range(len(arr)):
@@ -284,11 +330,12 @@ def to_interop_int_array(arr):
 
 def load_library(path: str):
     """Load LibCoherence and typehint methods
+
     Args:
         path (str): Location of LibCoherence.dll
 
     Returns:
-        CDLL
+        ctypes.CDLL
     """
     path = Path(__file__).parent.parent.joinpath(path).absolute()
     log('Loading DLL from {}'.format(path))
@@ -306,6 +353,8 @@ def load_library(path: str):
     #    c_int                       # size
     #)
     lib.GetTextureSlots.restype = c_int
+
+    lib.Update.restype = InteropMessage
 
     lib.UpdateTexturePixels.argtypes = (
         c_void_p,   # name
