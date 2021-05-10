@@ -1,1 +1,2 @@
+Blender~/Addon/
 sphinxsharp==1.0.1
