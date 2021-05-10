@@ -1,1 +1,1 @@
-sphinxsharp
+sphinxsharp==1.0.1
