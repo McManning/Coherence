@@ -11,6 +11,11 @@
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 import os
+
+# Add an envvar so that the addon knows it's in a sphinx build and can skip some work.
+# A custom one is used here instead of RTD's for supporting local builds.
+os.environ['SPHINX_BUILD'] = True
+
 import sys
 sys.path.insert(0, os.path.abspath('_ext'))
 sys.path.insert(0, os.path.abspath('../Blender~'))

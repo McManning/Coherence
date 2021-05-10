@@ -4,6 +4,7 @@
 # and DLL load/unload wrappers.
 ##############################################
 
+import os
 from ctypes import *
 import math
 from pathlib import Path
@@ -337,6 +338,10 @@ def load_library(path: str):
     Returns:
         ctypes.CDLL
     """
+    if os.getenv('SPHINX_BUILD'):
+        # Skip DLL load if building docs
+        return None
+
     path = Path(__file__).parent.parent.joinpath(path).absolute()
     log('Loading DLL from {}'.format(path))
 
