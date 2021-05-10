@@ -83,7 +83,7 @@ html_theme_options = {
 }
 
 # Mock everything from Blender's API
-autodoc_mock_imports = ['bpy', 'bgl', 'blf', 'mathutils', 'gpu', 'gpu_extras']
+autodoc_mock_imports = ['bpy', 'bgl', 'blf', 'mathutils', 'gpu', 'gpu_extras', 'numpy']
 
 # Reference:
 # https://github.com/sobotka/blender/blob/master/doc/python_api/sphinx_doc_gen.py

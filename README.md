@@ -1,6 +1,7 @@
 # Coherence
 
 ![Build Packages](https://github.com/McManning/Coherence/workflows/Build%20Packages/badge.svg)
+[![Documentation Status](https://readthedocs.org/projects/coherence-plugin/badge/?version=latest)](https://coherence-plugin.readthedocs.io/en/latest/?badge=latest)
 
 Load up a Unity scene and connect to Blender to sync your Blender scene directly with Unity in realtime.
 
