@@ -2,4 +2,6 @@
 Blender API Reference
 ----------------------
 
-Noop
+.. autoclass:: Addon.api.ObjectPlugin
+    :members:
+    :inherited-members:
