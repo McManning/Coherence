@@ -28,13 +28,4 @@ Welcome to the Coherence documentation!
 
    reference/ui_modules
 
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
-
-
 Credit for temporary logo: `Suzanne head rigged on c4dfree.com <https://www.c4dfree.com/suzanne-head-rigged-facial-expressions/>`_

@@ -22,7 +22,7 @@ class SceneObject(PluginMessageHandler):
         """
         Warning:
             Do not instantiate directly.
-            Instead, call :meth:`.Plugin.instantiate()` from within your plugin.
+            Instead, call :meth:`.GlobalPlugin.instantiate()` from within your plugin.
 
         Args:
             name (str):                         Unique object name
@@ -118,7 +118,7 @@ class SceneObject(PluginMessageHandler):
 
     @property
     def plugin(self):
-        """:class:`.Plugin`: The plugin that instantiated this object"""
+        """:class:`.GlobalPlugin`: The plugin that instantiated this object"""
         return self._plugin
 
     @property
@@ -126,7 +126,7 @@ class SceneObject(PluginMessageHandler):
         """Returns true if this object is still valid in the synced scene.
 
         Objects will be invalidated when :meth:`destroy()` is called on them.
-        An object must be recreated through :meth:`.Plugin.instantiate()` once invalidated.
+        An object must be recreated through :meth:`.GlobalPlugin.instantiate()` once invalidated.
 
         Returns:
             bool
@@ -135,7 +135,7 @@ class SceneObject(PluginMessageHandler):
 
     def on_create(self):
         """
-        Executes after the object has been created through :meth:`.Plugin.instantiate()`
+        Executes after the object has been created through :meth:`.GlobalPlugin.instantiate()`
         and synced to Coherence.
         """
         pass
@@ -147,64 +147,6 @@ class SceneObject(PluginMessageHandler):
         the associated :attr:`bpy_obj` has been removed from the scene.
         """
         pass
-
-    def add_custom_vertex_data_stream(self, id: str, size: int, callback):
-        """
-        Add a callback to be executed every time vertex data needs to be synced.
-
-        Note:
-            Not yet implemented
-
-        The callback has the following definition::
-
-            def callback(mesh: bpy.types.Mesh) -> Tuple[ctypes.void_p, int]:
-                \"""
-                Args:
-                    mesh (bpy.types.Mesh):      The evaluated mesh instance in the
-                                                current Depsgraph.
-
-                Returns:
-                    Tuple[ctypes.void_p, int]:  Tuple containing a pointer to the start of the
-                                                vertex data array and the number of bytes per
-                                                element in that array.
-                \"""
-                # ... logic here ...
-
-        Data returned by the callback **must be aligned to loops** for the given mesh.
-        That is, your element count must equal ``len(mesh.loops)``
-
-        Warning:
-            Instancing is disabled for meshes with custom vertex data streams. Each instance
-            will be evaluated and sent to Unity as a separate meshes.
-
-        Warning:
-            The callback is given a temporary mesh that was created **after** evaluating
-            all Blender modifiers through the active Depsgraph. The number of elements
-            in your array must match the number of loops after the evaluation.
-
-        Args:
-            id (str):
-            size (int):             Number of bytes in the data stream per loop index
-            callback (callable):    Callable that returns a pointer to the data stream
-        """
-        # Maybe an optional align to loops vs align to unique vertex index option?
-        # I can see use cases for both and it wouldn't be too difficult (if aligned
-        # to verts we can totally skip the mapping from loops[i].v step)
-
-        # TODO: Needs to actually return a tuple probably (pointer + size)
-        # because I have no idea how big these custom per-vertex data points are.
-        raise NotImplementedError
-
-    def remove_custom_vertex_data_stream(self, id: str):
-        """Remove a previously registered vertex data stream
-
-        Note:
-            Not implemented
-
-        Args:
-            id (str):
-        """
-        raise NotImplementedError
 
     def update_mesh(self, depsgraph, preserve_all_data_layers: bool = True):
         """

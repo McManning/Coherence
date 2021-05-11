@@ -24,14 +24,14 @@ if 'bpy' in locals():
     importlib.reload(util)
     util.registry.Registry.clear()
     importlib.reload(core)
-    importlib.reload(plugins)
     importlib.reload(api)
+    importlib.reload(plugins)
 else:
     import bpy
     from . import util
     from . import core
-    from . import plugins
     from . import api
+    from . import plugins
 
 from util.registry import Registry
 

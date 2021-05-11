@@ -1,8 +1,7 @@
 import bpy
-from ..core.plugin import Plugin
-from ..core.scene import SceneObject
+from ..api import GlobalPlugin, ObjectPlugin
 
-class Metaball(SceneObject):
+class Metaball(ObjectPlugin):
     """Single metaball mesh object that represents all metaballs in the Blender scene"""
     @property
     def mesh_uid(self) -> str:
@@ -15,7 +14,7 @@ class Metaball(SceneObject):
 # what if, instead, each metaball is a transform with some properties
 # but we only actually track the mesh on one of them (a root one)
 
-class MetaballsPlugin(Plugin):
+class MetaballsPlugin(GlobalPlugin):
     """
     Plugin to generate a single Metaball mesh object that contains
     the geometry of all metaballs in the scene.

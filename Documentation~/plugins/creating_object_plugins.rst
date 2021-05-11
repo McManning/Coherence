@@ -11,9 +11,9 @@ Global Plugins in Blender can create instances of Object Plugins that are attach
 Multiple Object Plugins may be attached to the same object in both Unity and Blender, all from different third party plugins simultaneously. For example, one plugin may handle transmitting the objects mesh representation to Unity while another plugin adds additional vertex data streams, custom properties, or send events triggered by Blender operators.
 
 .. note::
-    Only Blender plugins can control when Object Plugins are instantiated through :py:meth:`.Plugin.instantiate`. Unity will simply copy instantiation from Blender for a matching MonoBehaviour.
+    Only Blender plugins can control when Object Plugins are instantiated through :py:meth:`.GlobalPlugin.instantiate`. Unity will simply copy instantiation from Blender for a matching MonoBehaviour.
 
-A Global Plugin may instantiate Object Plugins at any time after registration but this is typically done within the :py:meth:`.Plugin.on_add_bpy_object` callback. Plugins receive this event callback for every object in the scene and can filter out which objects should have a specific Object Plugin.
+A Global Plugin may instantiate Object Plugins at any time after registration but this is typically done within the :py:meth:`.GlobalPlugin.on_add_bpy_object` callback. Plugins receive this event callback for every object in the scene and can filter out which objects should have a specific Object Plugin.
 
 As an example: we have a plugin that attaches a ``Light`` Object Plugin to every Blender object of type ``LIGHT``:
 
@@ -49,7 +49,7 @@ As an example: we have a plugin that attaches a ``Light`` Object Plugin to every
     def unregister():
         Coherence.api.unregister_plugin(LightsPlugin)
 
-The above example will call :py:meth:`.Plugin.instantiate` to create a copy of the Light class onto every object in the scene of type ``LIGHT``. If lights were previously not synced to Unity, this will now add them as individual GameObjects and keep their transformations synced between applications.
+The above example will call :py:meth:`.GlobalPlugin.instantiate` to create a copy of the Light class onto every object in the scene of type ``LIGHT``. If lights were previously not synced to Unity, this will now add them as individual GameObjects and keep their transformations synced between applications.
 
 To make use of the new Object Plugin from Blender, we want to create a matching Object Plugin in Unity:
 

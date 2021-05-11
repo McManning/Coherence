@@ -51,14 +51,14 @@ Unity API Reference
 
         Add a callback to be executed every time vertex data is synced.
 
-        The callback recieves the Unity :type:`Mesh` that was updated and an :type:`ArrayBuffer`
+        The callback receives the Unity :type:`Mesh` that was updated and an :type:`ArrayBuffer`
         containing the custom per-vertex data generated from Blender.
 
         The number of elements in the buffer match the number of vertices in the Unity :type:`Mesh`.
         When compressing loop elements down to unique vertices, the source buffer from Blender
         will also be compressed the same way to generate unique per-vertex elements.
 
-        This is unlike :py:meth:`.SceneObject.add_custom_vertex_data_stream` where the stream
+        This is unlike :py:meth:`.ObjectPlugin.add_custom_vertex_data_stream` where the stream
         must contain the same number of elements as there are loops in the evaluated Blender mesh.
 
     .. method:: public void RemoveVertexDataStream(string id)
@@ -70,10 +70,10 @@ Unity API Reference
 
         Standard Unity :meth:`MonoBehaviour.Start` method.
 
-        This is equivalent to :py:meth:`.SceneObject.on_create`
+        This is equivalent to :py:meth:`.ObjectPlugin.on_create`
 
     .. method:: void OnDestroy()
 
         Standard Unity :meth:`MonoBehaviour.OnDestroy` method.
 
-        This is equivalent to :py:meth:`.SceneObject.on_destroy`
+        This is equivalent to :py:meth:`.ObjectPlugin.on_destroy`

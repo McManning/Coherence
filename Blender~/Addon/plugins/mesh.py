@@ -1,11 +1,10 @@
 import bpy
-from ..core.plugin import Plugin
-from ..core.scene import SceneObject
+from ..api import GlobalPlugin, ObjectPlugin
 
-class Mesh(SceneObject):
+class Mesh(ObjectPlugin):
     pass
 
-class MeshPlugin(Plugin):
+class MeshPlugin(GlobalPlugin):
     """
     Plugin to handle anything that can be represented as a Mesh
     with default behavior of syncing geometry with Coherence.

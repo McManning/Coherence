@@ -132,7 +132,7 @@ Once Coherence connects the two applications, a "Hello from Unity" message will 
 Sending Object Events
 -----------------------
 
-The same event API is provided for Object Plugins - e.g. :py:meth:`.SceneObject.send_event` and :sphinxsharp:meth:`IObjectPlugin.SendEvent\<T\>`.
+The same event API is provided for Object Plugins - e.g. :py:meth:`.ObjectPlugin.send_event` and :sphinxsharp:meth:`IObjectPlugin.SendEvent\<T\>`.
 
 Similar to Global Plugins, only the matching Object Plugin instance between applications can receive the event. If you have multiple objects with a ``Light`` Object Plugin and send an event from Blender - only the GameObject referencing the same :py:class:`bpy.types.Object` will receive the event for its ``Light`` MonoBehaviour.
 

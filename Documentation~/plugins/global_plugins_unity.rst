@@ -50,44 +50,44 @@ Some sort of C# class doc magic.
 
         Called when the plugin is added to the registered plugins list
 
-        Equivalent to :py:meth:`.Plugin.on_registered`
+        Equivalent to :py:meth:`.GlobalPlugin.on_registered`
 
     .. method:: void OnUnregistered()
 
         Called when the plugin is removed from the registered plugins list
 
-        Equivalent to :py:meth:`.Plugin.on_unregistered`
+        Equivalent to :py:meth:`.GlobalPlugin.on_unregistered`
 
     .. method:: void OnCoherenceEnabled()
 
         Called when the Coherence connection has been enabled.
 
-        Equivalent to :py:meth:`.Plugin.on_enable`
+        Equivalent to :py:meth:`.GlobalPlugin.on_enable`
 
     .. method:: void OnCoherenceDisabled()
 
         Called when the Coherence connection is disabled.
 
-        Equivalent to :py:meth:`.Plugin.on_disable`
+        Equivalent to :py:meth:`.GlobalPlugin.on_disable`
 
     .. method:: void OnCoherenceConnected()
 
         Perform any additional work after Coherence establishes a connection
 
-        Equivalent to :py:meth:`.Plugin.on_connected`
+        Equivalent to :py:meth:`.GlobalPlugin.on_connected`
 
     .. method:: void OnCoherenceDisconnected()
 
         Perform any cleanup after Coherence disconnects from the host.
 
-        Equivalent to :py:meth:`.Plugin.on_disconnected`
+        Equivalent to :py:meth:`.GlobalPlugin.on_disconnected`
 
     .. method:: void OnAddObject(GameObject obj)
         :param(1): GameObject that has been added
 
         Called when a new GameObject is added to Coherence from Blender.
 
-        This is similar to :py:meth:`.Plugin.on_add_bpy_object` but only
+        This is similar to :py:meth:`.GlobalPlugin.on_add_bpy_object` but only
         includes those objects that have been synced from Blender by
         one or more Object Plugins on Blender's side.
 
@@ -98,4 +98,4 @@ Some sort of C# class doc magic.
 
         This is only executed on :type:`ScriptableObject` singleton plugins.
 
-        Similar to :py:meth:`.Plugin.on_remove_bpy_object`
+        Similar to :py:meth:`.GlobalPlugin.on_remove_bpy_object`

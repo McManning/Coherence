@@ -1,5 +1,5 @@
 [WIP] Image Syncing
-==============
+====================
 
 TODO:
     * Creating an image to sync

@@ -2,7 +2,7 @@
 Blender API Reference
 ----------------------
 
-.. autoclass:: Addon.api.SceneObject
+.. autoclass:: Addon.api.ObjectPlugin
     :members:
     :inherited-members:
     :show-inheritance:
