@@ -2,7 +2,5 @@
 Blender API Reference
 ----------------------
 
-.. autoclass:: Addon.api.GlobalPlugin
+.. automodule:: Addon.api
     :members:
-    :inherited-members:
-
