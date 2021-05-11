@@ -17,6 +17,7 @@ Welcome to the Coherence documentation!
    plugins/adding_vertex_streams
    plugins/global_plugins
    plugins/object_plugins
+   plugins/components
 
 .. toctree::
    :caption: Internal Modules

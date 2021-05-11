@@ -6,6 +6,9 @@ class ObjectPlugin(plugin.BaseObjectPlugin):
 class GlobalPlugin(plugin.BaseGlobalPlugin):
     pass
 
+class Component(plugin.BaseComponent):
+    pass
+
 def register_plugin(cls):
     """Register a third party plugin with the Coherence API.
 
@@ -37,6 +40,51 @@ def unregister_plugin(cls):
         cls (inherited class of :class:`.GlobalPlugin`)
     """
     runtime.instance.unregister_plugin(cls)
+
+def register_component(cls):
+    """Register a third party component with the Coherence API.
+
+    :meth:`.Component.on_registered()` will be executed once successfully registered.
+
+    Args:
+        cls (inherited class of :class:`.Component`)
+    """
+    raise NotImplementedError
+
+def unregister_component(cls):
+    """Unregister a third party component from the Coherence API.
+
+    The following event chain is called on the component when unregistered:
+
+    1. :meth:`.Component.on_disable()` - for all instances, if currently enabled
+    2. :meth:`.Component.on_destroy()` - for all instances
+    3. :meth:`.Component.on_unregistered()`
+
+    Args:
+        cls (inherited class of :class:`.Component`)
+    """
+    raise NotImplementedError
+
+def add_component(obj, component):
+    """Add a component to an existing object
+
+    Args:
+        obj (bpy.types.Object):
+        cls (inherited class of :class:`.Component`)
+    """
+    raise NotImplementedError
+
+def remove_component(obj, component):
+    """Remove a component to an existing object
+
+    :meth:`.Component.on_disable()` is called on the component instance if enabled.
+
+    Args:
+        obj (bpy.types.Object):
+        cls (inherited class of :class:`.Component`)
+    """
+    raise NotImplementedError
+
 
 def is_connected_to_unity() -> bool:
     """

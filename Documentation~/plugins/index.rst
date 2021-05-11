@@ -11,3 +11,5 @@ There are two types of plugins supported by Coherence:
 .. include:: ./creating_global_plugins.inc
 
 .. include:: ./creating_object_plugins.inc
+
+.. include:: ./creating_components.inc
