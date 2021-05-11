@@ -1,2 +1,2 @@
-sphinx=4.0.0b1
+sphinx==4.0.0b1
 sphinxsharp==1.0.1

@@ -136,7 +136,7 @@ The same event API is provided for Object Plugins - e.g. :py:meth:`.ObjectPlugin
 
 Similar to Global Plugins, only the matching Object Plugin instance between applications can receive the event. If you have multiple objects with a ``Light`` Object Plugin and send an event from Blender - only the GameObject referencing the same :py:class:`bpy.types.Object` will receive the event for its ``Light`` MonoBehaviour.
 
-Using the ``Light`` example from :doc:`creating_object_plugins` we can use events to transfer light properties from Blender to Unity:
+Using the ``Light`` example from Creating Object Plugins we can use events to transfer light properties from Blender to Unity:
 
 .. code-block:: python
 
