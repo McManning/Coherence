@@ -8,8 +8,8 @@ Global plugins in Blender also have the ability to instantiate new Object Plugin
 
 See :doc:`index` for examples.
 
-.. include:: ./global_plugins_lifecycle.rst
+.. include:: ./global_plugins_lifecycle.inc
 
-.. include:: ./global_plugins_blender.rst
+.. include:: ./global_plugins_blender.inc
 
-.. include:: ./global_plugins_unity.rst
+.. include:: ./global_plugins_unity.inc

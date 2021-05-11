@@ -8,8 +8,8 @@ Object Plugins are always associated with a parent Global Plugin and will automa
 
 See :doc:`index` for examples.
 
-.. include:: ./object_plugins_lifecycle.rst
+.. include:: ./object_plugins_lifecycle.inc
 
-.. include:: ./object_plugins_blender.rst
+.. include:: ./object_plugins_blender.inc
 
-.. include:: ./object_plugins_unity.rst
+.. include:: ./object_plugins_unity.inc

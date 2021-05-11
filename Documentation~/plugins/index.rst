@@ -8,6 +8,6 @@ There are two types of plugins supported by Coherence:
 
 * **Object Plugins** are associated with individual :class:`bpy.types.Object` instances and can send or receive messages designated for that specific object.
 
-.. include:: ./creating_global_plugins.rst
+.. include:: ./creating_global_plugins.inc
 
-.. include:: ./creating_object_plugins.rst
+.. include:: ./creating_object_plugins.inc
