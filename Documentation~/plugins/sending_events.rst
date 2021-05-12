@@ -2,20 +2,20 @@
 Sending Events
 ===============
 
-You can send custom structures of data between two matching Global Plugins or Object Plugins.
+When you have a linked component defined in both Blender and Unity you can send event messages containing custom structures of data between the two applications.
 
 There are a number of restrictions you must be aware of before starting to keep data interchangeable between applications:
 
-* Both plugins must have the same name and parent
-    * The name of the Blender plugin matches the class name. "MyPlugin" would have been the common name of the previous example. For a Unity ScriptableObject, you would use the :sphinxsharp:type:`PluginAttribute` to define your matching plugin name.
-    * For an Object Plugin, you must match both the Object Plugin name and the parent Global Plugin name that instantiated the object from Blender.
+* A component must be instantiated on both sides with the same linked name 
+    * The name of the Blender component matches the class name (e.g. ``Light`` from prior examples). 
+    * A Unity MonoBehaviour uses the :sphinxsharp:type:`ComponentAttribute` to define the matching component name and implements :sphinxsharp:type:`IComponent` to access the required API methods.
 * Your structures must contain only blittable types
-    * Primitive types such as `System.Int16`, `System.Single`, `System.Byte`, are allowed.
+    * Primitive types such as ``System.Int16``, ``System.Single``, ``System.Byte``, are allowed.
     * Pointers are not supported.
-    * C# arrays are not supported, but you *can* use a fixed array in a struct marked `unsafe`.
-    * We do provide some interop types such as `InteropString64` as a fixed length version of `System.String`.
+    * C# arrays are not supported, but you *can* use a fixed array in a struct marked ``unsafe``.
+    * We do provide some interop types such as ``InteropString64`` as a fixed length version of ``System.String``.
 * The size of the structure must fit within a single Node
-    * To calculate maximum size, subtract roughly 1 KB from the *Node Size* in Unity's Coherence Settings window (in Advanced Settings) to account for additional header information sent alongside your structure.
+    * To calculate maximum byte size, subtract roughly 1 KB from the *Node Size* in Unity's Coherence Settings window (under Advanced Settings) to account for additional header information sent alongside your structure.
 
 Starting from Blender, you will want to define your structure through ctypes and send it as an event while Coherence is connected:
 
@@ -32,15 +32,15 @@ Starting from Blender, you will want to define your structure through ctypes and
             ('strval', InteropString64),
         ]
 
-    class MyPlugin(Coherence.api.Plugin):
-        def on_connected(self):
+    class MyPlugin(Coherence.api.Component):
+        def on_enable(self):
             # add a handler for inbound "Foo" events from Unity
             self.add_handler('Foo', self.on_foo)
 
             # Send a "Foo" event to Unity
             self.send_foo(1, 2, 'Hello from Blender')
 
-        def on_disconnected(self):
+        def on_disable(self):
             # Cleanup old handlers
             self.remove_handler('Foo', self.on_foo)
 
@@ -68,9 +68,9 @@ Starting from Blender, you will want to define your structure through ctypes and
 
             self.send_event('Foo', msg)
 
-You can define as many different events and payload structures as you want for your plugin.
+You can define as many different events and payload structures as you want for your component.
 
-Event IDs and payloads **are not shared** between different plugins so in order to receive the event in Unity you will need to create a matching plugin with the same name and handlers for your event:
+In Unity, define your matching component and handlers:
 
 .. code-block:: C#
 
@@ -86,10 +86,10 @@ Event IDs and payloads **are not shared** between different plugins so in order 
         public InteropString64 strval;
     }
 
-    [Plugin("MyPlugin")]
-    public class MyPlugin : ScriptableObject, IPlugin
+    [Component("MyPlugin"), ExecuteAlways]
+    public class MyPlugin : MonoBehaviour, IComponent
     {
-        public void OnConnectCoherence()
+        private void OnEnable()
         {
             // add a handler for inbound "Foo" events from Blender
             AddHandler<FooEvent>("Foo", OnFoo);
@@ -98,7 +98,7 @@ Event IDs and payloads **are not shared** between different plugins so in order 
             SendFoo(1, 2, "Hello from Unity");
         }
 
-        public void OnDisconnectCoherence()
+        private void OnDisable()
         {
             // Cleanup old handlers
             RemoveHandler<FooEvent>("Foo", OnFoo);
@@ -127,16 +127,13 @@ Event IDs and payloads **are not shared** between different plugins so in order 
         }
     }
 
-Once Coherence connects the two applications, a "Hello from Unity" message will be displayed in Blender and a "Hello from Blender" message will be displayed in Unity.
+Once the component is added to an object in Blender and synced between applications, a "Hello from Unity" message will be displayed in Blender and a "Hello from Blender" message will be displayed in Unity.
 
-Sending Object Events
------------------------
 
-The same event API is provided for Object Plugins - e.g. :py:meth:`.ObjectPlugin.send_event` and :sphinxsharp:meth:`IObjectPlugin.SendEvent\<T\>`.
+Example - Blender Lights
+-------------------------
 
-Similar to Global Plugins, only the matching Object Plugin instance between applications can receive the event. If you have multiple objects with a ``Light`` Object Plugin and send an event from Blender - only the GameObject referencing the same :py:class:`bpy.types.Object` will receive the event for its ``Light`` MonoBehaviour.
-
-Using the ``Light`` example from Creating Object Plugins we can use events to transfer light properties from Blender to Unity:
+Coherence does not have a built-in component to sync :class:`bpy.types.Light` objects to Unity. But by using  event API you can achieve this pretty easily:
 
 .. code-block:: python
 
@@ -146,19 +143,26 @@ Using the ``Light`` example from Creating Object Plugins we can use events to tr
     class LightProps(ctypes.Structure):
         """Light properties to send to Unity"""
         _fields_ = [
-            ('type', InteropString64),
+            ('type', InteropString64), # value in ['POINT', 'SUN', 'SPOT', 'AREA']
             ('distance', ctypes.c_float),
             ('r', ctypes.c_float),
             ('g', ctypes.c_float),
             ('b', ctypes.c_float),
         ]
 
-    class Light(Coherence.api.ObjectPlugin):
-        def on_create(self):
+    class Light(Coherence.api.Component):
+        """Component to sync Blender light properties to Unity"""
+        @classmethod 
+        def poll(cls, bpy_obj):
+            # Attach to all Blender lights in the scene 
+            return bpy_obj.type == 'LIGHT'
+
+        def on_enable(self):
+            # Send current light properties once enabled
             self.send_props()
 
         def send_props(self):
-            """Send updated light properties to Unity"""
+            """Send current light properties to Unity"""
             light = self.bpy_obj.data
 
             # Copy bpy.types.Light properties to an event struct
@@ -171,25 +175,25 @@ Using the ``Light`` example from Creating Object Plugins we can use events to tr
 
             self.send_event('UpdateProps', evt)
 
-    class LightsPlugin(Coherence.api.Plugin):
-        def on_add_bpy_object(self, bpy_obj):
-            if bpy_obj.type == 'LIGHT':
-                self.instantiate(Light, bpy_obj)
-
     def register():
-        Coherence.api.register_plugin(LightsPlugin)
+        Coherence.api.register_component(Light)
 
     def unregister():
-        Coherence.api.unregister_plugin(LightsPlugin)
+        Coherence.api.unregister_component(Light)
+
+And the matching Unity component to create and update a :class:`UnityEngine.Light` whenever Blender properties change: 
 
 .. code-block:: C#
 
     using UnityEngine;
     using Coherence;
 
-    [ObjectPlugin("Light", Plugin = "LightsPlugin")]
-    public class BlenderLight : MonoBehaviour, IObjectPlugin
+    [ExecuteAlways]
+    [Component("Light")]
+    public class BlenderLight : MonoBehaviour, IComponent
     {
+        private Light light;
+
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
         public struct Props
         {
@@ -200,17 +204,27 @@ Using the ``Light`` example from Creating Object Plugins we can use events to tr
             public float b;
         }
 
-        /// Standard Unity OnEnable called when attached to a GameObject
         private void OnEnable()
         {
-            AddHandler<Props>("UpdateProps", OnUpdateProps);
+            // Add a light to the synced GameObject
+            light = AddComponent<Light>();
+
+            // Listen to property updates from Blender
+            AddHandler("UpdateProps", OnUpdateProps);
+        }
+
+        private void OnDisable()
+        {
+            RemoveHandler("UpdateProps", OnUpdateProps);
+
+            Destroy(light);
+            light = null;
         }
 
         private void OnUpdateProps(string id, Props props)
         {
-            // Do something with Blender light properties
+            // Update `light` with properties from Blender
         }
     }
 
-A tighter integration to sync Blender lights for the above would involve executing ``send_props`` whenever light properties are modified in Blender's UI in order to notify Unity that properties have been changed by the user.
-
+To further enhance the above example, you can add listeners in Blender to execute ``send_props`` whenever light properties are modified through Blender's UI.

@@ -1,5 +1,5 @@
 
-[WIP] Vertex Data Streams
+Vertex Data Streams
 ==========================
 
 .. error::

@@ -93,6 +93,10 @@ class BaseComponent(PluginMessageHandler):
     def unregister(self):
         self.on_unregistered()
 
+    def destroy(self):
+        """Remove this component from the :attr:`bpy_obj`."""
+        raise NotImplementedError
+
     # Event handlers, merging Object/Global plugin handlers into one
 
     def on_create(self):
@@ -103,9 +107,7 @@ class BaseComponent(PluginMessageHandler):
 
     def on_destroy(self):
         """
-        Executes when this component has been destroyed, either through
-        calling :meth:`destroy()`, a desync within Coherence, or
-        the associated :attr:`bpy_obj` has been removed from the scene.
+        Executes when the :attr:`bpy_obj` has been removed from the scene.
         """
         pass
 

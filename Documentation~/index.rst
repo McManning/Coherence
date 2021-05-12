@@ -12,12 +12,12 @@ Welcome to the Coherence documentation!
 .. toctree::
    :caption: Third Party Plugins
 
-   plugins/index
+   plugins/getting_started
    plugins/sending_events
    plugins/adding_vertex_streams
-   plugins/global_plugins
-   plugins/object_plugins
-   plugins/components
+   plugins/component_lifecycle
+   plugins/blender_api
+   plugins/unity_api
 
 .. toctree::
    :caption: Internal Modules
