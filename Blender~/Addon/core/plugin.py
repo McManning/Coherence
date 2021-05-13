@@ -1,5 +1,8 @@
 
 import bpy
+from bpy.props import PointerProperty
+from bpy.types import PropertyGroup
+
 from . import runtime
 from . import scene
 
@@ -7,22 +10,108 @@ from .utils import (
     PluginMessageHandler
 )
 
-class BaseComponent(PluginMessageHandler):
+class ComponentMap:
+    #: dict[str, dict[str, :class:`.Component`]]: Where key is a
+    # :attr:`bpy.types.Object.name` and the value dictionary is
+    # keyed by the component name
+    _objects: dict
+
+    def __init__(self):
+        self._objects = dict()
+
+    def add_component(self):
+        pass
+
+    def objects(self):
+        """Generator to return objects with components
+
+        Returns:
+            :class:`bpy.types.Object` generator
+        """
+        for name in self._objects.keys():
+            yield bpy.data.objects[name]
+
+    def get_component(self, obj, name):
+        """
+        Args:
+            obj (:class:`bpy.types.Object`):
+            name (str):
+        """
+        pass
+
+class BaseComponent(PropertyGroup):
     """Base class for a third party component"""
+
+    #: dict[str, set]: Message ID mapped to a set of callback methods
+    _handlers: dict
 
     def __init__(self, bpy_obj):
         self._name = bpy_obj.name
         self._has_mesh = False
         self._enabled = False
+        self._handlers = dict()
+
+    # No longer declared - we now use hasattr to determine if the component is autobind.
+    # @classmethod
+    # def poll(cls, bpy_obj):
+    #    """Return true if this component should auto-mount to the object when added to the scene
+    #
+    #    Args:
+    #        bpy_obj (bpy.types.Object): New object to test for support
+    #    """
+    #    return False
+
+    def get_supported_properties(self):
+        """PropertyGroup property names can be synced with Coherence
+
+        Returns:
+            list[str]
+        """
+
+        if not hasattr(self, '__annotations__'):
+            return []
+
+        # TODO: Filter out to only bool, int, string, etc.
+        # OR (since this might be faster) just scan the component
+        # while registering and throw an error if any are defined
+        # that aren't supported.
+        return self.__annotations__.keys()
 
     @classmethod
-    def poll(cls, bpy_obj):
-        """Return true if this component should auto-mount to the object when added to the scene
+    def get_property_group_name(cls):
+        return 'coherence_' + cls.__name__.lower()
 
-        Args:
-            bpy_obj (bpy.types.Object): New object to test for support
+    @classmethod
+    def get_instance(cls, object):
         """
-        return False
+        Returns:
+            Component|None
+        """
+        name = cls.get_property_group_name()
+        if not hasattr(object, name):
+            return None
+
+        return getattr(object, name)
+
+    @classmethod
+    def register(cls):
+        """Register with Blender as a PropertyGroup on the :class:`bpy.types.Object`"""
+        name = cls.get_property_group_name()
+        setattr(bpy.types.Object, name, PointerProperty(type=cls))
+
+    @classmethod
+    def unregister(cls):
+        """Unregister from Blender as a PropertyGroup on the :class:`bpy.types.Object`"""
+        name = cls.get_property_group_name()
+        delattr(bpy.types.Object, name)
+
+    @property
+    def is_autobind(self) -> bool:
+        """bool: Returns true if a ``poll`` method is defined on this component.
+
+        Autobind components cannot be added and removed via the Blender UI
+        """
+        return hasattr(self, 'poll')
 
     @property
     def name(self) -> str:
@@ -40,9 +129,32 @@ class BaseComponent(PluginMessageHandler):
         return bpy.data.objects[self._name]
 
     @property
-    def mesh_uid(self) -> str:
-        # UID calculation from SceneObject for dedup
+    def scene_obj(self):
+        """:class:`.SceneObject`: Get the SceneObject associated with this instance.
+        """
         raise NotImplementedError
+
+    @property
+    def mesh_id(self) -> str:
+        """Union[str, None]: Unique identifier for the mesh attached to the object
+
+        If the object has modifiers applied - this will be unique for
+        that object. Otherwise - this may be a common mesh name that
+        is instanced between multiple objects in the scene.
+        """
+        return None
+
+    @property
+    def material_id(self) -> str:
+        """Union[str, None]: Unique identifier for the material attached to the object
+
+        If there is no bpy_obj or no active material, this returns None.
+        """
+        obj = self.bpy_obj
+        if not obj or not obj.active_material:
+            return None
+
+        return obj.active_material.name
 
     @property
     def enabled(self):
@@ -57,24 +169,21 @@ class BaseComponent(PluginMessageHandler):
             self._enabled = False
             self.on_disable()
 
-    def update_mesh(self, depsgraph, preserve_all_data_layers: bool = True):
-        raise NotImplementedError
-        # Pull logic from SceneObject.update_mesh
-        # This will get called automatically from depsgraph updates
-        # if has_mesh for the FIRST match to mesh_uid
+    @property
+    def mesh_uid(self):
+        """Unique identifier for the mesh associated with this object.
 
+        If a mesh is instanced between different objects and should only be
+        evaluated once, then return the same UID between objects.
 
-    def on_geometry_update(self, depsgraph):
-        """Handle geometry update events from the underlying :class:`bpy.types.Object`
+        If this returns a non-None value, then :meth:`on_update_mesh` must be
+        implemented to handle the request for handling mesh data updates
+        when the depsgraph is modified.
 
-        Args:
-            depsgraph (bpy.types.Depsgraph): Evaluated dependency graph
+        Returns:
+            Union[str, None]
         """
-        pass
-
-        # needs to batch and call update_mesh somehow across multiple.
-        # like this needs to return a callback + ID or something.
-        # This should just have a .has_mesh = True property.
+        return None
 
     @property
     def has_mesh(self):
@@ -85,31 +194,83 @@ class BaseComponent(PluginMessageHandler):
         self._has_mesh = val
         # TODO: Notify runtime that this is provides mesh changes
 
-    @classmethod
-    def register(self):
-        self.on_registered()
+    # TODO: Replacement (I think just global methods)
 
-    @classmethod
-    def unregister(self):
-        self.on_unregistered()
+    # @classmethod
+    # def register(self):
+    #     self.on_registered()
+
+    # @classmethod
+    # def unregister(self):
+    #     self.on_unregistered()
+
+    def add_handler(self, id: str, callback):
+        """
+        Add an event handler for when Unity sends a custom message
+        for this object (e.g. through a associated Unity plugin)
+
+        Args:
+            id (str):   Unique message ID
+            callback:   Callback to execute when receiving the message
+        """
+        if not self._handlers:
+            self._handlers = {}
+
+        handlers = self._handlers.get(id, set())
+        self._handlers.add(callback)
+        self._handlers[id] = handlers
+
+    def remove_handler(self, id: str, callback):
+        """Remove a callback previously added with :meth:`add_handler()`
+
+        Args:
+            id (str):   Unique message ID
+            callback:   Callback to execute when receiving the message
+
+        Raises:
+            KeyError:   If the handler was not registered
+        """
+        self._handlers[id].remove(callback)
+
+    def remove_all_handlers(self):
+        """Remove all callbacks for inbound messages"""
+        self._handlers = {}
+
+    def send_event(self, id: str, size: int, data):
+        """Send an arbitrary block of data to Unity.
+
+        Data sent will be associated with this object on the Unity side.
+
+        Args:
+            id (str):           Unique message ID
+            size (int):         Size of the payload to send
+            data (c_void_p):    Payload to send
+
+        Returns:
+            int: non-zero on failure
+        """
+        raise NotImplementedError
+
+    def _dispatch(self, message):
+        """Dispatch a message to all listeners
+
+        Args:
+            message (:class:`.InteropPluginMessage`)
+
+        Raises:
+            KeyError: If no handler is registered for inbound message ID
+        """
+        self._handlers[message.id].dispatch(
+            message.id,
+            message.size,
+            message.data
+        )
+
+    # TODO: Document global method for destroying components
 
     def destroy(self):
         """Remove this component from the :attr:`bpy_obj`."""
         raise NotImplementedError
-
-    # Event handlers, merging Object/Global plugin handlers into one
-
-    def on_create(self):
-        """
-        Executes after the component has been created and synced with Coherence.
-        """
-        pass
-
-    def on_destroy(self):
-        """
-        Executes when the :attr:`bpy_obj` has been removed from the scene.
-        """
-        pass
 
     @classmethod
     def on_registered(cls):
@@ -119,6 +280,19 @@ class BaseComponent(PluginMessageHandler):
     @classmethod
     def on_unregistered(cls):
         """Perform any cleanup that needs to be done before unloading this plugin"""
+        pass
+
+    def on_create(self):
+        """
+        Executes after the component has been created and synced with Coherence.
+        """
+        pass
+
+    def on_destroy(self):
+        """
+        Executes when the :class:`bpy.types.Object` has been removed from the scene
+        or this component has been removed from the object.
+        """
         pass
 
     def on_disable(self):
@@ -153,6 +327,17 @@ class BaseComponent(PluginMessageHandler):
         have been destroyed through :meth:`destroy_all_objects()`.
         """
         pass
+
+    def on_update_mesh(self, depsgraph):
+        """Handle mesh update events from the underlying :class:`bpy.types.Object`
+
+        If the mesh is instanced across multiple objects, only one one of
+        objects will receive this event.
+
+        Args:
+            depsgraph (bpy.types.Depsgraph): Evaluated dependency graph
+        """
+        raise NotImplementedError('This must be implemented if there is a mesh_uid')
 
     def add_vertex_data_stream(self, id: str, size: int, callback):
         """

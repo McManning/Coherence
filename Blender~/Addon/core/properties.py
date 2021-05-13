@@ -19,7 +19,7 @@ from util.registry import autoregister
 def _update_object_properties(self, context):
     """
     Args:
-        self (CoherenceObjectSettings)
+        self (CoherenceObjectProperties)
         context (bpy.types.Context)
     """
     obj = runtime.instance.objects.find_by_bpy_name(context.object.name)

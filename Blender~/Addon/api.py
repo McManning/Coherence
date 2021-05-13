@@ -65,7 +65,7 @@ def unregister_component(cls):
     """
     raise NotImplementedError
 
-def add_component(obj, component):
+def add_component(obj, cls):
     """Add a component to an existing object
 
     Args:
@@ -74,16 +74,24 @@ def add_component(obj, component):
     """
     raise NotImplementedError
 
-def remove_component(obj, component):
-    """Remove a component to an existing object
+def destroy_component(obj, cls):
+    """Remove a component from an existing object
 
-    :meth:`.Component.on_disable()` is called on the component instance if enabled.
+    The following event chain is called on the component when destroyed:
+
+    1. :meth:`.Component.on_disable()` - if currently enabled
+    2. :meth:`.Component.on_destroy()`
+
+    If there is a linked Unity component that
+    will also be destroyed through Unity's API.
 
     Args:
         obj (bpy.types.Object):
         cls (inherited class of :class:`.Component`)
     """
-    raise NotImplementedError
+    # Delegates off to .destroy of the component instance for the heavy lifting.
+    instance = cls.get_instance(obj)
+    instance.destroy()
 
 
 def is_connected_to_unity() -> bool:

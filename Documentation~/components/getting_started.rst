@@ -2,7 +2,7 @@
 Writing Third Party Plugins
 ============================
 
-Coherence plugins take the form of **Components** - as Python classes or Unity MonoBehaviours - that are added and removed from :class:`bpy.types.Object` instances in the scene. 
+Coherence plugins take the form of **Components** - as Python classes or Unity MonoBehaviours - that are added and removed from :class:`bpy.types.Object` instances in the scene.
 
 A third party component attached to an object can listen to Coherence events (enabled, connected, etc) and send or receive custom events with a linked component in the connected application.
 
@@ -10,7 +10,7 @@ A third party component attached to an object can listen to Coherence events (en
 
     All components on the same :class:`bpy.types.Object` share the same synced GameObject, so you can essentially think of each Coherence Component as our Blender-equivalent to MonoBehaviours.
 
-Creating Blender Components 
+Creating Blender Components
 ----------------------------
 
 Blender is used for the "source of truth" of which objects in the scene should sync with Unity. Only objects with one or more components are synced to Unity.
@@ -88,7 +88,7 @@ Add a new MonoBehaviour to your Unity project:
         }
     }
 
-The :sphinxsharp:type:`ComponentAttribute` of your MonoBehaviour must match the name of the component class in Blender (``Light`` in the prior example). 
+The :sphinxsharp:type:`ComponentAttribute` of your MonoBehaviour must match the name of the component class in Blender (``Light`` in the prior example).
 
 To make sure the component works in edit mode you will also need to add Unity's `[ExecuteAlways] <https://docs.unity3d.com/ScriptReference/ExecuteAlways.html>`_ attribute.
 
@@ -97,35 +97,6 @@ By adding the :sphinxsharp:type:`IComponent` interface to the MonoBehaviour your
 After recompiling assemblies register your component with Coherence by selecting it in the **Register Component** button menu in Unity's Coherence Settings window.
 
 Once you have added both synced components you can start using the Component API to share events and data between applications.
-
-
-Scene Components 
--------------------------
-
-Instead of attaching components to individual :class:`bpy.types.Object` instances, you can attach components directly to the scene itself.
-
-Use your current scene for :meth:`add_component`:
-
-.. code-block:: python 
-
-    class MyPlugin(Coherence.api.Component):
-        def on_enable(self):
-            print('Enabled!')
-
-    def register():
-        scene = bpy.context.scene
-        Coherence.api.register_component(MyPlugin)
-        Coherence.api.add_component(scene, MyPlugin)
-
-    def unregister():
-        Coherence.api.unregister_component(MyPlugin)
-
-The linked MonoBehaviour in Unity will attach itself directly to the **root** GameObject used by Coherence sync. All other GameObjects synced from Blender will be hierarchical children of this root. 
-
-.. note::
-    Vertex data streams and meshes are not supported for scene components.
-
-    If you need to support these features, add an empty object in Blender and attach a component to that.
 
 
 Removing Components
