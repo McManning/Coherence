@@ -8,5 +8,5 @@ Snake-case user callbacks in Blender match with PascalCase callbacks in Unity. F
 
 .. image:: ../diagrams/legend.svg
 
-.. image:: ../diagrams/global_plugins_lifecycle.svg
+.. image:: ../diagrams/component_lifecycle.svg
 

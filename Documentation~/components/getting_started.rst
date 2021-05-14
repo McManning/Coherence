@@ -64,7 +64,7 @@ If this is the first component attached to the object then Coherence will start 
 Creating Unity Components
 --------------------------
 
-After a component has been attached to an object in Blender, a matching :sphinxsharp:type:`UnityEngine.MonoBehaviour` can be automatically added to the synced GameObject.
+After a component has been attached to an object in Blender a linked :sphinxsharp:type:`UnityEngine.MonoBehaviour` can be automatically added to the matching GameObject.
 
 Add a new MonoBehaviour to your Unity project:
 
@@ -102,7 +102,7 @@ Once you have added both synced components you can start using the Component API
 Removing Components
 --------------------
 
-Calling :meth:`.Component.destroy` or :func:`destroy_component` from Blender will remove **both** the Blender Component and the matching Unity MonoBehaviour:
+Calling :meth:`.Component.destroy` or :func:`destroy_component` from Blender will remove **both** the Blender Component and the linked Unity MonoBehaviour:
 
 .. code-block:: python
 
@@ -111,11 +111,5 @@ Calling :meth:`.Component.destroy` or :func:`destroy_component` from Blender wil
 
 Like Unity, both :meth:`.Component.on_disable` and :meth:`.Component.on_destroy` will be called when removed.
 
-If an object has no components remaining, it will no longer be synced and the matching :sphinxsharp:type:`UnityEngine.GameObject` will be destroyed.
-
-When removing a Scene Component, provide your current scene for :func:`destroy_component`:
-
-.. code-block:: python
-
-    scene = bpy.context.scene
-    Coherence.api.destroy_component(scene, MyPlugin)
+.. important::
+    If an object has no components remaining, it will no longer be synced and the linked :sphinxsharp:type:`UnityEngine.GameObject` will be destroyed.

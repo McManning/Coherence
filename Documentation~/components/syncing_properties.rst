@@ -11,9 +11,9 @@ Declare your properties as annotations like you would for any typical PropertyGr
     from bpy.props import ( StringProperty, IntProperty, BoolProperty )
 
     class MyComponent(Coherence.api.Component):
-        strval: StringProperty(name='String Value')
-        intval: IntProperty(name='Int Value')
-        boolval: BoolProperty(name='Boolean Value')
+        BoolVal: BoolProperty(name='Boolean Value')
+        IntVal: IntProperty(name='Int Value')
+        StrVal: StringProperty(name='String Value')
 
         ...
 
@@ -22,8 +22,34 @@ Declared properties will be editable within your object's *Coherence Components*
 .. image:: https://i.imgur.com/q0Z4uSz.png
     :alt: Blender Component UI
 
+If you have a linked Unity component, properties that are updated in Blender will automatically update their matching C# properties in Unity:
+
+.. code-block:: C#
+
+    using UnityEngine;
+    using Coherence;
+
+    [ExecuteAlways]
+    [Component("MyComponent")]
+    public class MyComponent : MonoBehaviour, IComponent
+    {
+        public bool BoolVal { get; set; }
+
+        public int IntVal { get; set; }
+
+        public string StrVal {
+            get { return m_stringVal; }
+            set {
+                m_StringVal = value;
+                Debug.Log("Updated StrVal=" + value);
+            }
+        }
+
+        private string m_stringVal;
+    }
+
 .. note::
-    TODO: Unity API on how to consume these property changes (property setters? Array with props and their values?)
+    TODO: Might eventually do some snake to studly conversion as part of this API since the studly caps aren't exactly pythonic for properties. But this wouldn't be a backwards breaking change.
 
 Limitations
 ------------
