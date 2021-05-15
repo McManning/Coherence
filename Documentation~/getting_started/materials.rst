@@ -1,6 +1,6 @@
 
-Mapping Materials to Unity
-===========================
+Materials
+==========
 
 The **Material Settings** section in Unity's `Coherence Settings` window defines the mapping from Blender material names to Unity material assets.
 

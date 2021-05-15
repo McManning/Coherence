@@ -5,9 +5,10 @@ Welcome to the Coherence documentation!
 .. toctree::
    :caption: Getting Started
 
-   getting_started
-   materials
-   image
+   getting_started/installation
+   getting_started/basic_usage
+   getting_started/materials
+   getting_started/images
 
 .. toctree::
    :caption: Third Party Plugins

@@ -1,25 +1,26 @@
 
-Download
-==========
+Installation
+=============
 
-Stable Releases
-----------------
+Requirements
+-------------
+
+Coherence is currently only supported on Windows 10. It uses a number of features for inter-process communication that are only available on Windows.
+
+Testing is done with Blender 2.91 and Unity 2020.1.3 but Coherence should work with later versions.
+
+
+Download
+---------
 
 .. note::
     Release packages are not available yet.
-
-
-Unstable (Latest)
-------------------
 
 Download artifacts `from the most recent Build Packages job <https://github.com/McManning/Coherence/actions?query=workflow%3A%22Build+Packages%22>`_.
 
 .. warning::
     These artifacts update whenever the master branch is pushed, which may include various breaking changes or bugs.
 
-
-Installation
-=============
 
 Installing the Blender Addon
 -----------------------------
@@ -64,37 +65,3 @@ In *File > Project Settings* go to the Player settings and enable `Allow 'unsafe
 
 .. image:: https://i.imgur.com/w0KuaUq.png
     :alt: Unity Project Settings Window
-
-
-Basic Usage
-============
-
-Starting Coherence
---------------------------------
-
-
-After installing into both Unity and Blender, you will need to "start" both ends to open a channel for communication.
-
-In Unity - this is done by clicking the *Start* button in the Coherence Settings window.
-
-.. image:: https://i.imgur.com/iuSVJpE.png
-    :alt: Start Coherence in Unity
-
-In Blender - select the Coherence render engine in *Render Properties* and then click the *Start Coherence* button:
-
-.. image:: https://i.imgur.com/xsc4Jky.png
-    :alt: Start Coherence in Blender
-
-.. TODO: New coherence start button pics
-
-The render from Unity will only display in your viewport when you are using either the Material Preview or Render Preview mode. Click on either of these to activate the render engine:
-
-.. image:: https://i.imgur.com/o1ex6nE.png
-    :alt: Viewport Shading UI
-
-If everything works as intended you should see the Unity scene, including your objects, synced up into the Blender viewport:
-
-.. image:: https://i.imgur.com/78fkHIA.png
-    :alt: Blender Viewport Render
-
-

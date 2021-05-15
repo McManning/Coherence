@@ -4,6 +4,25 @@ Syncing Properties
 
 You can add Blender properties to a component class to automatically sync changes with Unity.
 
+Limitations
+------------
+
+Only a subset of Blender property types are currently supported:
+
+* :class:`bpy.props.StringProperty`
+* :class:`bpy.props.IntProperty`
+* :class:`bpy.props.BoolProperty`
+* :class:`bpy.props.IntProperty`
+* :class:`bpy.props.FloatProperty`
+* :class:`bpy.props.FloatVectorProperty`
+* :class:`bpy.props.EnumProperty`
+
+.. TODO: Subtype/unit support information?
+
+
+Adding Properties in Blender
+-----------------------------
+
 Declare your properties as annotations like you would for any typical PropertyGroup:
 
 .. code-block:: python
@@ -21,6 +40,9 @@ Declared properties will be editable within your object's *Coherence Components*
 
 .. image:: https://i.imgur.com/q0Z4uSz.png
     :alt: Blender Component UI
+
+Accessing Properties from Unity
+--------------------------------
 
 If you have a linked Unity component, properties that are updated in Blender will automatically update their matching C# properties in Unity:
 
@@ -48,21 +70,5 @@ If you have a linked Unity component, properties that are updated in Blender wil
         private string m_stringVal;
     }
 
-.. note::
-    TODO: Might eventually do some snake to studly conversion as part of this API since the studly caps aren't exactly pythonic for properties. But this wouldn't be a backwards breaking change.
-
-Limitations
-------------
-
-Only a subset of Blender property types are supported:
-
-* :class:`bpy.props.StringProperty`
-* :class:`bpy.props.IntProperty`
-* :class:`bpy.props.BoolProperty`
-* :class:`bpy.props.IntProperty`
-* :class:`bpy.props.FloatProperty`
-* :class:`bpy.props.FloatVectorProperty`
-* :class:`bpy.props.EnumProperty`
-
-.. note::
-    TODO: Subtype/unit support information?
+.. important::
+    Properties are currently one-way. Updating a property in Unity will not reflect those changes back in Blender.

@@ -1,5 +1,6 @@
 import bpy
 from .. import api
+from ..util import error
 
 class Mesh(api.Component):
     """
@@ -38,4 +39,38 @@ class Mesh(api.Component):
 
         # If there are modifiers - we need to generate a unique
         # name for this object + mesh combination.
-        return '{}_{}'.format(self.name[:40], hex(id(bpy_obj)))
+        # This ends up something like `Cube.001_0x1d4d765ca40`
+        return '{}_{}'.format(self.name[:40], hex(id(self)))
+
+    def send_evaluated_mesh(self, depsgraph, preserve_all_data_layers: bool = True):
+        """
+        Attempt to evaluate a mesh from the associated `bpy.types.Object`
+        using the provided depsgraph and send to Unity
+
+        Args:
+            depsgraph (bpy.types.Depsgraph): Evaluated dependency graph
+            preserve_all_data_layers (bool): Preserve all data layers in the mesh, like UV maps
+                                            and vertex groups. By default Blender only computes
+                                            the subset of data layers needed for viewport display
+                                            and rendering for better performance.
+        """
+        mesh_uid = self.mesh_uid
+        if not mesh_uid:
+            return
+
+        try:
+            # ...
+            pass
+        except Exception as e:
+            error('Could not send mesh', e)
+
+    def on_update_mesh(self, depsgraph):
+        """Callback from the runtime's depsgraph evaluation.
+
+        This method gets executed per *unique* mesh_uid that
+        had a geometry update this tick.
+
+        Args:
+            depsgraph (bpy.types.Depsgraph): Evaluated dependency graph
+        """
+        self.send_evaluated_mesh(self, depsgraph)

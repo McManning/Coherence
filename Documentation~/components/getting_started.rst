@@ -1,13 +1,12 @@
 
-Writing Third Party Plugins
-============================
+Writing Components
+===================
 
-Coherence plugins take the form of **Components** - as Python classes or Unity MonoBehaviours - that are added and removed from :class:`bpy.types.Object` instances in the scene.
+Third party developers can create **Coherence Components** - as Python classes or Unity MonoBehaviours - that are added and removed from :class:`bpy.types.Object` instances in the scene.
 
-A third party component attached to an object can listen to Coherence events (enabled, connected, etc) and send or receive custom events with a linked component in the connected application.
+A third party component attached to an object can listen to Coherence events (enabled, connected, etc), share properties, and send or receive custom events between applications.
 
 .. tip::
-
     All components on the same :class:`bpy.types.Object` share the same synced GameObject, so you can essentially think of each Coherence Component as our Blender-equivalent to MonoBehaviours.
 
 Creating Blender Components
