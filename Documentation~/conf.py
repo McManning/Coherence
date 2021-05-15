@@ -27,8 +27,8 @@ copyright = '2021, Chase McManning'
 author = 'Chase McManning'
 
 # The full version, including alpha/beta/rc tags
-release = '1.0.0a'
-version = release
+# release = 'latest'
+# version = release
 
 
 # -- General configuration ---------------------------------------------------

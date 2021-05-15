@@ -1,6 +1,12 @@
 
-Welcome to the Coherence documentation!
-========================================
+Coherence
+===========
+
+Coherence is a Digital Content Creation (DCC) tool for syncing your assets in Blender with Unity in realtime.
+
+Coherence combines Blender's suite of modeling and sculpting tools with the realtime rendering of Unity to help visualize what your assets will look like in your Unity scene directly from within the Blender viewport as you work.
+
+We also provide a third party components API so that you can customize your own asset pipeline between applications.
 
 .. toctree::
    :caption: Getting Started
@@ -14,8 +20,8 @@ Welcome to the Coherence documentation!
    :caption: Third Party Plugins
 
    components/getting_started
-   components/sending_events
    components/syncing_properties
+   components/sending_events
    components/adding_vertex_streams
    components/lifecycle
    components/blender_api

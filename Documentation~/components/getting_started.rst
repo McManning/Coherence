@@ -9,6 +9,7 @@ A third party component attached to an object can listen to Coherence events (en
 .. tip::
     All components on the same :class:`bpy.types.Object` share the same synced GameObject, so you can essentially think of each Coherence Component as our Blender-equivalent to MonoBehaviours.
 
+
 Creating Blender Components
 ----------------------------
 
@@ -29,12 +30,6 @@ To add your own component start by creating a Blender addon that registers a new
     import Coherence
 
     class Light(Coherence.api.Component):
-        """Custom component representing our Blender light.
-        """
-        @classmethod
-        def poll(cls, bpy_obj):
-            return bpy_obj.type == 'LIGHT'
-
         def on_create(self):
             print('Added Light Component!')
 
@@ -49,9 +44,15 @@ To add your own component start by creating a Blender addon that registers a new
 
 The class name ``Light`` is our common component name shared between applications and must be unique across all third party plugins registered with Coherence.
 
-After the plugin has been registered all existing and new objects in the scene will be tested against the component's :meth:`.Component.poll` to determine if that component should automatically attach itself to that scene object.
+After the component has been registered you can use the Object's *Coherence Components* panel to add your component to an object by clicking the *Add Component* button.
 
-If you want to manually attach components instead of using :meth:`Component.poll` you can use :func:`add_component` at any time after the component has been registered:
+.. image:: ../images/add_component_button.png
+    :alt: Add Component Button
+
+.. important::
+    You can only attach a single instance of a component per object.
+
+You can also add a component to an object through the Coherence API.
 
 .. code-block:: python
 
@@ -59,6 +60,7 @@ If you want to manually attach components instead of using :meth:`Component.poll
     Coherence.api.add_component(sun, Light)
 
 If this is the first component attached to the object then Coherence will start syncing the object's transformation with Unity as a new :sphinxsharp:type:`UnityEngine.GameObject`.
+
 
 Creating Unity Components
 --------------------------
@@ -101,7 +103,7 @@ Once you have added both synced components you can start using the Component API
 Removing Components
 --------------------
 
-Calling :meth:`.Component.destroy` or :func:`destroy_component` from Blender will remove **both** the Blender Component and the linked Unity MonoBehaviour:
+Calling :meth:`.Component.destroy` or :func:`destroy_component` from Blender will remove **both** the Blender Component and the linked Unity MonoBehaviour.
 
 .. code-block:: python
 
@@ -112,3 +114,28 @@ Like Unity, both :meth:`.Component.on_disable` and :meth:`.Component.on_destroy`
 
 .. important::
     If an object has no components remaining, it will no longer be synced and the linked :sphinxsharp:type:`UnityEngine.GameObject` will be destroyed.
+
+Automatic Binding
+------------------
+
+Components can be written to automatically add themselves to objects in your scene instead of manually through the Blender UI or API.
+
+Declare a ``poll`` class method in your component that accepts a :class:`bpy.types.Object`. Whenever Coherence checks for new objects in the scene, your component's ``poll`` will be executed against each object to determine if Coherence should automatically add it as a new component.
+
+.. code-block:: python
+
+    class Light(Coherence.api.Component):
+        @classmethod
+        def poll(cls, obj):
+            """Test if this component should automatically bind to an object
+
+            Args:
+                obj (bpy.types.Object)
+
+            Returns:
+                bool
+            """
+            # Automatically add this component to all LIGHT objects
+            return obj.type == 'LIGHT'
+
+        # ... rest of your component ...

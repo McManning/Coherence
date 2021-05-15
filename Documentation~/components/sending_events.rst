@@ -6,8 +6,8 @@ When you have a linked component defined in both Blender and Unity you can send 
 
 There are a number of restrictions you must be aware of before starting to keep data interchangeable between applications:
 
-* A component must be instantiated on both sides with the same linked name 
-    * The name of the Blender component matches the class name (e.g. ``Light`` from prior examples). 
+* A component must be instantiated on both sides with the same linked name
+    * The name of the Blender component matches the class name (e.g. ``Light`` from prior examples).
     * A Unity MonoBehaviour uses the :sphinxsharp:type:`ComponentAttribute` to define the matching component name and implements :sphinxsharp:type:`IComponent` to access the required API methods.
 * Your structures must contain only blittable types
     * Primitive types such as ``System.Int16``, ``System.Single``, ``System.Byte``, are allowed.
@@ -133,7 +133,7 @@ Once the component is added to an object in Blender and synced between applicati
 Example - Blender Lights
 -------------------------
 
-Coherence does not have a built-in component to sync :class:`bpy.types.Light` objects to Unity. But by using  event API you can achieve this pretty easily:
+Coherence does not have a built-in component to sync :class:`bpy.types.Light` objects to Unity. But by using the event API you can achieve this pretty easily:
 
 .. code-block:: python
 
@@ -152,9 +152,9 @@ Coherence does not have a built-in component to sync :class:`bpy.types.Light` ob
 
     class Light(Coherence.api.Component):
         """Component to sync Blender light properties to Unity"""
-        @classmethod 
+        @classmethod
         def poll(cls, bpy_obj):
-            # Attach to all Blender lights in the scene 
+            # Attach to all Blender lights in the scene
             return bpy_obj.type == 'LIGHT'
 
         def on_enable(self):
@@ -181,7 +181,7 @@ Coherence does not have a built-in component to sync :class:`bpy.types.Light` ob
     def unregister():
         Coherence.api.unregister_component(Light)
 
-And the matching Unity component to create and update a :class:`UnityEngine.Light` whenever Blender properties change: 
+And the matching Unity component to create and update a :class:`UnityEngine.Light` whenever Blender properties change:
 
 .. code-block:: C#
 
