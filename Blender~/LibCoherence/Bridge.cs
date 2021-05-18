@@ -9,7 +9,7 @@ namespace Coherence
     public delegate int MessageHandler(string target, IntPtr ptr);
 
     /// <summary>
-    /// Manage shared memory buffers and messages between Blender and Unity
+    /// Manage shared memory buffers and messages between applications
     /// </summary>
     ///
     class Bridge : IDisposable
@@ -255,7 +255,7 @@ namespace Coherence
                 lastUpdateFromUnity = DateTime.Now;
 
                 // Message to be handled within Python.
-                if (header.type == RpcRequest.PluginMessage)
+                if (header.type == RpcRequest.ComponentMessage)
                 {
                     return 0;
                 }
@@ -279,7 +279,7 @@ namespace Coherence
         /// <param name="entity"></param>
         internal void SendEntity<T>(RpcRequest type, IInteropSerializable<T> entity) where T : struct
         {
-            if (!IsConnectedToSharedMemory)
+            if (!IsConnectedToUnity)
             {
                 return;
             }
@@ -290,7 +290,7 @@ namespace Coherence
 
         internal void SendArray<T>(RpcRequest type, string target, IArray<T> buffer) where T : struct
         {
-            if (!IsConnectedToSharedMemory || buffer.Length < 1)
+            if (!IsConnectedToUnity || buffer.Length < 1)
             {
                 return;
             }
@@ -303,14 +303,19 @@ namespace Coherence
         }
 
         /// <summary>
-        /// Send <b>everything</b> we have to Unity - viewports, objects, mesh data, etc.
+        /// Send <b>everything</b> we have to Unity - viewports, objects, components, mesh data, etc.
         /// </summary>
         private void SendAllSceneData()
         {
             // Send all objects currently in the scene
-            foreach (var obj in objects)
+            foreach (var obj in objects.Values)
             {
-                SendEntity(RpcRequest.AddObjectToScene, obj.Value);
+                SendEntity(RpcRequest.AddObject, obj);
+
+                foreach (var component in obj.components)
+                {
+                    SendEntity(RpcRequest.AddComponent, component);
+                }
             }
 
             // Send active viewports and their visibility lists
@@ -484,7 +489,7 @@ namespace Coherence
         {
             if (!objects.ContainsKey(name))
             {
-                throw new Exception($"Object `{name}` does not exist in the scene");
+                throw new Exception($"Object [{name}] does not exist in the scene");
             }
 
             return objects[name];
@@ -494,42 +499,75 @@ namespace Coherence
         {
             if (objects.ContainsKey(obj.Name))
             {
-                throw new Exception($"Object `{obj.Name}` already exists in the scene");
+                throw new Exception($"Object [{obj.Name}] already exists in the scene");
             }
 
             objects[obj.Name] = obj;
 
-            SendEntity(RpcRequest.AddObjectToScene, obj);
+            SendEntity(RpcRequest.AddObject, obj);
         }
 
         public void RemoveObject(string name)
         {
             if (!objects.ContainsKey(name))
             {
-                throw new Exception($"Object `{name}` does not exist in the scene");
+                throw new Exception($"Object [{name}] does not exist in the scene");
             }
 
             var obj = objects[name];
-            SendEntity(RpcRequest.RemoveObjectFromScene, obj);
+            SendEntity(RpcRequest.RemoveObject, obj);
             objects.Remove(name);
         }
 
         #endregion
 
-        #region Texture Sync
+        #region Component Management
 
-        public readonly List<Texture> Textures = new List<Texture>()
+        public Component GetComponent(SceneObject obj, string name)
         {
-            new Texture("Foo"),
-            new Texture("Bar")
+            var component = obj.components.Find((c) => c.Name == name);
+            if (component == null)
+            {
+                throw new Exception($"Object [{obj.Name}] does not have component [{name}]");
+            }
+
+            return component;
+        }
+
+        public void AddComponent(SceneObject obj, string name, bool enabled)
+        {
+            var component = new Component(name, obj.Name, enabled);
+            obj.components.Add(component);
+
+            SendEntity(RpcRequest.AddComponent, component);
+        }
+
+        public void DestroyComponent(SceneObject obj, string name)
+        {
+            var component = GetComponent(obj, name);
+            obj.components.Remove(component);
+
+            SendEntity(RpcRequest.DestroyComponent, component);
+        }
+
+        // getcomponent
+
+        #endregion
+
+        #region Image Sync
+
+        public readonly List<Image> Images = new List<Image>()
+        {
+            new Image("Foo"),
+            new Image("Bar")
         };
 
-        public Texture GetTexture(string name)
+        public Image GetImage(string name)
         {
-            var match = Textures.Find((tex) => tex.Name == name);
+            var match = Images.Find((tex) => tex.Name == name);
             if (match == null)
             {
-                throw new Exception($"Texture `{name}` does not exist");
+                throw new Exception($"Image `{name}` does not exist");
             }
 
             return match;

@@ -27,7 +27,7 @@ namespace Coherence
         /// </summary>
         private Texture2D tempTexture;
 
-        internal void UpdateFromInterop(InteropTexture data)
+        internal void UpdateFromInterop(InteropImage data)
         {
             if (target is RenderTexture)
             {

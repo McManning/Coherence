@@ -629,16 +629,16 @@ namespace Coherence
                         break;
 
                     // Object messages
-                    case RpcRequest.AddObjectToScene:
+                    case RpcRequest.AddObject:
                         AddObject(
                             target,
                             FastStructure.PtrToStructure<InteropSceneObject>(ptr)
                         );
                         break;
-                    case RpcRequest.RemoveObjectFromScene:
+                    case RpcRequest.RemoveObject:
                         RemoveObject(target);
                         break;
-                    case RpcRequest.UpdateSceneObject:
+                    case RpcRequest.UpdateObject:
                         UpdateObject(
                             target,
                             FastStructure.PtrToStructure<InteropSceneObject>(ptr)
@@ -703,12 +703,12 @@ namespace Coherence
                         break;
 
                     // Texture messages
-                    case RpcRequest.UpdateTexture:
+                    case RpcRequest.UpdateImage:
                         GetTexture(target).UpdateFromInterop(
-                            FastStructure.PtrToStructure<InteropTexture>(ptr)
+                            FastStructure.PtrToStructure<InteropImage>(ptr)
                         );
                         break;
-                    case RpcRequest.UpdateTextureData:
+                    case RpcRequest.UpdateImageData:
                         GetTexture(target).CopyFrom(
                             ptr, header.index, header.count, header.length
                         );

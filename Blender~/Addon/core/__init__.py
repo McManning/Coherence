@@ -9,7 +9,10 @@ if 'bpy' in locals():
     importlib.reload(engine)
     importlib.reload(operators)
     importlib.reload(panels)
-    importlib.reload(scene)
+    importlib.reload(plugin)
+    importlib.reload(component)
+    importlib.reload(scene_objects)
+    importlib.reload(image_sync)
 else:
     from . import properties
     from . import interop
@@ -18,6 +21,9 @@ else:
     from . import engine
     from . import operators
     from . import panels
-    from . import scene
+    from . import plugin
+    from . import component
+    from . import scene_objects
+    from . import image_sync
 
 import bpy

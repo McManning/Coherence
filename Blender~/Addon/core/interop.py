@@ -108,10 +108,10 @@ class RenderTextureData(Structure):
         ('pixels', POINTER(c_ubyte))
     ]
 
-# RpcMessage ID for InteropPluginMessage payloads.
-RPC_PLUGIN_MESSAGE_ID = 255
+# RpcMessage ID for InteropComponentMessage payloads.
+RPC_COMPONENT_MESSAGE_ID = 255
 
-class InteropPluginMessage(Structure):
+class InteropComponentMessage(Structure):
     _fields_ = [
         ('target', InteropString64),
         ('id', InteropString64),
@@ -139,17 +139,16 @@ class InteropMessage(Structure):
     def invalid(self):
         return self.header.type < 1
 
-    def as_plugin_message(self):
-        """Reinterpret as InteropPluginMessage
+    def as_component_message(self):
+        """Reinterpret as InteropComponentMessage
 
         Returns:
-            Union[:class:`.InteropPluginMessage`, None]
+            Union[:class:`.InteropComponentMessage`, None]
         """
-        if self.header.type != RPC_PLUGIN_MESSAGE_ID:
+        if self.header.type != RPC_COMPONENT_MESSAGE_ID:
             return None
 
-        plugin_msg = InteropPluginMessage.from_address(self.data)
-        return plugin_msg
+        return InteropComponentMessage.from_address(self.data)
 
 def identity():
     """Get the identity matrix
@@ -329,6 +328,17 @@ def to_interop_int_array(arr):
 
     return result
 
+def update_transform(obj):
+    """Send a transform of the given object to Coherence
+
+    Args:
+        obj (bpy.types.Object)
+    """
+    lib.SetObjectTransform(
+        get_string_buffer(obj.name),
+        to_interop_transform(obj)
+    )
+
 def load_library(path: str):
     """Load LibCoherence and typehint methods
 
@@ -416,3 +426,8 @@ def load_library(path: str):
 #     kernel32 = WinDLL('kernel32', use_last_error=True)
 #     kernel32.FreeLibrary.argtypes = [wintypes.HMODULE]
 #     kernel32.FreeLibrary(handle)
+
+# Location of the Coherence DLL - relative to addon root
+DLL_PATH = 'lib/LibCoherence.dll'
+
+lib = load_library(DLL_PATH)

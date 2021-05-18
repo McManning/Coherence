@@ -321,7 +321,7 @@ namespace Coherence
 
         #endregion
 
-        #region Texture Sync
+        #region Image Sync
 
         [Tooltip("Render Texture targets for textures synced from Blender")]
         public List<BlenderTexture> textureSlots;
@@ -350,62 +350,53 @@ namespace Coherence
         #region Plugin Management
 
         /// <summary>
-        /// Delegate is listening to a Coherence event
+        /// Component instances actively listening to Coherence events (OnDisconnect, OnConnect, etc)
         /// </summary>
-        struct EventHandler
-        {
-            public IPlugin plugin;
-            public Action callable;
-        }
+        internal DictionarySet<string, IComponent> EventHandlers { get; } = new DictionarySet<string, IComponent>();
 
         /// <summary>
-        /// Plugins instances actively listening to Coherence events (OnDisconnect, OnConnect, etc)
+        /// Get a list of all components, regardless of registration state
         /// </summary>
-        internal DictionarySet<string, IPlugin> EventHandlers { get; } = new DictionarySet<string, IPlugin>();
-
-        /// <summary>
-        /// Get a list of all plugins, regardless of registration state
-        /// </summary>
-        internal Dictionary<string, PluginInfo> Plugins {
+        internal Dictionary<string, ComponentInfo> Components {
             get {
                 // If we came out of an assembly reload, try to restore.
-                if (plugins == null)
+                if (components == null)
                 {
-                    RestorePlugins();
+                    RestoreComponents();
                 }
-                return plugins;
+                return components;
             }
         }
 
-        private Dictionary<string, PluginInfo> plugins;
+        private Dictionary<string, ComponentInfo> components;
 
-        internal Dictionary<string, PluginInfo> RegisteredPlugins
+        internal Dictionary<string, ComponentInfo> RegisteredComponents
         {
             get
             {
-                if (registeredPlugins == null)
+                if (registeredComponents == null)
                 {
-                    RestorePlugins();
+                    RestoreComponents();
                 }
-                return registeredPlugins;
+                return registeredComponents;
             }
         }
 
-        private Dictionary<string, PluginInfo> registeredPlugins;
+        private Dictionary<string, ComponentInfo> registeredComponents;
 
         /// <summary>
-        /// Name of registered plugins stored between assembly reloads
+        /// Name of registered components stored between assembly reloads
         /// </summary>
         [SerializeField]
-        private List<string> registeredPluginNames;
+        private List<string> registeredComponentNames;
 
         /// <summary>
         /// Populate the list of event delegates with all event methods
-        /// that can be executed on the plugin instance.
+        /// that can be executed on the component instance.
         /// </summary>
-        internal void BindEventHandlers(PluginInfo plugin, IPlugin instance)
+        internal void BindEventHandlers(ComponentInfo component, IComponent instance)
         {
-            foreach (var method in plugin.EventMethods.Items(instance.GetType()))
+            foreach (var method in component.EventMethods.Items(instance.GetType()))
             {
                 EventHandlers.Add(method.Name, instance);
                 instance.AddEventDelegate(method);
@@ -413,142 +404,93 @@ namespace Coherence
         }
 
         /// <summary>
-        /// Remove a plugin from all event handlers
+        /// Remove a component from all event handlers
         /// </summary>
-        internal void UnbindEventHandlers(IPlugin instance)
+        internal void UnbindEventHandlers(IComponent instance)
         {
             EventHandlers.RemoveAll(instance);
             instance.ClearEventDelegates();
         }
 
         /// <summary>
-        /// Dispatch a named event (e.g. "OnConnected") to all plugins with a matching method.
+        /// Dispatch a named event (e.g. "OnConnected") to all components with a matching method.
         /// </summary>
         /// <param name="eventName"></param>
         internal void DispatchEvent(string eventName)
         {
-            foreach (var plugin in EventHandlers.Items(eventName))
+            foreach (var component in EventHandlers.Items(eventName))
             {
-                plugin.DispatchEvent(eventName);
+                component.DispatchEvent(eventName);
             }
         }
 
-        /* This all probably belongs in Sync. Since it's the only thing that manages objects.
-            Sans global plugins...
-
-        /// <summary>
-        /// Instantiate a plugin into the global scope
-        /// </summary>
-        internal void InstantiateGlobalPlugin(string name)
+        internal void RegisterComponent(string name)
         {
-            var plugin = FindPlugin(name);
-            var instance = plugin.Instantiate(this);
-
-            BindEventHandlers(plugin, instance);
+            var plugin = Components[name];
+            RegisteredComponents.Add(name, plugin);
+            registeredComponentNames.Add(name);
         }
 
-        internal void DestroyGlobalPlugin(string name)
+        internal void UnregisterComponent(string name)
         {
-            var plugin = FindPlugin(name);
-
-            UnbindEventHandlers(plugin.Instances[0]);
-
-            plugin.DestroyAllInstances();
-        }
-
-        internal void InstantiateSceneObjectPlugin(ObjectController target, string name, string kind)
-        {
-            var plugin = FindPlugin(name, kind);
-            var instance = plugin.Instantiate(this, target);
-
-            BindEventHandlers(plugin, instance);
-        }
-
-        internal void DestroySceneObjectPlugin(ObjectController target, string name, string kind)
-        {
-            var plugin = FindPlugin(name, kind);
-
-            throw new NotImplementedException("need to figure this out");
-            // UnbindEventHandlers(plugin.Inxxstances[0]);
-
-            plugin.DestroyInstance(target);
-        }
-        */
-
-        internal void RegisterPlugin(string name)
-        {
-            var plugin = Plugins[name];
-            RegisteredPlugins.Add(name, plugin);
-            registeredPluginNames.Add(name);
-        }
-
-        internal void UnregisterPlugin(string name)
-        {
-            RegisteredPlugins.Remove(name);
-            registeredPluginNames.Remove(name);
+            RegisteredComponents.Remove(name);
+            registeredComponentNames.Remove(name);
         }
 
         /// <summary>
         /// Restore previously registered plugins after an assembly reload
         /// </summary>
-        internal void RestorePlugins()
+        internal void RestoreComponents()
         {
-            plugins = new Dictionary<string, PluginInfo>();
-            registeredPlugins = new Dictionary<string, PluginInfo>();
+            components = new Dictionary<string, ComponentInfo>();
+            registeredComponents = new Dictionary<string, ComponentInfo>();
 
-            var pluginType = typeof(IPlugin);
+            var componentType = typeof(IComponent);
 
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
                 foreach (var type in assembly.GetTypes())
                 {
-                    if (pluginType.IsAssignableFrom(type) && !type.IsInterface)
+                    if (componentType.IsAssignableFrom(type) && !type.IsInterface)
                     {
-                        AddPluginInfo(type);
+                        AddComponentInfo(type);
                     }
                 }
             }
 
             // Register everything previously added
-            var prevRegisteredPlugins = registeredPluginNames;
-            registeredPluginNames = new List<string>();
+            var prevRegistered = registeredComponentNames;
+            registeredComponentNames = new List<string>();
 
-            foreach (var name in prevRegisteredPlugins)
+            foreach (var name in prevRegistered)
             {
-                if (!plugins.ContainsKey(name))
+                if (!components.ContainsKey(name))
                 {
-                    Debug.LogError($"Could not restore plugin [{name}] - missing after assembly reload");
+                    Debug.LogError($"Could not restore component [{name}] - missing after assembly reload");
                 }
                 else
                 {
-                    RegisterPlugin(name);
+                    RegisterComponent(name);
                 }
             }
         }
 
-        private void AddPluginInfo(Type type)
+        private void AddComponentInfo(Type type)
         {
-            var attr = type.GetCustomAttribute<PluginAttribute>();
+            var attr = type.GetCustomAttribute<ComponentAttribute>();
             if (attr == null)
             {
                 Debug.LogError("missing attr"); // TODO: message
                 return;
             }
 
-            if (!Plugins.TryGetValue(attr.Name, out PluginInfo plugin))
+            if (!Components.TryGetValue(attr.Name, out ComponentInfo info))
             {
-                plugin = new PluginInfo();
-                plugin.Name = attr.Name;
-                Plugins.Add(attr.Name, plugin);
-            }
+                info = new ComponentInfo();
+                info.Name = attr.Name;
+                info.Type = type;
 
-            if (string.IsNullOrEmpty(attr.Kind))
-            {
-                plugin.SetGlobal(type);
-            }
-            else
-            {
-                plugin.AddKind(attr.Kind, type);
+                Components.Add(attr.Name, info);
             }
         }
 

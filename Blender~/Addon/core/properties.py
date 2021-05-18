@@ -1,29 +1,23 @@
 
+import bpy
+from bpy.types import PropertyGroup
 from bpy.props import (
     BoolProperty,
     EnumProperty,
     FloatProperty,
-    FloatVectorProperty,
-    IntProperty,
     PointerProperty,
-    StringProperty
+    StringProperty,
+    CollectionProperty
 )
 
-import bpy
-
-from bpy.types import PropertyGroup
-
-from . import runtime
+from . import runtime, scene_objects
 from util.registry import autoregister
 
-def _update_object_properties(self, context):
-    """
-    Args:
-        self (CoherenceObjectProperties)
-        context (bpy.types.Context)
-    """
-    obj = runtime.instance.objects.find_by_bpy_name(context.object.name)
-    if obj: obj.update_properties()
+def on_toggle_component_enabled(self, context):
+    """Callback for when the enabled property changes"""
+    component = self.get_component()
+    if component:
+        component.enabled = self.enabled
 
 @autoregister
 class CoherenceSceneProperties(PropertyGroup):
@@ -63,36 +57,35 @@ class CoherenceSceneProperties(PropertyGroup):
         del bpy.types.Scene.coherence
 
 @autoregister
-class CoherenceObjectProperties(PropertyGroup):
-    #: enum, default 0: Technique used to render this object within Unity
-    display_mode: EnumProperty(
-        name='Unity Display Mode',
-        description='Technique used to render this object within Unity',
-        items=[
-            # Enum items match ObjectDisplayMode in C#
-            # First value will be cast to an int when passed to the bridge
-            ('0', 'Material', '', 0),
-            ('1', 'Normals', 'Show vertex normals in Unity', 1),
-            ('2', 'Vertex Colors', 'Show vertex colors in Unity', 2),
+class CoherenceComponentMetadata(bpy.types.PropertyGroup):
+    """Metadata for a Coherence Component currently attached to an object
 
-            ('10', 'UV Checker', 'Show UV values in Unity', 10),
-            ('11', 'UV2 Checker', 'Show UV2 values in Unity', 11),
-            ('12', 'UV3 Checker', 'Show UV3 values in Unity', 12),
-            ('13', 'UV4 Checker', 'Show UV4 values in Unity', 13),
-
-            ('100', 'Hidden', 'Do not render this object in Unity', 100),
-        ],
-        update=_update_object_properties
+    This is stored in a CollectionProperty and persisted with the object
+    so we can restore component states when loading Coherence.
+    """
+    enabled: BoolProperty(
+        name = 'Toggle enabled',
+        description = 'This will also toggle the linked Unity component',
+        update=on_toggle_component_enabled
     )
 
-    #: bool, default True: Optimize (compress) vertex data prior to sending to Unity.
-    optimize_mesh: BoolProperty(
-        name='Optimize Mesh',
-        description='Optimize (compress) vertex data prior to sending to Unity. ' +
-                    'With this option turned off - full loops will be transmitted which may negatively ' +
-                    'impact performance or lookdev in Unity when compared with an export of the same mesh',
-        default=True,
-        update=_update_object_properties
+    is_builtin: BoolProperty(default=True)
+
+    expanded: BoolProperty(default=False)
+
+    def get_component(self):
+        """Retrieve the component instance for this metadata properties.
+
+        Returns:
+            Component|None
+        """
+        plugin = runtime.instance.get_plugin(scene_objects.SceneObjects)
+        return plugin.get_component_by_name(self.id_data, self.name)
+
+@autoregister
+class CoherenceObjectProperties(PropertyGroup):
+    components: CollectionProperty(
+        type=CoherenceComponentMetadata
     )
 
     @classmethod

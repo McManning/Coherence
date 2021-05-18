@@ -25,16 +25,15 @@ if 'bpy' in locals():
     util.registry.Registry.clear()
     importlib.reload(core)
     importlib.reload(api)
-    importlib.reload(plugins)
+    importlib.reload(components)
 else:
     import bpy
     from . import util
     from . import core
     from . import api
-    from . import plugins
+    from . import components
 
 from util.registry import Registry
-
 
 def register():
     bpy.types.VIEW3D_HT_header.append(core.panels.draw_view3d_header)
@@ -44,11 +43,20 @@ def register():
     Registry.register()
 
     # Register builtin plugins
-    api.register_plugin(plugins.mesh.MeshPlugin)
-    api.register_plugin(plugins.metaballs.MetaballsPlugin)
+    runtime = core.runtime.instance
+    runtime.register_plugin(core.scene_objects.SceneObjects)
+    runtime.register_plugin(core.image_sync.ImageSync)
+
+    # Register builtin components
+    components.mesh.register()
+    components.metaballs.register()
 
 def unregister():
-    # Unregister *all* plugins, including 3rd party
+    # Unregister builtin components
+    components.mesh.unregister()
+    components.metaballs.unregister()
+
+    # And then all plugins
     core.runtime.instance.unregister_all_plugins()
 
     bpy.types.VIEW3D_HT_header.remove(core.panels.draw_view3d_header)

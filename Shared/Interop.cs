@@ -1,5 +1,5 @@
 ﻿///
-/// Shared structures between Unity and the Blender plugin
+/// Shared structures between application plugins
 ///
 using SharedMemory;
 using System;
@@ -114,7 +114,7 @@ namespace Coherence
         ///     Payload: <see cref="InteropSceneObject"/>
         /// </para>
         /// </summary>
-        AddObjectToScene,
+        AddObject,
 
         /// <summary>
         /// Notify Unity that a <see cref="InteropSceneObject"/>
@@ -124,7 +124,7 @@ namespace Coherence
         ///     Payload: <see cref="InteropSceneObject"/>
         /// </para>
         /// </summary>
-        RemoveObjectFromScene,
+        RemoveObject,
 
         /// <summary>
         /// Notify Unity that a <see cref="InteropSceneObject"/>
@@ -134,7 +134,35 @@ namespace Coherence
         ///     Payload: <see cref="InteropSceneObject"/>
         /// </para>
         /// </summary>
-        UpdateSceneObject,
+        UpdateObject,
+
+        /// <summary>
+        /// Notify Unity that a <see cref="InteropComponent"/>
+        /// has been added to an object in the scene
+        ///
+        /// <para>
+        ///     Payload: <see cref="InteropComponent"/>
+        /// </para>
+        /// </summary>
+        AddComponent,
+
+        /// <summary>
+        /// Notify Unity of a destroyed component
+        ///
+        /// <para>
+        ///     Payload: <see cref="InteropComponent"/>
+        /// </para>
+        /// </summary>
+        DestroyComponent,
+
+        /// <summary>
+        /// Notify Unity of an updated component state
+        ///
+        /// <para>
+        ///     Payload: <see cref="InteropComponent"/>
+        /// </para>
+        /// </summary>
+        UpdateComponent,
 
         /// <summary>
         /// Notify Unity that a <see cref="InteropMesh"/> has updates.
@@ -230,10 +258,10 @@ namespace Coherence
         /// <summary>
         ///
         /// <para>
-        ///     Payload: <see cref="InteropTexture"/>
+        ///     Payload: <see cref="InteropImage"/>
         /// </para>
         /// </summary>
-        UpdateTexture,
+        UpdateImage,
 
         /// <summary>
         ///
@@ -241,23 +269,23 @@ namespace Coherence
         ///     Payload: <see cref="InteropColor32"/>[]
         /// </para>
         /// </summary>
-        UpdateTextureData,
+        UpdateImageData,
 
         /// <summary>
-        /// A third party plugin message from either Unity or Blender
+        /// A message from either a Unity or Blender component
         ///
         /// <para>
-        ///     Payload:<see cref="InteropPluginMessage"/>
+        ///     Payload:<see cref="InteropComponentMessage"/>
         /// </para>
         /// </summary>
-        PluginMessage = 255,
+        ComponentMessage = 255,
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    public struct InteropPluginMessage
+    public struct InteropComponentMessage
     {
         /// <summary>
-        /// Target SceneObject for this message, if applicable.
+        /// Target object for this message, if applicable.
         /// </summary>
         public InteropString64 target;
 
@@ -632,11 +660,6 @@ namespace Coherence
         public InteropString64 name;
 
         /// <summary>
-        /// What kind of object (Mesh, Metaball, etc) is represented.
-        /// </summary>
-        public InteropString64 kind;
-
-        /// <summary>
         /// Object transform in the scene
         /// </summary>
         public InteropTransform transform;
@@ -644,17 +667,17 @@ namespace Coherence
         /// <summary>
         /// How to display this object in Unity
         /// </summary>
-        public ObjectDisplayMode display;
+        public ObjectDisplayMode display; // TO BE REMOVED
 
         /// <summary>
         /// Name of the material used by this object
         /// </summary>
-        public InteropString64 material;
+        public InteropString64 material; // TO BE... MOVED? (Interop Mesh?)
 
         /// <summary>
         /// Name of the mesh used by this object
         /// </summary>
-        public InteropString64 mesh;
+        public InteropString64 mesh; // TO BE MOVED... TO COMPONENT?
 
         public override int GetHashCode()
         {
@@ -665,12 +688,24 @@ namespace Coherence
         {
             return obj is InteropSceneObject o
                 && o.name.Equals(name)
-                && o.kind.Equals(kind)
                 && o.transform.Equals(transform)
                 && o.display.Equals(display)
                 && o.material.Equals(material)
                 && o.mesh.Equals(mesh);
         }
+    }
+
+    /// <summary>
+    /// Information about a component shared between applications
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct InteropComponent
+    {
+        public InteropString64 name;
+        public InteropString64 target;
+        public bool enabled;
+
+        public InteropString64 mesh;
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -680,7 +715,7 @@ namespace Coherence
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    public struct InteropTexture
+    public struct InteropImage
     {
         public int width;
         public int height;
@@ -693,6 +728,7 @@ namespace Coherence
         Float,
         String,
         Enum,
+        FloatVector
     }
 
     /// <summary>
@@ -713,14 +749,6 @@ namespace Coherence
         public InteropPropertyType type;
 
         /// <summary>
-        /// Property group to display this within.
-        ///
-        /// Typically associated with a Unity MonoBehaviour
-        /// or third party Blender addon that provided the property.
-        /// </summary>
-        public InteropString64 group;
-
-        /// <summary>
         /// Initial property value
         /// </summary>
         public InteropPropertyValue value;
@@ -734,7 +762,8 @@ namespace Coherence
         public bool boolValue;
         public int intValue;
         public float floatValue;
-        public InteropString64 strValue;
+        public InteropString64 stringValue;
+        public InteropVector4 vectorValue;
     }
 
     public struct InteropPropertyUpdate
@@ -836,6 +865,64 @@ namespace Coherence
         public override bool Equals(object obj)
         {
             return obj is InteropVector3 vector && Approx(vector);
+        }
+    }
+
+    /// <summary>
+    /// Structure that matches the layout of a UnityEngine.Vector4
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct InteropVector4
+    {
+        public float x;
+        public float y;
+        public float z;
+        public float w;
+
+        public InteropVector4(float x, float y, float z, float w)
+        {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.w = w;
+        }
+
+        public InteropVector4(float[] co)
+        {
+            x = co[0];
+            y = co[1];
+            z = co[2];
+            w = co[4];
+        }
+
+        public static InteropVector4 operator +(InteropVector4 a, InteropVector4 b)
+        {
+            return new InteropVector4(a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w);
+        }
+
+        internal bool Approx(InteropVector4 v)
+        {
+            var epsilon = 1e-6f;
+
+            return Math.Abs(x - v.x) < epsilon
+                && Math.Abs(y - v.y) < epsilon
+                && Math.Abs(z - v.z) < epsilon
+                && Math.Abs(w - v.w) < epsilon;
+        }
+
+        public override string ToString()
+        {
+            return $"InteropVector4({x}, {y}, {z}, {w})";
+        }
+
+        public override int GetHashCode()
+        {
+            return base.GetHashCode();
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is InteropVector4 vector && Approx(vector);
         }
     }
 
@@ -987,7 +1074,7 @@ namespace Coherence
         #if UNITY_EDITOR
             UnityEngine.Debug.Log(message);
         #else
-            Console.WriteLine(message);
+            Console.WriteLine("[LibCoherence] " + message);
         #endif
         }
 
@@ -996,7 +1083,7 @@ namespace Coherence
         #if UNITY_EDITOR
             UnityEngine.Debug.LogWarning(message);
         #else
-            Console.WriteLine("WARNING: " + message);
+            Console.WriteLine("[LibCoherence] WARNING: " + message);
         #endif
         }
 
@@ -1005,7 +1092,7 @@ namespace Coherence
         #if UNITY_EDITOR
             UnityEngine.Debug.LogError(message);
         #else
-            Console.WriteLine("ERROR: " + message);
+            Console.WriteLine("[LibCoherence] ERROR: " + message);
         #endif
         }
     }

@@ -344,14 +344,13 @@ namespace Coherence
         [DllExport]
         public static int AddObjectToScene(
             [MarshalAs(UnmanagedType.LPStr)] string name,
-            [MarshalAs(UnmanagedType.LPStr)] string kind,
             InteropTransform transform
         ) {
-            InteropLogger.Debug($"Adding object <name={name}, kind={kind}>");
+            InteropLogger.Debug($"Add object {name}");
 
             try
             {
-                var obj = new SceneObject(name, kind, transform);
+                var obj = new SceneObject(name, transform);
 
                 Bridge.AddObject(obj);
                 return 1;
@@ -376,46 +375,7 @@ namespace Coherence
                 var obj = Bridge.GetObject(name);
                 obj.data.transform = transform;
 
-                Bridge.SendEntity(RpcRequest.UpdateSceneObject, obj);
-                return 1;
-            }
-            catch (Exception e)
-            {
-                SetLastError(e);
-                return -1;
-            }
-        }
-
-        /// <summary>
-        /// Update scene object properties and notify Unity
-        /// </summary>
-        [DllExport]
-        public static int UpdateObjectProperties(
-            [MarshalAs(UnmanagedType.LPStr)] string name,
-            ObjectDisplayMode display,
-            [MarshalAs(UnmanagedType.LPStr)] string mesh,
-            [MarshalAs(UnmanagedType.LPStr)] string material
-        ) {
-            try
-            {
-                var obj = Bridge.GetObject(name);
-
-                var interopData = obj.data;
-
-                InteropLogger.Debug($"{name} - will it send? {interopData.display}, {interopData.mesh}, {interopData.material}");
-
-                interopData.display = display;
-                interopData.mesh = mesh;
-                interopData.material = material;
-
-                if (!interopData.Equals(obj.data))
-                {
-                    InteropLogger.Debug($"{name} - it do! {display}, {mesh}, {material}");
-                    obj.data = interopData;
-
-                    Bridge.SendEntity(RpcRequest.UpdateSceneObject, obj);
-                }
-
+                Bridge.SendEntity(RpcRequest.UpdateObject, obj);
                 return 1;
             }
             catch (Exception e)
@@ -429,7 +389,7 @@ namespace Coherence
         public static int RemoveObjectFromScene(
             [MarshalAs(UnmanagedType.LPStr)] string name
         ) {
-            InteropLogger.Debug($"Removing object {name} from the scene");
+            InteropLogger.Debug($"Remove object {name}");
 
             try
             {
@@ -445,7 +405,77 @@ namespace Coherence
 
         #endregion
 
-        #region Texture Sync API
+        #region Component API
+
+        [DllExport]
+        public static int AddComponent(
+            [MarshalAs(UnmanagedType.LPStr)] string objectName,
+            [MarshalAs(UnmanagedType.LPStr)] string componentName,
+            bool enabled
+        ) {
+            InteropLogger.Debug($"Add component object={objectName}, component={componentName}, enabled={enabled}");
+
+            try
+            {
+                var obj = Bridge.GetObject(objectName);
+                Bridge.AddComponent(obj, componentName, enabled);
+                return 1;
+            }
+            catch (Exception e)
+            {
+                SetLastError(e);
+                return -1;
+            }
+        }
+
+        [DllExport]
+        public static int DestroyComponent(
+            [MarshalAs(UnmanagedType.LPStr)] string objectName,
+            [MarshalAs(UnmanagedType.LPStr)] string componentName,
+            bool enabled
+        ) {
+            InteropLogger.Debug($"Destroy component object={objectName}, component={componentName}, enabled={enabled}");
+
+            try
+            {
+                var obj = Bridge.GetObject(objectName);
+                Bridge.DestroyComponent(obj, componentName);
+                return 1;
+            }
+            catch (Exception e)
+            {
+                SetLastError(e);
+                return -1;
+            }
+        }
+
+        [DllExport]
+        public static int UpdateComponent(
+            [MarshalAs(UnmanagedType.LPStr)] string objectName,
+            [MarshalAs(UnmanagedType.LPStr)] string componentName,
+            bool enabled
+        ) {
+            InteropLogger.Debug($"Update component object={objectName}, component={componentName}, enabled={enabled}");
+
+            try
+            {
+                var obj = Bridge.GetObject(objectName);
+                var component = Bridge.GetComponent(obj, componentName);
+                component.data.enabled = enabled;
+
+                Bridge.SendEntity(RpcRequest.UpdateComponent, component);
+                return 1;
+            }
+            catch (Exception e)
+            {
+                SetLastError(e);
+                return -1;
+            }
+        }
+
+        #endregion
+
+        #region Image Sync API
 
         /// <summary>
         /// Return names of all texture sync slots provided by Unity
@@ -462,7 +492,7 @@ namespace Coherence
 
                 var offset = dst;
                 var count = 0;
-                foreach (var texture in Bridge.Textures)
+                foreach (var texture in Bridge.Images)
                 {
                     var buffer = new InteropString64(texture.Name);
                     FastStructure.StructureToPtr(ref buffer, offset);
@@ -490,14 +520,14 @@ namespace Coherence
         ) {
             try
             {
-                var texture = Bridge.GetTexture(name);
+                var image = Bridge.GetImage(name);
 
-                texture.CopyPixels(
+                image.CopyPixels(
                     width, height,
                     new NativeArray<float>(pixels, width * height * 4)
                 );
 
-                texture.SendDirty();
+                image.SendDirty();
                 return 1;
             }
             catch (Exception e)

@@ -1,10 +1,7 @@
-﻿using UnityEngine;
-using UnityEditor;
+﻿using UnityEditor;
 using UnityEditorInternal;
-using System.Runtime.InteropServices;
-using SharedMemory;
+using UnityEngine;
 using MessageType = UnityEditor.MessageType;
-using System.Collections.Generic;
 
 namespace Coherence
 {
@@ -168,7 +165,7 @@ namespace Coherence
             }
         }
 
-        private void DrawPlugin(PluginInfo plugin)
+        private void DrawComponent(ComponentInfo info)
         {
             EditorGUI.BeginChangeCheck();
 
@@ -177,33 +174,24 @@ namespace Coherence
             // Header
             using (new EditorGUILayout.HorizontalScope())
             {
-                EditorGUILayout.LabelField(plugin.Name, EditorStyles.boldLabel);
+                EditorGUILayout.LabelField(info.Name, EditorStyles.boldLabel);
                 GUILayout.FlexibleSpace();
 
                 if (GUILayout.Button("Unregister"))
                 {
-                    CoherenceSettings.Instance.UnregisterPlugin(plugin.Name);
+                    CoherenceSettings.Instance.UnregisterComponent(info.Name);
                 }
 
-                if (plugin.globalType != null && GUILayout.Button("Edit"))
+                if (GUILayout.Button("Edit"))
                 {
                     // open script
                 }
             }
 
             // High level information
-            if (plugin.globalType != null)
-            {
-                EditorGUILayout.LabelField(
-                    $"Global={plugin.globalType}"
-                );
-            }
-
-            // Registered SceneObject.kind scripts
-            if (plugin.kindTypes.Count > 0)
-            {
-                DrawPluginKinds(plugin);
-            }
+            EditorGUILayout.LabelField(
+                $"Type={info.Type}"
+            );
 
             EditorGUILayout.EndVertical();
 
@@ -214,47 +202,16 @@ namespace Coherence
             }
         }
 
-        private void DrawPluginKinds(PluginInfo plugin)
+        private void DrawComponents()
         {
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Kinds", EditorStyles.boldLabel);
+            var components = CoherenceSettings.Instance.Components;
+            var registered = CoherenceSettings.Instance.RegisteredComponents;
 
-            foreach (var kind in plugin.kindTypes)
+            foreach (var component in components)
             {
-                var rect = EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
-
-                EditorGUILayout.PrefixLabel(kind.Key);
-
-                var instances = 0;
-                if (plugin.kindInstances.ContainsKey(kind.Key))
+                if (registered.ContainsKey(component.Key))
                 {
-                    instances = plugin.kindInstances[kind.Key].Count;
-                }
-
-                if (GUILayout.Button($"{instances} objects"))
-                {
-                    // select instances
-                }
-
-                if (GUILayout.Button("Edit"))
-                {
-                    // open script
-                }
-
-                EditorGUILayout.EndHorizontal();
-            }
-        }
-
-        private void DrawPlugins()
-        {
-            var plugins = CoherenceSettings.Instance.Plugins;
-            var registered = CoherenceSettings.Instance.RegisteredPlugins;
-
-            foreach (var plugin in plugins)
-            {
-                if (registered.ContainsKey(plugin.Key))
-                {
-                    DrawPlugin(plugin.Value);
+                    DrawComponent(component.Value);
                     EditorGUILayout.Space();
                 }
             }
@@ -262,26 +219,26 @@ namespace Coherence
             var rect = EditorGUILayout.BeginHorizontal();
 
             if (EditorGUILayout.DropdownButton(
-                new GUIContent("Register Plugin"),
+                new GUIContent("Add Component"),
                 FocusType.Passive
             )) {
                 GenericMenu menu = new GenericMenu();
 
-                foreach (var name in plugins.Keys)
+                foreach (var name in components.Keys)
                 {
                     if (!registered.ContainsKey(name))
                     {
                         menu.AddItem(
                             new GUIContent(name),
                             false,
-                            () => CoherenceSettings.Instance.RegisterPlugin(name)
+                            () => CoherenceSettings.Instance.RegisterComponent(name)
                         );
                     }
                 }
 
                 if (menu.GetItemCount() < 1)
                 {
-                    menu.AddItem(new GUIContent("No unregistered plugins"), false, null);
+                    menu.AddItem(new GUIContent("No unregistered components"), false, null);
                 }
 
                 menu.DropDown(rect);
@@ -606,7 +563,7 @@ namespace Coherence
             {
                 using (new EditorGUI.IndentLevelScope())
                 {
-                    DrawPlugins();
+                    DrawComponents();
                 }
             }
             EditorGUILayout.EndFoldoutHeaderGroup();

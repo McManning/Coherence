@@ -36,9 +36,6 @@
     <Compile Include="core\scene.py" />
     <Compile Include="core\utils.py" />
     <Compile Include="core\__init__.py" />
-    <Compile Include="plugins\mesh.py" />
-    <Compile Include="plugins\metaballs.py" />
-    <Compile Include="plugins\__init__.py" />
     <Compile Include="test.py" />
     <Compile Include="util\debug.py" />
     <Compile Include="util\registry.py" />
@@ -47,7 +44,6 @@
   </ItemGroup>
   <ItemGroup>
     <Folder Include="core" />
-    <Folder Include="plugins\" />
     <Folder Include="util" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />

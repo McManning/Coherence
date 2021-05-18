@@ -10,21 +10,23 @@ namespace Coherence
     /// </summary>
     class SceneObject : IInteropSerializable<InteropSceneObject>
     {
+        public string Name { get; set; }
+
         /// <summary>
-        /// Data that will be shared with Unity
+        /// Data that will be shared between applications
         /// </summary>
         internal InteropSceneObject data;
 
-        public string Name { get; set; }
+        internal List<Component> components;
 
-        internal SceneObject(string name, string kind, InteropTransform transform)
+        internal SceneObject(string name, InteropTransform transform)
         {
             Name = name;
+            components = new List<Component>();
 
             data = new InteropSceneObject
             {
                 name = name,
-                kind = kind,
                 transform = transform
             };
         }

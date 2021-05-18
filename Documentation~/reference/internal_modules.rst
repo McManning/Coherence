@@ -31,6 +31,14 @@ Utility (core.utils)
     :show-inheritance:
     :undoc-members:
 
+Component (core.component)
+============================
+
+.. automodule:: Addon.core.component
+    :members:
+    :inherited-members:
+    :show-inheritance:
+    :undoc-members:
 
 Scene (core.scene)
 ===================

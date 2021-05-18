@@ -171,11 +171,12 @@
     </Compile>
     <Compile Include="BlenderDNA.cs" />
     <Compile Include="Bridge.cs" />
+    <Compile Include="Component.cs" />
     <Compile Include="Mesh.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SceneObject.cs" />
-    <Compile Include="Texture.cs" />
+    <Compile Include="Image.cs" />
     <Compile Include="Viewport.cs" />
   </ItemGroup>
   <ItemGroup>

@@ -6,31 +6,31 @@ using System.Threading.Tasks;
 
 namespace Coherence
 {
-    public class Texture : IDisposable, IInteropSerializable<InteropTexture>
+    public class Image : IDisposable, IInteropSerializable<InteropImage>
     {
         public string Name { get; private set; }
 
         /// <summary>
-        /// Data that will be shared with Unity
+        /// Data that will be shared between applications
         /// </summary>
-        InteropTexture data;
+        InteropImage data;
 
         bool dirty;
 
         readonly NativeArray<float> pixels = new NativeArray<float>();
 
-        public Texture(string name)
+        public Image(string name)
         {
             Name = name;
-            data = new InteropTexture();
+            data = new InteropImage();
         }
 
-        public InteropTexture Serialize()
+        public InteropImage Serialize()
         {
             return data;
         }
 
-        public void Deserialize(InteropTexture data)
+        public void Deserialize(InteropImage data)
         {
             // do work.
             this.data = data;
@@ -73,8 +73,8 @@ namespace Coherence
 
             InteropLogger.Debug($"Pixel buffer is {pixels.Length} elements for {data.width}x{data.height} image");
 
-            b.SendEntity(RpcRequest.UpdateTexture, this);
-            b.SendArray(RpcRequest.UpdateTextureData, Name, pixels);
+            b.SendEntity(RpcRequest.UpdateImage, this);
+            b.SendArray(RpcRequest.UpdateImageData, Name, pixels);
 
             dirty = false;
         }

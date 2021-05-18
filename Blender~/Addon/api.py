@@ -1,57 +1,38 @@
-from .core import plugin, runtime
+from .core import component, runtime, scene_objects
 
-class ObjectPlugin(plugin.BaseObjectPlugin):
+class Component(component.BaseComponent):
     pass
 
-class GlobalPlugin(plugin.BaseGlobalPlugin):
-    pass
+# Not exposed yet to third parties
 
-class Component(plugin.BaseComponent):
-    pass
+# def register_plugin(cls):
+#     """Register a third party plugin with the Coherence API.
 
-def register_plugin(cls):
-    """Register a third party plugin with the Coherence API.
+#     Args:
+#         cls (inherited class of :class:`.Plugin`)
+#     """
+#     runtime.instance.register_plugin(cls)
 
-    This will call the following event chain for the plugin:
+# def unregister_plugin(cls):
+#     """Unregister a third party plugin from the Coherence API.
 
-    1. :meth:`.GlobalPlugin.on_registered()`
-    2. :meth:`.GlobalPlugin.on_enable()` - if Coherence is currently running
-    3. :meth:`.GlobalPlugin.on_connected()` - if Coherence is currently connected to Unity
+#     Args:
+#         cls (inherited class of :class:`.Plugin`)
+#     """
+#     runtime.instance.unregister_plugin(cls)
 
-    Args:
-        cls (inherited class of :class:`.GlobalPlugin`)
-    """
-    runtime.instance.register_plugin(cls)
-
-def unregister_plugin(cls):
-    """Unregister a third party plugin from the Coherence API.
-
-    The following event chain is called on the plugin when unregistered:
-
-    1. :meth:`.GlobalPlugin.on_disconnected()` - if Coherence is currently connected to Unity
-    2. :meth:`.GlobalPlugin.on_disable()` - if Coherence is currently running.
-
-        This will also execute :meth:`ObjectPlugin.on_destroy()` for all
-        objects associated with this plugin.
-
-    3. :meth:`.GlobalPlugin.on_unregistered()`
-
-    Args:
-        cls (inherited class of :class:`.GlobalPlugin`)
-    """
-    runtime.instance.unregister_plugin(cls)
-
-def register_component(cls):
+def register_component(component):
     """Register a third party component with the Coherence API.
 
     :meth:`.Component.on_registered()` will be executed once successfully registered.
 
     Args:
-        cls (inherited class of :class:`.Component`)
+        component (Type[Component])
     """
-    raise NotImplementedError
+    plugin = runtime.instance.get_plugin(scene_objects.SceneObjects)
+    plugin.register_component(component)
 
-def unregister_component(cls):
+def unregister_component(component):
     """Unregister a third party component from the Coherence API.
 
     The following event chain is called on the component when unregistered:
@@ -61,20 +42,23 @@ def unregister_component(cls):
     3. :meth:`.Component.on_unregistered()`
 
     Args:
-        cls (inherited class of :class:`.Component`)
+        component (Type[Component])
     """
-    raise NotImplementedError
+    plugin = runtime.instance.get_plugin(scene_objects.SceneObjects)
+    if plugin:
+        plugin.unregister_component(component)
 
-def add_component(obj, cls):
+def add_component(obj, component):
     """Add a component to an existing object
 
     Args:
-        obj (bpy.types.Object):
-        cls (inherited class of :class:`.Component`)
+        obj (bpy.types.Object)
+        component (Type[Component])
     """
-    raise NotImplementedError
+    plugin = runtime.instance.get_plugin(scene_objects.SceneObjects)
+    plugin.add_component(obj, component)
 
-def destroy_component(obj, cls):
+def destroy_component(obj, component):
     """Remove a component from an existing object
 
     The following event chain is called on the component when destroyed:
@@ -86,13 +70,11 @@ def destroy_component(obj, cls):
     will also be destroyed through Unity's API.
 
     Args:
-        obj (bpy.types.Object):
-        cls (inherited class of :class:`.Component`)
+        obj (bpy.types.Object)
+        component (Type[Component])
     """
-    # Delegates off to .destroy of the component instance for the heavy lifting.
-    instance = cls.get_instance(obj)
-    instance.destroy()
-
+    plugin = runtime.instance.get_plugin(scene_objects.SceneObjects)
+    plugin.destroy_component(obj, component)
 
 def is_connected_to_unity() -> bool:
     """

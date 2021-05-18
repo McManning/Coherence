@@ -145,27 +145,100 @@ class COHERENCE_LIGHT_PT_light(BasePanel):
         self.layout.label(text='Not supported. Use lights within Unity.')
 
 @autoregister
-class COHERENCE_OBJECT_PT_settings(BasePanel):
-    """Panel with settings for objects tied to :class:`.SceneObject`"""
-    bl_label = 'Coherence Settings'
+class COHERENCE_OBJECT_PT_components(BasePanel):
+    bl_label = 'Coherence Components'
     bl_context = 'object'
-
-    @classmethod
-    def poll(cls, context):
-        #if context.active_object and context.active_object.type == 'GPENCIL':
-        #    return False
-
-        return context.object and BasePanel.poll(context)
 
     def draw(self, context):
         layout = self.layout
+
+        obj = context.object
+        settings = obj.coherence
+
+        for meta in settings.components:
+            self.draw_component(context, meta)
+
+        row = layout.row(align=True)
+
+        row.label(text='')
+        row.operator_menu_enum(
+            'coherence.add_component',
+            'available_components',
+            text='Add Component'
+        )
+
+    def draw_component(self, context, meta):
+        box = self.layout.box()
+
+        header = box.row(align=True)
+        self.draw_component_header(header, context, meta)
+
+        if meta.expanded:
+            body = box.column()
+            body.enabled = meta.enabled
+            self.draw_component_props(body, context, meta)
+
+    def draw_component_header(self, layout, context, meta):
+        left_wrapper = layout.column()
+
+        left = left_wrapper.row()
+        left.alignment = 'LEFT'
+
+        right_wrapper = layout.column()
+        right_wrapper.alignment = 'RIGHT'
+
+        right = right_wrapper.row()
+
+        left.separator(factor=0)
+        left.prop(meta, 'enabled', text='')
+
+        left.prop(
+            meta,
+            'expanded',
+            icon='TRIA_DOWN' if meta.expanded else 'TRIA_RIGHT',
+            text=meta.name,
+            emboss=False
+        )
+
+        # TODO: Reimplement. We need the component instance here.
+
+        # is_autobind = instance and instance.is_autobind
+
+        tags = ''
+        # if component.is_builtin:
+        #     tags += '(builtin)'
+
+        # if is_autobind:
+        #     tags += ' (auto)'
+
+        # and so on...
+
+        right_tags = right.column()
+        right_tags.alignment = 'RIGHT'
+        right_tags.enabled = False
+        right_tags.label(text=tags)
+
+        props = right.operator('coherence.destroy_component', text='', icon='X', emboss=False)
+        props.component_name = meta.name
+
+    def draw_component_props(self, layout, context, meta):
+        # Get the associated property group on the object
+        instance = meta.get_component()
+        if not instance:
+            layout.active = False
+            layout.label(text='Component is not registered')
+            return
+
+        props = instance.property_group
+        if not props or len(props.__annotations__) < 1:
+            layout.active = False
+            layout.label(text='No properties available')
+            return
+
         layout.use_property_split = True
-        layout.use_property_decorate = False
 
-        settings = context.object.coherence
-
-        col = layout.column(align=True)
-        col.prop(settings, 'display_mode')
+        for name in props.__annotations__:
+            layout.prop(props, name)
 
 @autoregister
 class COHERENCE_MATERIAL_PT_settings(BasePanel):
