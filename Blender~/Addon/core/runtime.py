@@ -192,6 +192,7 @@ class Runtime:
         # While actively connected send typical IO,
         # get viewport renders, and run as fast as possible
         if self.is_connected():
+
             msg = lib.Update()
             self.on_message(msg)
 
@@ -203,9 +204,11 @@ class Runtime:
             if not self.is_connected():
                 self.on_disconnected()
 
-            #return 0.0001
-            #return 0.016 # 60 FPS update rate
-            return 0.008 # 120 FPS
+            return 0.016 # 60 FPS update rate
+
+            # 120 seems to hang on Windows when minimized. I think it's the processing time of
+            # lib.Update() + the tiny delay that prevents Blender from being able to restore?
+            # return 0.008 # 120 FPS
 
         # Attempt to connect to shared memory if not already
         if not lib.IsConnectedToSharedMemory():
