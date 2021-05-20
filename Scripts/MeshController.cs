@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Events;
@@ -6,8 +7,12 @@ using UnityEngine.Rendering;
 
 namespace Coherence
 {
+    public delegate void OnUpdateMeshEvent(MeshController mesh);
+
     public class MeshController
     {
+        public event OnUpdateMeshEvent OnUpdateMesh;
+
         /// <summary>
         /// The matching interop data for this entity
         /// </summary>
@@ -22,6 +27,11 @@ namespace Coherence
         internal readonly ArrayBuffer<Vector2> uv2 = new ArrayBuffer<Vector2>();
         internal readonly ArrayBuffer<Vector2> uv3 = new ArrayBuffer<Vector2>();
         internal readonly ArrayBuffer<Vector2> uv4 = new ArrayBuffer<Vector2>();
+
+        /// <summary>
+        /// OnUpdateMesh listeners for changes on this mesh instance.
+        /// </summary>
+        internal readonly List<Action<MeshController>> listeners = new List<Action<MeshController>>();
 
         /// <summary>
         /// The underlying Unity Mesh to update
@@ -148,7 +158,8 @@ namespace Coherence
             // local copies of mesh data to be updated by Blender whenever new data comes in.
             // (so we don't free up, say, UVs, and then not have that buffer when re-applying from Blender)
             mesh.UploadMeshData(false);
-           // onUpdateVertices.Invoke(mesh);
+
+            OnUpdateMesh?.Invoke(this);
         }
     }
 }

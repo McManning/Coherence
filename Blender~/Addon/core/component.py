@@ -1,4 +1,5 @@
 
+from os import name
 import bpy
 from bpy.types import PropertyGroup
 from bpy.props import (
@@ -9,6 +10,11 @@ from bpy.props import (
     StringProperty,
     EnumProperty,
     FloatVectorProperty
+)
+
+from .interop import (
+    InteropComponent,
+    InteropString64
 )
 
 # XProperty functions that can transfer through Coherence
@@ -112,6 +118,24 @@ class BaseComponent:
             return None
 
         return getattr(self.bpy_obj, name)
+
+    @property
+    def interop(self):
+        mesh_uid = self.mesh_uid
+        material_id = self.material_id
+
+        component = InteropComponent()
+        component.name = InteropString64(self.name().encode())
+        component.target = InteropString64(self._name.encode())
+        component.enabled = self.enabled
+
+        if mesh_uid:
+            component.mesh = InteropString64(mesh_uid.encode())
+
+        if material_id:
+            component.material = InteropString64(material_id.encode())
+
+        return component
 
     @classmethod
     def is_autobind(cls) -> bool:

@@ -10,7 +10,7 @@ namespace Coherence
     {
         private bool showMainSettings = true;
         private bool showMaterialSettings = true;
-        private bool showPlugins = true;
+        private bool showComponents = true;
         private bool showTextureSyncSettings = true;
         private bool showAdvancedSettings = false;
         private bool showExperimentalSettings = false;
@@ -177,10 +177,10 @@ namespace Coherence
                 EditorGUILayout.LabelField(info.Name, EditorStyles.boldLabel);
                 GUILayout.FlexibleSpace();
 
-                if (GUILayout.Button("Unregister"))
+                /*if (GUILayout.Button("Unregister"))
                 {
                     CoherenceSettings.Instance.UnregisterComponent(info.Name);
-                }
+                }*/
 
                 if (GUILayout.Button("Edit"))
                 {
@@ -204,18 +204,19 @@ namespace Coherence
 
         private void DrawComponents()
         {
-            var components = CoherenceSettings.Instance.Components;
-            var registered = CoherenceSettings.Instance.RegisteredComponents;
+            var components = ComponentInfo.Infos;
+            //var registered = CoherenceSettings.Instance.RegisteredComponents;
 
             foreach (var component in components)
             {
-                if (registered.ContainsKey(component.Key))
+                //if (registered.ContainsKey(component.Key))
                 {
                     DrawComponent(component.Value);
                     EditorGUILayout.Space();
                 }
             }
 
+            /*
             var rect = EditorGUILayout.BeginHorizontal();
 
             if (EditorGUILayout.DropdownButton(
@@ -247,6 +248,7 @@ namespace Coherence
             GUILayout.FlexibleSpace();
 
             EditorGUILayout.EndHorizontal();
+            */
         }
 
         private void DrawMaterialSettings()
@@ -556,10 +558,10 @@ namespace Coherence
             EditorGUILayout.EndFoldoutHeaderGroup();
             EditorGUILayout.Space();
 
-            showPlugins = EditorGUILayout.BeginFoldoutHeaderGroup(
-                showPlugins, "Plugins"
+            showComponents = EditorGUILayout.BeginFoldoutHeaderGroup(
+                showComponents, "Components"
             );
-            if (showPlugins)
+            if (showComponents)
             {
                 using (new EditorGUI.IndentLevelScope())
                 {

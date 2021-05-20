@@ -369,8 +369,6 @@ namespace Coherence
 
             // ... and so on
 
-            InteropLogger.Debug("CopyMeshData - Check triangles");
-
             // If any of the channels created new split vertices
             // we need to rebuild the full triangle buffer to re-map
             // old loop triangle indices to new split vertex indices

@@ -13,6 +13,8 @@ using UnityEditor.SceneManagement;
 
 namespace Coherence
 {
+    public delegate void OnCoherenceEvent();
+
     /// <summary>
     /// Handles communication between Blender and Unity and passes
     /// the appropriate data to subcomponents for internal processing.
@@ -54,6 +56,11 @@ namespace Coherence
         readonly OrderedDictionary viewports = new OrderedDictionary();
         readonly Dictionary<string, ObjectController> objects = new Dictionary<string, ObjectController>();
         readonly Dictionary<string, MeshController> meshes = new Dictionary<string, MeshController>();
+
+        //public Dictionary<string, HashSet<OnCoherenceEvent>> EventDelegates { get; } = new Dictionary<string, HashSet<OnCoherenceEvent>>();
+
+        internal event OnCoherenceEvent OnCoherenceConnected;
+        internal event OnCoherenceEvent OnCoherenceDisconnected;
 
         /// <summary>
         /// Objects added with parents that are not (yet) in the scene.
@@ -160,7 +167,7 @@ namespace Coherence
             if (IsConnected)
             {
                 messages.WriteDisconnect();
-                OnDisconnectFromBlender();
+                OnDisconnected();
             }
             else
             {
@@ -365,7 +372,7 @@ namespace Coherence
 
         #region Meshes
 
-        private MeshController GetOrCreateMesh(string name)
+        internal MeshController GetOrCreateMesh(string name)
         {
             if (!meshes.ContainsKey(name))
             {
@@ -381,7 +388,7 @@ namespace Coherence
 
         #region Objects
 
-        private ObjectController GetObject(string name)
+        internal ObjectController GetObject(string name)
         {
             if (!objects.ContainsKey(name))
             {
@@ -414,12 +421,6 @@ namespace Coherence
 
             objects[name] = controller;
             controller.UpdateFromInterop(iso);
-
-            Debug.Log($"Add object {name} with mesh {iso.mesh}");
-            if (!string.IsNullOrEmpty(iso.mesh))
-            {
-                controller.SetMesh(GetOrCreateMesh(iso.mesh));
-            }
 
             ReparentObject(controller);
 
@@ -457,15 +458,6 @@ namespace Coherence
             var needsReparenting = !iso.transform.parent.Equals(obj.Data.transform.parent);
 
             obj.UpdateFromInterop(iso);
-
-            if (string.IsNullOrEmpty(iso.mesh))
-            {
-                obj.SetMesh(null);
-            }
-            else
-            {
-                obj.SetMesh(GetOrCreateMesh(iso.mesh));
-            }
 
             if (needsReparenting)
             {
@@ -532,7 +524,7 @@ namespace Coherence
         #endregion
 
         #region IO
-        private void OnConnectToBlender()
+        private void OnConnected()
         {
             Debug.Log("Connected to Blender");
 
@@ -540,12 +532,15 @@ namespace Coherence
 
             // Send our state/settings to Blender to sync up
             messages.Queue(RpcRequest.Connect, Application.unityVersion, ref unityState);
+
+            // Notify listeners
+            OnCoherenceConnected?.Invoke();
         }
 
         /// <summary>
         /// Cleanup any lingering blender data from the scene (viewport cameras, meshes, etc)
         /// </summary>
-        private void OnDisconnectFromBlender()
+        private void OnDisconnected()
         {
             Debug.Log("Disconnected from Blender");
             IsConnected = false;
@@ -558,6 +553,9 @@ namespace Coherence
 
             // Clear the scene of any synced data from Blender
             Clear();
+
+            // Notify listeners
+            OnCoherenceDisconnected?.Invoke();
         }
 
         /// <summary>
@@ -589,7 +587,7 @@ namespace Coherence
                     }
 
                     blenderState = FastStructure.PtrToStructure<InteropBlenderState>(ptr);
-                    OnConnectToBlender();
+                    OnConnected();
                     return 0;
                 }
 
@@ -643,6 +641,26 @@ namespace Coherence
                             target,
                             FastStructure.PtrToStructure<InteropSceneObject>(ptr)
                         );
+                        break;
+
+                    // Component messages.
+                    // Target is in the form of `obj_name:component_name` so we use
+                    // the target info in the payload itself for routing.
+                    case RpcRequest.AddComponent:
+                        var component = FastStructure.PtrToStructure<InteropComponent>(ptr);
+                        ComponentInfo.Find(component.name).Instantiate(this, component);
+                        break;
+                    case RpcRequest.DestroyComponent:
+                        component = FastStructure.PtrToStructure<InteropComponent>(ptr);
+                        ComponentInfo.Find(component.name).Destroy(component);
+                        break;
+                    case RpcRequest.UpdateComponent:
+                        component = FastStructure.PtrToStructure<InteropComponent>(ptr);
+                        ComponentInfo.Find(target).Update(component);
+                        break;
+                    case RpcRequest.ComponentMessage:
+                        var componentMsg = FastStructure.PtrToStructure<InteropComponentMessage>(ptr);
+                        ComponentInfo.Find(componentMsg.name).OnMessage(componentMsg);
                         break;
 
                     // Mesh messages
@@ -728,7 +746,7 @@ namespace Coherence
             // Handle any disconnects that may have occured during the read
             if (disconnected)
             {
-                OnDisconnectFromBlender();
+                OnDisconnected();
             }
 
             return bytesRead;

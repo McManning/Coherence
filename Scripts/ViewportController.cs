@@ -121,7 +121,7 @@ namespace Coherence
             var f = new Vector3(camera.forward.x, camera.forward.z, camera.forward.y);
             var u = new Vector3(camera.up.x, camera.up.z, camera.up.y);
 
-            if (camera.isPerspective)
+            if (camera.isPerspective == 1)
             {
                 transform.position = p;
                 transform.rotation = Quaternion.LookRotation(f, u);

@@ -25,7 +25,7 @@ class InteropString64(Structure):
 
     @property
     def value(self) -> str:
-        return self.buffer.value
+        return self.buffer.decode()
 
 class InteropMatrix4x4(Structure):
     _fields_ = [
@@ -91,7 +91,7 @@ class InteropCamera(Structure):
     _fields_ = [
         ('width', c_int),
         ('height', c_int),
-        ('isPerspective', c_bool),
+        ('isPerspective', c_int),
         ('lens', c_float),
         ('viewDistance', c_float),
         ('position', InteropVector3),
@@ -106,6 +106,24 @@ class RenderTextureData(Structure):
         ('height', c_int),
         ('frame', c_int),
         ('pixels', POINTER(c_ubyte))
+    ]
+
+# class InteropComponent(Structure):
+#     _fields_ = [
+#         ('name', InteropString64),
+#         ('target', InteropString64),
+#         ('mesh', InteropString64),
+#         ('material', InteropString64),
+#         ('enabled', c_bool)
+#     ]
+
+class InteropComponent(Structure):
+    _fields_ = [
+        ('name', InteropString64),
+        ('target', InteropString64),
+        ('mesh', InteropString64),
+        ('material', InteropString64),
+        ('enabled', c_int),
     ]
 
 # RpcMessage ID for InteropComponentMessage payloads.
@@ -413,6 +431,10 @@ def load_library(path: str):
         InteropTransform,   # transform
     )
     lib.SetObjectTransform.restype = c_int
+
+    lib.AddComponent.argtypes = (InteropComponent,)
+    lib.UpdateComponent.argtypes = (InteropComponent,)
+    lib.DestroyComponent.argtypes = (InteropComponent,)
 
     return lib
 

@@ -6,48 +6,58 @@ using UnityEngine;
 namespace Coherence
 {
     /// <summary>
-    /// Metadata about a Coherence plugin and its kinds/instances
+    /// Tracking and metadata for Coherence components
     /// </summary>
     internal class ComponentInfo
     {
+        /// <summary>
+        /// Get a list of all components, regardless of registration state
+        /// </summary>
+        internal static Dictionary<string, ComponentInfo> Infos {
+            get {
+                // If we came out of an assembly reload, try to restore.
+                if (infos == null)
+                {
+                    LoadComponentsFromAssemblies();
+                }
+                return infos;
+            }
+        }
+
+        private static Dictionary<string, ComponentInfo> infos;
+
+        internal static ComponentInfo Find(string name)
+        {
+            // TODO: Throw or something
+            return Infos[name];
+        }
+
         internal string Name { get; set; }
 
         internal Type Type { get; set; }
 
-        internal Dictionary<ObjectController, IComponent> instances = new Dictionary<ObjectController, IComponent>();
+        internal Dictionary<string, IComponent> instances = new Dictionary<string, IComponent>();
 
         /// <summary>
         /// Methods that can handle Coherence events (e.g. OnConnected, OnDisconnected)
         /// </summary>
-        internal DictionarySet<Type, MethodInfo> EventMethods { get; } = new DictionarySet<Type, MethodInfo>();
+        internal Dictionary<string, MethodInfo> EventLookupTable { get; } = new Dictionary<string, MethodInfo>();
 
-        /// <summary>
-        /// Load declared On* Coherence event methods into a lookup table
-        /// </summary>
-        private void CacheEventMethods(Type type)
+        private static void LoadComponentsFromAssemblies()
         {
-            foreach (var method in type.GetMethods())
+            infos = new Dictionary<string, ComponentInfo>();
+            var componentType = typeof(IComponent);
+
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
-                if (method.Name.StartsWith("On"))
+                foreach (var type in assembly.GetTypes())
                 {
-                    EventMethods.Add(type, method);
+                    if (componentType.IsAssignableFrom(type) && !type.IsInterface)
+                    {
+                        Add(type);
+                    }
                 }
             }
-        }
-
-        internal IComponent Instantiate(SyncManager sync, ObjectController target)
-        {
-            var component = target.gameObject.AddComponent(Type) as IComponent;
-
-            // Fill in plugin data
-            var data = component.GetCoherenceData();
-            data.Sync = sync;
-            data.name = Name;
-
-            // ... event stuff?
-
-            instances[target] = component;
-            return component;
         }
 
         internal void DestroyAllInstances()
@@ -60,10 +70,79 @@ namespace Coherence
             instances.Clear();
         }
 
-        internal void DestroyInstance(ObjectController target)
+        internal void Instantiate(SyncManager sync, InteropComponent interop)
         {
-            UnityEngine.Object.Destroy(instances[target] as UnityEngine.Object);
-            instances.Remove(target);
+            var target = sync.GetObject(interop.target);
+            var component = target.gameObject.AddComponent(Type) as IComponent;
+            //component.enabled = interop.enabled;
+
+            // Fill in binding data
+            component.CreateCoherenceData(this, sync);
+
+            // Attach a mesh to it if we referenced one
+            if (!string.IsNullOrEmpty(interop.mesh))
+            {
+                var mesh = sync.GetOrCreateMesh(interop.mesh);
+                component.SetMeshController(mesh);
+            }
+
+            instances[interop.target] = component;
+        }
+
+        internal void Destroy(InteropComponent interop)
+        {
+            var instance = instances[interop.target];
+
+            // TODO: If they destroy it via unity first, this won't be called.
+            // How do we make sure it gets cleaned up?
+            instance.UnbindCoherenceEvents();
+
+            UnityEngine.Object.Destroy(instance as UnityEngine.Object);
+        }
+
+        internal void Update(InteropComponent interop)
+        {
+            var instance = instances[interop.target];
+            // do thing
+        }
+
+        internal void OnMessage(InteropComponentMessage message)
+        {
+            var instance = instances[message.target];
+            // do thing
+        }
+
+        internal static void Add(Type type)
+        {
+            var attr = type.GetCustomAttribute<ComponentAttribute>();
+            if (attr == null)
+            {
+                Debug.LogError("missing attr"); // TODO: message
+                return;
+            }
+
+            if (infos.ContainsKey(attr.Name))
+            {
+                Debug.Log("Already registered: " + attr.Name); // TODO: Error?
+                return;
+            }
+
+            var info = new ComponentInfo
+            {
+                Name = attr.Name,
+                Type = type
+            };
+
+            // Load all On* event handlers into a lookup table
+            foreach (var method in type.GetMethods())
+            {
+                if (method.Name.StartsWith("On"))
+                {
+                    info.EventLookupTable.Add(method.Name, method);
+                }
+            }
+
+            Infos.Add(attr.Name, info);
         }
     }
 }

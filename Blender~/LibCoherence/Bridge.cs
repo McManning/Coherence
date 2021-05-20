@@ -534,12 +534,13 @@ namespace Coherence
             return component;
         }
 
-        public void AddComponent(SceneObject obj, string name, bool enabled)
+        public void AddComponent(SceneObject obj, InteropComponent component)
         {
-            var component = new Component(name, obj.Name, enabled);
-            obj.components.Add(component);
+            var instance = new Component(component.name, obj.Name);
+            instance.data = component;
+            obj.components.Add(instance);
 
-            SendEntity(RpcRequest.AddComponent, component);
+            SendEntity(RpcRequest.AddComponent, instance);
         }
 
         public void DestroyComponent(SceneObject obj, string name)

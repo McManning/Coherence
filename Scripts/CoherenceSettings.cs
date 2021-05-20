@@ -347,29 +347,9 @@ namespace Coherence
         // Alternatively - I'd like to be able to pull in a model from blender,
         // move it around in Unity, and then move around in blender independently.
 
-        #region Plugin Management
+        #region Component Management
 
-        /// <summary>
-        /// Component instances actively listening to Coherence events (OnDisconnect, OnConnect, etc)
-        /// </summary>
-        internal DictionarySet<string, IComponent> EventHandlers { get; } = new DictionarySet<string, IComponent>();
-
-        /// <summary>
-        /// Get a list of all components, regardless of registration state
-        /// </summary>
-        internal Dictionary<string, ComponentInfo> Components {
-            get {
-                // If we came out of an assembly reload, try to restore.
-                if (components == null)
-                {
-                    RestoreComponents();
-                }
-                return components;
-            }
-        }
-
-        private Dictionary<string, ComponentInfo> components;
-
+        /*
         internal Dictionary<string, ComponentInfo> RegisteredComponents
         {
             get
@@ -389,45 +369,14 @@ namespace Coherence
         /// </summary>
         [SerializeField]
         private List<string> registeredComponentNames;
+        */
 
-        /// <summary>
-        /// Populate the list of event delegates with all event methods
-        /// that can be executed on the component instance.
-        /// </summary>
-        internal void BindEventHandlers(ComponentInfo component, IComponent instance)
-        {
-            foreach (var method in component.EventMethods.Items(instance.GetType()))
-            {
-                EventHandlers.Add(method.Name, instance);
-                instance.AddEventDelegate(method);
-            }
-        }
-
-        /// <summary>
-        /// Remove a component from all event handlers
-        /// </summary>
-        internal void UnbindEventHandlers(IComponent instance)
-        {
-            EventHandlers.RemoveAll(instance);
-            instance.ClearEventDelegates();
-        }
-
-        /// <summary>
-        /// Dispatch a named event (e.g. "OnConnected") to all components with a matching method.
-        /// </summary>
-        /// <param name="eventName"></param>
-        internal void DispatchEvent(string eventName)
-        {
-            foreach (var component in EventHandlers.Items(eventName))
-            {
-                component.DispatchEvent(eventName);
-            }
-        }
+        /*
 
         internal void RegisterComponent(string name)
         {
-            var plugin = Components[name];
-            RegisteredComponents.Add(name, plugin);
+            var info = ComponentInfo.Find(name);
+            RegisteredComponents.Add(name, info);
             registeredComponentNames.Add(name);
         }
 
@@ -442,21 +391,7 @@ namespace Coherence
         /// </summary>
         internal void RestoreComponents()
         {
-            components = new Dictionary<string, ComponentInfo>();
             registeredComponents = new Dictionary<string, ComponentInfo>();
-
-            var componentType = typeof(IComponent);
-
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                foreach (var type in assembly.GetTypes())
-                {
-                    if (componentType.IsAssignableFrom(type) && !type.IsInterface)
-                    {
-                        AddComponentInfo(type);
-                    }
-                }
-            }
 
             // Register everything previously added
             var prevRegistered = registeredComponentNames;
@@ -464,7 +399,7 @@ namespace Coherence
 
             foreach (var name in prevRegistered)
             {
-                if (!components.ContainsKey(name))
+                if (ComponentInfo.Find(name) == null)
                 {
                     Debug.LogError($"Could not restore component [{name}] - missing after assembly reload");
                 }
@@ -474,25 +409,7 @@ namespace Coherence
                 }
             }
         }
-
-        private void AddComponentInfo(Type type)
-        {
-            var attr = type.GetCustomAttribute<ComponentAttribute>();
-            if (attr == null)
-            {
-                Debug.LogError("missing attr"); // TODO: message
-                return;
-            }
-
-            if (!Components.TryGetValue(attr.Name, out ComponentInfo info))
-            {
-                info = new ComponentInfo();
-                info.Name = attr.Name;
-                info.Type = type;
-
-                Components.Add(attr.Name, info);
-            }
-        }
+        */
 
         #endregion
     }

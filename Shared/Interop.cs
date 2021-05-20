@@ -137,11 +137,11 @@ namespace Coherence
         UpdateObject,
 
         /// <summary>
-        /// Notify Unity that a <see cref="InteropComponent"/>
+        /// Notify Unity that a <see cref="InteropComponentX"/>
         /// has been added to an object in the scene
         ///
         /// <para>
-        ///     Payload: <see cref="InteropComponent"/>
+        ///     Payload: <see cref="InteropComponentX"/>
         /// </para>
         /// </summary>
         AddComponent,
@@ -150,7 +150,7 @@ namespace Coherence
         /// Notify Unity of a destroyed component
         ///
         /// <para>
-        ///     Payload: <see cref="InteropComponent"/>
+        ///     Payload: <see cref="InteropComponentX"/>
         /// </para>
         /// </summary>
         DestroyComponent,
@@ -159,7 +159,7 @@ namespace Coherence
         /// Notify Unity of an updated component state
         ///
         /// <para>
-        ///     Payload: <see cref="InteropComponent"/>
+        ///     Payload: <see cref="InteropComponentX"/>
         /// </para>
         /// </summary>
         UpdateComponent,
@@ -284,6 +284,11 @@ namespace Coherence
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct InteropComponentMessage
     {
+        /// <summary>
+        /// Name of the component sending the message
+        /// </summary>
+        public InteropString64 name;
+
         /// <summary>
         /// Target object for this message, if applicable.
         /// </summary>
@@ -465,7 +470,7 @@ namespace Coherence
         /// <summary>Viewport height in pixels</summary>
         public int height;
 
-        public bool isPerspective;
+        public int isPerspective;
 
         public float lens;
         public float viewDistance;
@@ -695,17 +700,40 @@ namespace Coherence
         }
     }
 
-    /// <summary>
-    /// Information about a component shared between applications
-    /// </summary>
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct InteropComponent
     {
         public InteropString64 name;
+
         public InteropString64 target;
-        public bool enabled;
 
         public InteropString64 mesh;
+
+        public InteropString64 material;
+
+        // Ref: https://stackoverflow.com/a/39251864
+        // Bool MarshalAs doesn't work for our serializer - so C# will serialize to 4 bytes
+        // and a c_bool in ctypes will be 1 byte. And deserialization seems to assume 1 byte.
+        // To keep things simple use ints for now.
+
+        //[MarshalAs(UnmanagedType.I1)]
+        //public bool enabled;
+        public int enabled;
+
+        public override int GetHashCode()
+        {
+            return base.GetHashCode();
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is InteropComponent i
+                && i.name.Equals(name)
+                && i.target.Equals(target)
+                && i.mesh.Equals(mesh)
+                && i.material.Equals(material)
+                && i.enabled.Equals(enabled);
+        }
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]

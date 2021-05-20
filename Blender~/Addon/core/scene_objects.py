@@ -80,8 +80,6 @@ class SceneObjects(Plugin):
         for instance in self.objects[obj_name]:
             component_name = instance.name()
 
-            self.on_destroy_component(obj_name, component_name)
-
             # Disable/destroy the component
             try:
                 instance.enabled = False
@@ -309,13 +307,14 @@ class SceneObjects(Plugin):
         obj_name = obj.name
         component_name = instance.name()
 
-        self.on_destroy_component(obj_name, component_name)
-
         try:
             instance.enabled = False
             instance.on_destroy()
         except Exception as err:
             self.on_component_error(component_name, err, obj_name)
+
+        # Sync to LibCoherence
+        lib.DestroyComponent(instance.interop)
 
         # Untrack the destroyed component
         self.objects[obj_name].remove(instance)
@@ -329,10 +328,9 @@ class SceneObjects(Plugin):
         if hasattr(obj, instance.get_property_group_name()):
             del obj[instance.get_property_group_name()]
 
-        # If this was the last component on the object, remove from the synced scene.
+        # If this was the last component on the object, remove the object as well
         if len(self.objects[obj_name]) < 1:
-            self.on_destroy_object(obj_name)
-            del self.objects[obj_name]
+            self.destroy_object(obj_name)
 
     def _find_meta(self, obj, name: str):
         return next((x for x in obj.coherence.components if x.name == name), None)
@@ -344,6 +342,7 @@ class SceneObjects(Plugin):
             meta.name = name
             meta.enabled = True
 
+        print('Find or create meta name={} enabled={}'.format(name, meta.enabled))
         return meta
 
     def _remove_meta(self, obj, component_name: str):
@@ -423,24 +422,6 @@ class SceneObjects(Plugin):
             get_string_buffer(obj_name)
         )
 
-    def on_destroy_component(self, obj_name: str, component_name: str):
-        """
-        Args:
-            obj_name (str):
-            component_name (str):
-        """
-        # If this was the last component - stop syncing the object altogether
-        if len(self.objects[obj_name]) < 1:
-            lib.RemoveObjectFromScene(
-                get_string_buffer(obj_name)
-            )
-        else: # Just destroy the component
-            lib.DestroyComponent(
-                get_string_buffer(obj_name),
-                get_string_buffer(component_name)
-            )
-            pass
-
     def on_add_component(self, obj: str, component):
         """
         Args:
@@ -451,11 +432,7 @@ class SceneObjects(Plugin):
         if len(self.objects[obj.name]) < 2:
             self.on_add_object(obj)
 
-        lib.AddComponent(
-            get_string_buffer(obj.name),
-            get_string_buffer(component.name()),
-            component.enabled
-        )
+        lib.AddComponent(component.interop)
 
     def on_component_error(self, component_name: str, err, obj_name = None):
         """Log an error raised from within a component callback
@@ -520,6 +497,9 @@ class SceneObjects(Plugin):
                             # This also allows multiple components to manage
                             # independent meshes on the same scene object.
                             self.dirty_geometry[mesh_uid] = instance
+
+            elif type(update.id) == bpy.types.Mesh:
+                print('Got a mesh update for {}, is_geo={}'.format(update.id.name, update.is_updated_geometry))
 
         # Handle all unique geometry updates
         for component in self.dirty_geometry.values():

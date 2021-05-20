@@ -370,6 +370,7 @@ namespace Coherence
             [MarshalAs(UnmanagedType.LPStr)] string name,
             InteropTransform transform
         ) {
+            InteropLogger.Debug($"Set transform {name} to parent={transform.parent}");
             try
             {
                 var obj = Bridge.GetObject(name);
@@ -408,17 +409,12 @@ namespace Coherence
         #region Component API
 
         [DllExport]
-        public static int AddComponent(
-            [MarshalAs(UnmanagedType.LPStr)] string objectName,
-            [MarshalAs(UnmanagedType.LPStr)] string componentName,
-            bool enabled
-        ) {
-            InteropLogger.Debug($"Add component object={objectName}, component={componentName}, enabled={enabled}");
-
+        public static int AddComponent(InteropComponent component)
+        {
             try
             {
-                var obj = Bridge.GetObject(objectName);
-                Bridge.AddComponent(obj, componentName, enabled);
+                var obj = Bridge.GetObject(component.target);
+                Bridge.AddComponent(obj, component);
                 return 1;
             }
             catch (Exception e)
@@ -429,17 +425,12 @@ namespace Coherence
         }
 
         [DllExport]
-        public static int DestroyComponent(
-            [MarshalAs(UnmanagedType.LPStr)] string objectName,
-            [MarshalAs(UnmanagedType.LPStr)] string componentName,
-            bool enabled
-        ) {
-            InteropLogger.Debug($"Destroy component object={objectName}, component={componentName}, enabled={enabled}");
-
+        public static int DestroyComponent(InteropComponent component)
+        {
             try
             {
-                var obj = Bridge.GetObject(objectName);
-                Bridge.DestroyComponent(obj, componentName);
+                var obj = Bridge.GetObject(component.target);
+                Bridge.DestroyComponent(obj, component.name);
                 return 1;
             }
             catch (Exception e)
@@ -450,20 +441,18 @@ namespace Coherence
         }
 
         [DllExport]
-        public static int UpdateComponent(
-            [MarshalAs(UnmanagedType.LPStr)] string objectName,
-            [MarshalAs(UnmanagedType.LPStr)] string componentName,
-            bool enabled
-        ) {
-            InteropLogger.Debug($"Update component object={objectName}, component={componentName}, enabled={enabled}");
-
+        public static int UpdateComponent(InteropComponent component)
+        {
             try
             {
-                var obj = Bridge.GetObject(objectName);
-                var component = Bridge.GetComponent(obj, componentName);
-                component.data.enabled = enabled;
+                var obj = Bridge.GetObject(component.target);
+                var instance = Bridge.GetComponent(obj, component.name);
 
-                Bridge.SendEntity(RpcRequest.UpdateComponent, component);
+                if (!instance.data.Equals(component))
+                {
+                    instance.data = component;
+                    Bridge.SendEntity(RpcRequest.UpdateComponent, instance);
+                }
                 return 1;
             }
             catch (Exception e)

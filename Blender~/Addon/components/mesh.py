@@ -80,7 +80,7 @@ class Mesh(api.Component):
         # If there are modifiers - we need to generate a unique
         # name for this object + mesh combination.
         # This ends up something like `Cube.001_0x1d4d765ca40`
-        return '{}_{}'.format(self.name[:40], hex(id(self)))
+        return '{}_{}'.format(self._name[:40], hex(id(self)))
 
     def send_evaluated_mesh(self, depsgraph):
         """
@@ -157,6 +157,8 @@ class Mesh(api.Component):
         Args:
             depsgraph (bpy.types.Depsgraph): Evaluated dependency graph
         """
+        # Could do a lib.UpdateComponent here with interop but I don't want to
+        # expose that to the end users...
         self.send_evaluated_mesh(depsgraph)
 
 def register():
