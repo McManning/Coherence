@@ -279,25 +279,6 @@ namespace Coherence
                 }
             }
 
-            /*
-            // Turn FieldInfo entries to delegates into this instance
-            foreach (var field in info.Fields)
-            {
-                try
-                {
-                    var synced = SyncedPropertyFactory.Create(component, field);
-                    state.Properties[synced.Name] = synced;
-                }
-                catch (NotSupportedException)
-                {
-                    // The factory will throw for anything that is picked up but can't be bound as a
-                    // synced property. Either because it's missing a getter/setter or it's an
-                    // unsupported data type. We'll ignore these errors since this list also includes
-                    // things like "gameObject" or "rigidbody2D" for MonoBehaviours)
-                }
-            }
-            */
-
             // Turn PropertyInfo entries to delegates into this instance
             foreach (var prop in info.Properties)
             {
@@ -308,7 +289,14 @@ namespace Coherence
                 }
                 catch (NotSupportedException)
                 {
-                    // Noop
+                    // The factory will throw for anything that is picked up but can't be bound as a
+                    // synced property. Either because it's missing a getter/setter or it's an
+                    // unsupported data type. We'll ignore these errors since this list also includes
+                    // things like "gameObject" or "rigidbody2D" for MonoBehaviours)
+                }
+                catch (Exception e)
+                {
+                    InteropLogger.Error($"Exception while binding property '{prop.Name}': {e}");
                 }
             }
 

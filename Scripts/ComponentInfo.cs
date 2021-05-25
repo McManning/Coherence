@@ -16,8 +16,6 @@ namespace Coherence
 
         void CreateDelegates(IComponent obj, PropertyInfo prop);
 
-        void CreateDelegates(IComponent component, FieldInfo field);
-
         void FromInterop(InteropProperty prop);
 
         InteropProperty ToInterop();
@@ -48,52 +46,6 @@ namespace Coherence
                 component,
                 getterMethod
             );
-
-            setter = (Action<T>)Delegate.CreateDelegate(
-                typeof(Action<T>),
-                component,
-                setterMethod
-            );
-        }
-
-        public void CreateDelegates(IComponent component, FieldInfo field)
-        {
-            // Property names are standardized to lowercase alphanumeric only.
-            Name = Regex.Replace(field.Name, "[^A-Za-z0-9]", "").ToLower();
-
-            // We don't have GetGetMethod/GetSetMethod for fields so
-            // we use dynamic IL instead here.
-
-            var getterMethod = new DynamicMethod(
-                "get_" + field.Name,
-                typeof(T),
-                Type.EmptyTypes,
-                true
-            );
-
-            var il = getterMethod.GetILGenerator();
-            il.Emit(OpCodes.Ldarg_0); // Load "this"
-            il.Emit(OpCodes.Ldfld, field); // Load reference to field
-            il.Emit(OpCodes.Ret);
-
-            getter = (Func<T>)Delegate.CreateDelegate(
-                typeof(Func<T>),
-                component,
-                getterMethod
-            );
-
-            var setterMethod = new DynamicMethod(
-                "set_" + field.Name,
-                null,
-                new Type[] { typeof(T) },
-                true
-            );
-
-            il = setterMethod.GetILGenerator();
-            il.Emit(OpCodes.Ldarg_0); // Load "this"
-            il.Emit(OpCodes.Ldarg_1); // Load T value
-            il.Emit(OpCodes.Stfld, field); // Store in field
-            il.Emit(OpCodes.Ret);
 
             setter = (Action<T>)Delegate.CreateDelegate(
                 typeof(Action<T>),
@@ -243,6 +195,25 @@ namespace Coherence
         }
     }
 
+    internal class SyncedEnumProperty<T> : SyncedProperty<T>, ISyncedProperty
+    {
+        public void FromInterop(InteropProperty prop)
+        {
+            setter((T)Enum.Parse(typeof(T), prop.stringValue, true));
+        }
+
+        public InteropProperty ToInterop()
+        {
+            var value = getter();
+            return new InteropProperty
+            {
+                name = new InteropString64(Name),
+                type = InteropPropertyType.String, // Technically passed as a string.
+                stringValue = value.ToString()
+            };
+        }
+    }
+
     /// <summary>
     /// Factory for instantiating new concrete <see cref="ISyncedProperty"/>
     /// implementations already bound to the given component instance and property.
@@ -263,22 +234,14 @@ namespace Coherence
             return instance;
         }
 
-        public static ISyncedProperty Create(IComponent component, FieldInfo field)
-        {
-            var instance = Instantiate(field.FieldType);
-            if (instance == null)
-            {
-                throw new NotSupportedException(
-                    $"Field [{field.Name}] of type [{field.FieldType}] is not supported"
-                );
-            }
-
-            instance.CreateDelegates(component, field);
-            return instance;
-        }
-
         private static ISyncedProperty Instantiate(Type type)
         {
+            if (type.IsEnum)
+            {
+                var enumType = typeof(SyncedEnumProperty<>).MakeGenericType(type);
+                return Activator.CreateInstance(enumType) as ISyncedProperty;
+            }
+
             if (type == typeof(bool))
                 return new SyncedBoolProperty();
 
