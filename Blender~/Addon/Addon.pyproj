@@ -23,17 +23,20 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="api.py" />
+    <Compile Include="components\example.py" />
+    <Compile Include="components\mesh.py" />
+    <Compile Include="components\metaballs.py" />
+    <Compile Include="components\__init__.py" />
+    <Compile Include="core\component.py" />
     <Compile Include="core\engine.py" />
-    <Compile Include="core\image.py">
-      <SubType>Code</SubType>
-    </Compile>
+    <Compile Include="core\image_sync.py" />
     <Compile Include="core\interop.py" />
     <Compile Include="core\operators.py" />
     <Compile Include="core\panels.py" />
     <Compile Include="core\plugin.py" />
     <Compile Include="core\properties.py" />
     <Compile Include="core\runtime.py" />
-    <Compile Include="core\scene.py" />
+    <Compile Include="core\scene_objects.py" />
     <Compile Include="core\utils.py" />
     <Compile Include="core\__init__.py" />
     <Compile Include="test.py" />
@@ -43,6 +46,7 @@
     <Compile Include="__init__.py" />
   </ItemGroup>
   <ItemGroup>
+    <Folder Include="components\" />
     <Folder Include="core" />
     <Folder Include="util" />
   </ItemGroup>

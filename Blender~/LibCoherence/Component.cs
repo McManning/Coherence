@@ -18,9 +18,19 @@ namespace Coherence
         internal InteropComponent data;
 
         /// <summary>
-        /// Combination of target object and component name.
-        /// We combine these so that ReplaceOrQueue buffer commands will detect
-        /// the combination of Name+RpcRequest as unique component messages.
+        /// Properties associated with this component. Defined in Blender and Unity.
+        /// </summary>
+        internal ArrayBuffer<InteropProperty> properties = new ArrayBuffer<InteropProperty>();
+
+        /// <summary>
+        /// Combination of target object and component name as a single "target:component" string.
+        ///
+        /// <para>
+        ///     We combine these so that ReplaceOrQueue buffer commands will detect
+        ///     the combination of Name+RpcRequest as unique component messages and that
+        ///     the receiver application can route to the correct object+component target
+        ///     through its own lookup table of event receivers.
+        /// </para>
         /// </summary>
         public string Name { get; set; }
 

@@ -31,19 +31,11 @@ Utility (core.utils)
     :show-inheritance:
     :undoc-members:
 
+
 Component (core.component)
 ============================
 
 .. automodule:: Addon.core.component
-    :members:
-    :inherited-members:
-    :show-inheritance:
-    :undoc-members:
-
-Scene (core.scene)
-===================
-
-.. automodule:: Addon.core.scene
     :members:
     :inherited-members:
     :show-inheritance:
@@ -59,12 +51,3 @@ Interop Structures (core.interop)
     :show-inheritance:
     :undoc-members:
 
-
-Image (core.image)
-===================
-
-.. automodule:: Addon.core.image
-    :members:
-    :inherited-members:
-    :show-inheritance:
-    :undoc-members:

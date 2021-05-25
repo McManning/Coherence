@@ -137,11 +137,11 @@ namespace Coherence
         UpdateObject,
 
         /// <summary>
-        /// Notify Unity that a <see cref="InteropComponentX"/>
+        /// Notify Unity that a <see cref="InteropComponent"/>
         /// has been added to an object in the scene
         ///
         /// <para>
-        ///     Payload: <see cref="InteropComponentX"/>
+        ///     Payload: <see cref="InteropComponent"/>
         /// </para>
         /// </summary>
         AddComponent,
@@ -150,7 +150,7 @@ namespace Coherence
         /// Notify Unity of a destroyed component
         ///
         /// <para>
-        ///     Payload: <see cref="InteropComponentX"/>
+        ///     Payload: <see cref="InteropComponent"/>
         /// </para>
         /// </summary>
         DestroyComponent,
@@ -159,10 +159,20 @@ namespace Coherence
         /// Notify Unity of an updated component state
         ///
         /// <para>
-        ///     Payload: <see cref="InteropComponentX"/>
+        ///     Payload: <see cref="InteropComponent"/>
         /// </para>
         /// </summary>
         UpdateComponent,
+
+        /// <summary>
+        /// Notify the connected application that an
+        /// <see cref="InteropProperty"/> array has been modified.
+        ///
+        /// <para>
+        ///     Payload: <see cref="InteropProperty"/>[]
+        /// </para>
+        /// </summary>
+        UpdateProperties,
 
         /// <summary>
         /// Notify Unity that a <see cref="InteropMesh"/> has updates.
@@ -284,16 +294,6 @@ namespace Coherence
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct InteropComponentMessage
     {
-        /// <summary>
-        /// Name of the component sending the message
-        /// </summary>
-        public InteropString64 name;
-
-        /// <summary>
-        /// Target object for this message, if applicable.
-        /// </summary>
-        public InteropString64 target;
-
         /// <summary>
         /// Custom ID for this message
         /// </summary>
@@ -749,19 +749,21 @@ namespace Coherence
         public int height;
     }
 
-    public enum InteropPropertyType : byte
+    public enum InteropPropertyType
     {
         Boolean = 1,
         Integer,
         Float,
         String,
         Enum,
-        FloatVector
+        Color,
+        FloatVector2,
+        FloatVector3,
+        FloatVector4,
     }
 
     /// <summary>
-    /// Arbitrary property information shared between applications.
-    /// An object contains one or more properties.
+    /// Properties associated with an <see cref="InteropComponent"/> instance.
     /// </summary>
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct InteropProperty
@@ -776,28 +778,35 @@ namespace Coherence
         /// </summary>
         public InteropPropertyType type;
 
-        /// <summary>
-        /// Initial property value
-        /// </summary>
-        public InteropPropertyValue value;
-    }
+        // Property value is in one of these fields based on InteropPropertyType.
 
-    /// <summary>
-    /// Property value shared between Unity and Blender
-    /// </summary>
-    public struct InteropPropertyValue
-    {
-        public bool boolValue;
+        // InteropPropertyType.Integer, Boolean, and Enum all pack to this field.
         public int intValue;
-        public float floatValue;
-        public InteropString64 stringValue;
-        public InteropVector4 vectorValue;
-    }
 
-    public struct InteropPropertyUpdate
-    {
-        public InteropString64 name;
-        public InteropString64 value;
+        // InteropPropertyType.Float, FloatVectorN all pack to this field.
+        public InteropVector4 vectorValue;
+
+        public InteropString64 stringValue;
+
+        public override string ToString()
+        {
+            return $"InteropProperty(name={name}, type={type}, intValue={intValue}, vectorValue={vectorValue}, stringValue={stringValue})";
+        }
+
+        public override int GetHashCode()
+        {
+            return base.GetHashCode();
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is InteropProperty p
+                && p.name.Equals(name)
+                && p.type == type
+                && p.intValue == intValue
+                && p.vectorValue.Equals(vectorValue)
+                && p.stringValue.Equals(stringValue);
+        }
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -808,8 +817,8 @@ namespace Coherence
 
         public InteropVector2(float[] xy)
         {
-            this.x = xy[0];
-            this.y = xy[1];
+            x = xy[0];
+            y = xy[1];
         }
 
         public InteropVector2(float x, float y)
@@ -1100,7 +1109,7 @@ namespace Coherence
         public static void Debug(string message)
         {
         #if UNITY_EDITOR
-            UnityEngine.Debug.Log(message);
+            UnityEngine.Debug.Log("[Coherence] " + message);
         #else
             Console.WriteLine("[LibCoherence] " + message);
         #endif
@@ -1109,7 +1118,7 @@ namespace Coherence
         public static void Warning(string message)
         {
         #if UNITY_EDITOR
-            UnityEngine.Debug.LogWarning(message);
+            UnityEngine.Debug.LogWarning("[Coherence] " + message);
         #else
             Console.WriteLine("[LibCoherence] WARNING: " + message);
         #endif
@@ -1118,7 +1127,7 @@ namespace Coherence
         public static void Error(string message)
         {
         #if UNITY_EDITOR
-            UnityEngine.Debug.LogError(message);
+            UnityEngine.Debug.LogError("[Coherence] " + message);
         #else
             Console.WriteLine("[LibCoherence] ERROR: " + message);
         #endif

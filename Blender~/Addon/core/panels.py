@@ -155,6 +155,10 @@ class COHERENCE_OBJECT_PT_components(BasePanel):
         obj = context.object
         settings = obj.coherence
 
+        layout.enabled = runtime.instance.is_running()
+        if not layout.enabled:
+            layout.label(text='Start Coherence to modify components', icon='ERROR')
+
         for meta in settings.components:
             self.draw_component(context, meta)
 

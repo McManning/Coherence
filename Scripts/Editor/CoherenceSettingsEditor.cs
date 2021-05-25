@@ -1,4 +1,5 @@
-﻿using UnityEditor;
+﻿using System;
+using UnityEditor;
 using UnityEditorInternal;
 using UnityEngine;
 using MessageType = UnityEditor.MessageType;
@@ -361,7 +362,7 @@ namespace Coherence
 
                     - Somehow, in Unity, merge the existing selected object(s) with the sync data.
             */
-            Debug.LogWarning("TODO");
+            throw new Exception("TODO");
         }
 
         private void DrawAdvanced()
@@ -417,34 +418,6 @@ namespace Coherence
 
         private int progressId;
 
-        private void DrawGreasePencilSettings()
-        {
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Grease Pencil", EditorStyles.boldLabel);
-
-            var greasePencilRenderMode = serializedObject.FindProperty("greasePencilRenderMode");
-
-            EditorGUILayout.PropertyField(greasePencilRenderMode, new GUIContent("Render Mode"));
-
-            if ((GreasePencilRenderMode)greasePencilRenderMode.enumValueIndex == GreasePencilRenderMode.Quads)
-            {
-                EditorGUILayout.PropertyField(
-                    serializedObject.FindProperty("greasePencilMaterial"),
-                    new GUIContent("    Material")
-                );
-            }
-
-            EditorGUILayout.PropertyField(
-                serializedObject.FindProperty("greasePencilPrefab"),
-                new GUIContent("Prefab")
-            );
-
-            if (EditorGUI.EndChangeCheck())
-            {
-                RefreshGreasePencilObjects();
-            }
-        }
-
         private void DrawExperimental()
         {
             EditorGUILayout.HelpBox(
@@ -483,8 +456,6 @@ namespace Coherence
             );
 
             EditorGUI.BeginChangeCheck();
-
-            DrawGreasePencilSettings();
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Open With Blender", EditorStyles.boldLabel);

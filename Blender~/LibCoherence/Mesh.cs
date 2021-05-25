@@ -28,6 +28,30 @@ namespace Coherence
 
         public string Name => data.name;
 
+        // Raw data from Blender - cached for later memcmp calls
+        readonly NativeArray<MLoop> loops = new NativeArray<MLoop>();
+        readonly NativeArray<MVert> verts = new NativeArray<MVert>();
+        readonly NativeArray<MLoopTri> loopTris = new NativeArray<MLoopTri>();
+        readonly NativeArray<MLoopCol> loopCols = new NativeArray<MLoopCol>();
+        readonly NativeArray<MLoopUV> loopUVs = new NativeArray<MLoopUV>();
+
+        // ... and so on
+
+        // Buffers converted from Blender data to an interop format
+        readonly ArrayBuffer<InteropVector3> vertices = new ArrayBuffer<InteropVector3>();
+        readonly ArrayBuffer<InteropVector3> normals = new ArrayBuffer<InteropVector3>();
+        readonly ArrayBuffer<InteropColor32> colors = new ArrayBuffer<InteropColor32>();
+        readonly ArrayBuffer<InteropVector2> uvs = new ArrayBuffer<InteropVector2>();
+
+        // ... and so on
+
+        readonly ArrayBuffer<int> triangles = new ArrayBuffer<int>();
+
+        /// <summary>
+        /// Mapping an index in <see cref="loops"/> to a split vertex index in <see cref="vertices"/>
+        /// </summary>
+        readonly Dictionary<int, int> splitVertices = new Dictionary<int, int>();
+
         internal Mesh(string name)
         {
             data.name = name;
@@ -291,30 +315,6 @@ namespace Coherence
             }
             #endif
         }
-
-        // Raw data from Blender - cached for later memcmp calls
-        NativeArray<MLoop> loops = new NativeArray<MLoop>();
-        NativeArray<MVert> verts = new NativeArray<MVert>();
-        NativeArray<MLoopTri> loopTris = new NativeArray<MLoopTri>();
-        NativeArray<MLoopCol> loopCols = new NativeArray<MLoopCol>();
-        NativeArray<MLoopUV> loopUVs = new NativeArray<MLoopUV>();
-
-        // ... and so on
-
-        // Buffers converted from Blender data to an interop format
-        ArrayBuffer<InteropVector3> vertices = new ArrayBuffer<InteropVector3>();
-        ArrayBuffer<InteropVector3> normals = new ArrayBuffer<InteropVector3>();
-        ArrayBuffer<InteropColor32> colors = new ArrayBuffer<InteropColor32>();
-        ArrayBuffer<InteropVector2> uvs = new ArrayBuffer<InteropVector2>();
-
-        // ... and so on
-
-        ArrayBuffer<int> triangles = new ArrayBuffer<int>();
-
-        /// <summary>
-        /// Mapping an index in <see cref="loops"/> to a split vertex index in <see cref="vertices"/>
-        /// </summary>
-        Dictionary<int, int> splitVertices = new Dictionary<int, int>();
 
         internal void CopyMeshDataNative(
             NativeArray<MVert> verts,

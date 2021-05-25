@@ -211,7 +211,7 @@ class Runtime:
             # return 0.008 # 120 FPS
 
         # Attempt to connect to shared memory if not already
-        if not lib.IsConnectedToSharedMemory():
+        if not lib.IsConnected():
             response = lib.Connect(
                 self.connection_name,
                 self.blender_version

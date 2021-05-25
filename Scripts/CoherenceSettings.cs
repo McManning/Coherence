@@ -8,79 +8,6 @@ using UnityEngine;
 namespace Coherence
 {
     /// <summary>
-    /// How to represent Grease Pencil data in the scene
-    /// </summary>
-    public enum GreasePencilRenderMode
-    {
-        LineRenderer,
-        Quads,
-    }
-
-    public enum ViewportUpdateMode
-    {
-        /// <summary>
-        /// Send every frame we've got
-        /// </summary>
-        Unlimited,
-
-        /// <summary>
-        /// Send frames to Blender at a maximum of 30 FPS
-        /// </summary>
-        ThirtyFramesPerSecond,
-
-        /// <summary>
-        /// Send frames to Blender at a maximum of 60 FPS
-        /// </summary>
-        SixtyFramesPerSecond,
-
-        /// <summary>
-        /// Send frames to Blender only when data from Blender has changed
-        /// (viewport camera transformation changes, mesh data changes, etc).
-        ///
-        /// This is most efficient option when there are no additional background
-        /// animations that you need to see to the Blender viewport while working.
-        /// </summary>
-        OnChanges,
-    }
-
-    public enum TransformTransferMode
-    {
-        // TODO: What makes sense here?
-
-        /// <summary>
-        /// Synced objects in Unity will *always* match the transform data from Blender.
-        /// </summary>
-        UseBlenderTransforms,
-
-        /// <summary>
-        /// Synced objects in Unity will ignore transform data from Blender
-        /// but Blender will update transforms to match the position in Unity.
-        /// </summary>
-        UseUnityTransforms,
-
-        /// <summary>
-        /// Synced objects may be moved in *either* Blender or Unity scene view and
-        /// the synced copy will update accordingly.
-        /// </summary>
-        TwoWayTransforms,
-
-        /// <summary>
-        /// Synced objects will not update their transforms between the two applications.
-        ///
-        /// Objects synced from Blender will always be added with an identity transform.
-        /// </summary>
-        IgnoreTransforms,
-    }
-
-    /// <summary>
-    ///
-    /// </summary>
-    public enum CoordinateMode
-    {
-
-    }
-
-    /// <summary>
     /// Override default mapping behaviour between a named Blender material and a Unity material.
     /// </summary>
     [Serializable]
@@ -218,11 +145,6 @@ namespace Coherence
         )]
         public Camera viewportCameraPrefab;
 
-        /// <summary>
-        /// How frequently do we send Unity viewport renders to Blender
-        /// </summary>
-        public ViewportUpdateMode viewportUpdateMode;
-
         #endregion
 
         #region Meshes
@@ -289,25 +211,6 @@ namespace Coherence
             // Fallback to default
             return defaultMaterial;
         }
-
-        #endregion
-
-        #region Grease Pencil
-
-        /// <summary>
-        /// How we represent grease pencil data in Unity
-        /// </summary>
-        public GreasePencilRenderMode greasePencilRenderMode;
-
-        /// <summary>
-        /// Material to apply if transfer mode is set to quads
-        /// </summary>
-        public Material greasePencilMaterial;
-
-        /// <summary>
-        /// GameObject prefab for each grease pencil stroke represented in the scene
-        /// </summary>
-        public GameObject greasePencilPrefab;
 
         #endregion
 

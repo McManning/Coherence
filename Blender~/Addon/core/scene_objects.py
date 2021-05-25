@@ -1,5 +1,6 @@
 
 import bpy
+import traceback
 from .plugin import Plugin
 from .interop import (lib, to_interop_transform, update_transform)
 
@@ -261,12 +262,13 @@ class SceneObjects(Plugin):
 
         self.on_add_component(obj, instance)
 
-        try:
-            instance.enabled = meta.enabled
-            instance.on_create()
-        except Exception as err:
-            self.on_component_error(component_name, err, obj_name)
-            # TODO: Should this have prevented creation altogether?
+        # try:
+        instance.update_all_properties()
+        instance.enabled = meta.enabled
+        instance.on_create()
+        # except Exception as err:
+        #     self.on_component_error(component_name, err, obj_name)
+        #     # TODO: Should this have prevented creation altogether?
 
         # If the component has a mesh assigned to it, add to the
         # list of geometry to update next depsgraph update.
@@ -442,11 +444,12 @@ class SceneObjects(Plugin):
             err (Exception):        The error that was thrown
             obj_name (str|None):    Optional object context for the error
         """
-        error('Exception through in component={}, context={}: {}'.format(
+        error('Exception thrown in component={}, context={}: {}'.format(
             component_name,
             obj_name,
             err
         ))
+        traceback.print_stack()
         # TODO: Log somewhere more visible
 
     def on_update_material(self, mat):

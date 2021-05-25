@@ -53,14 +53,30 @@ namespace Coherence
         /// <summary>
         /// Viewport controller to match Blender's viewport configuration
         /// </summary>
-        readonly OrderedDictionary viewports = new OrderedDictionary();
-        readonly Dictionary<string, ObjectController> objects = new Dictionary<string, ObjectController>();
-        readonly Dictionary<string, MeshController> meshes = new Dictionary<string, MeshController>();
+        OrderedDictionary Viewports { get; } = new OrderedDictionary();
+
+        /// <summary>
+        /// Instances of synced objects. Mapped by their unique object name.
+        /// </summary>
+        Dictionary<string, ObjectController> Objects { get; } = new Dictionary<string, ObjectController>();
+
+        /// <summary>
+        /// Instances of synced mesh data. Mapped by their unique mesh IDs.
+        /// </summary>
+        Dictionary<string, MeshController> Meshes { get; } = new Dictionary<string, MeshController>();
+
+        /// <summary>
+        /// Components that can receive events. Mapped by their "objectName:componentName"
+        /// identifier for quick targetting of inbound messages.
+        /// </summary>
+        Dictionary<string, IComponent> Components { get; } = new Dictionary<string, IComponent>();
 
         //public Dictionary<string, HashSet<OnCoherenceEvent>> EventDelegates { get; } = new Dictionary<string, HashSet<OnCoherenceEvent>>();
 
         internal event OnCoherenceEvent OnCoherenceConnected;
         internal event OnCoherenceEvent OnCoherenceDisconnected;
+        internal event OnCoherenceEvent OnCoherenceEnabled;
+        internal event OnCoherenceEvent OnCoherenceDisabled;
 
         /// <summary>
         /// Objects added with parents that are not (yet) in the scene.
@@ -68,7 +84,7 @@ namespace Coherence
         readonly HashSet<ObjectController> orphans = new HashSet<ObjectController>();
 
         /// <summary>
-        /// Current index in <see cref="viewports"/> to use for
+        /// Current index in <see cref="Viewports"/> to use for
         /// sending a render texture to Blender
         /// </summary>
         int viewportIndex;
@@ -89,15 +105,14 @@ namespace Coherence
         /// <summary>
         /// Create a shared memory space for Blender to connect to.
         /// </summary>
-        public bool Setup()
+        public void Setup()
         {
-            gameObject.transform.parent = null;
-
             if (IsRunning)
             {
-                return true;
+                return;
             }
 
+            gameObject.transform.parent = null;
             IsRunning = true;
 
             var settings = CoherenceSettings.Instance;
@@ -143,7 +158,8 @@ namespace Coherence
             SceneManager.activeSceneChanged += OnSceneUnloaded;
             EditorSceneManager.activeSceneChangedInEditMode += OnSceneUnloaded;
 
-            return true;
+            // Notify listeners that this is ready to go
+            OnCoherenceEnabled?.Invoke();
         }
 
         /// <summary>
@@ -157,6 +173,9 @@ namespace Coherence
             }
 
             IsRunning = false;
+
+            // Notify listeners we're shutting down
+            OnCoherenceDisabled?.Invoke();
 
             AssemblyReloadEvents.beforeAssemblyReload -= OnBeforeAssemblyReload;
             EditorApplication.update -= OnEditorUpdate;
@@ -219,14 +238,19 @@ namespace Coherence
             }
 
             // Propagate Sync to every tracked object (updates their mesh data, etc)
-            foreach (var obj in objects.Values)
+            foreach (var obj in Objects.Values)
             {
                 obj.Sync();
             }
 
-            foreach (var mesh in meshes.Values)
+            foreach (var mesh in Meshes.Values)
             {
                 mesh.Sync();
+            }
+
+            foreach (var component in Components.Values)
+            {
+                component.Sync();
             }
         }
 
@@ -263,6 +287,14 @@ namespace Coherence
         /// </summary>
         private void Clear()
         {
+            // Safely destroy all instantiated components
+            foreach (var component in Components.Values)
+            {
+                component.DestroyCoherenceComponent();
+            }
+
+            Components.Clear();
+
             if (objectsContainer != null)
             {
                 DestroyImmediate(objectsContainer);
@@ -275,9 +307,9 @@ namespace Coherence
                 viewportsContainer = null;
             }
 
-            viewports.Clear();
-            objects.Clear();
-            meshes.Clear();
+            Viewports.Clear();
+            Objects.Clear();
+            Meshes.Clear();
         }
 
         #region Viewports
@@ -293,25 +325,25 @@ namespace Coherence
         /// </summary>
         private void PublishNextRenderTexture()
         {
-            if (viewports.Count < 1)
+            if (Viewports.Count < 1)
             {
                 return;
             }
 
-            viewportIndex = (viewportIndex + 1) % viewports.Count;
+            viewportIndex = (viewportIndex + 1) % Viewports.Count;
 
-            var viewport = viewports[viewportIndex] as ViewportController;
+            var viewport = Viewports[viewportIndex] as ViewportController;
             PublishRenderTexture(viewport, viewport.CaptureRenderTexture);
         }
 
         private ViewportController GetViewport(string name)
         {
-            if (!viewports.Contains(name))
+            if (!Viewports.Contains(name))
             {
                 throw new Exception($"Viewport {name} does not exist");
             }
 
-            return viewports[name] as ViewportController;
+            return Viewports[name] as ViewportController;
         }
 
         private ViewportController AddViewport(string name, InteropViewport iv)
@@ -337,21 +369,21 @@ namespace Coherence
             controller.Sync = this;
             controller.UpdateFromInterop(iv);
 
-            viewports[name] = controller;
+            Viewports[name] = controller;
             return controller;
         }
 
         private void RemoveViewport(string name)
         {
-            if (!viewports.Contains(name))
+            if (!Viewports.Contains(name))
             {
                 return;
             }
 
-            var viewport = viewports[name] as ViewportController;
+            var viewport = Viewports[name] as ViewportController;
 
             DestroyImmediate(viewport.gameObject);
-            viewports.Remove(name);
+            Viewports.Remove(name);
 
             // Reset viewport iterator, in case this causes us to go out of range
             viewportIndex = 0;
@@ -374,14 +406,28 @@ namespace Coherence
 
         internal MeshController GetOrCreateMesh(string name)
         {
-            if (!meshes.ContainsKey(name))
+            if (!Meshes.ContainsKey(name))
             {
                 var mesh = new MeshController(name);
-                meshes[name] = mesh;
+                Meshes[name] = mesh;
                 return mesh;
             }
 
-            return meshes[name];
+            return Meshes[name];
+        }
+
+        #endregion
+
+        #region Components
+
+        private IComponent GetCoherenceComponent(string name)
+        {
+            if (!Components.ContainsKey(name))
+            {
+                throw new Exception($"Component {name} does not exist");
+            }
+
+            return Components[name];
         }
 
         #endregion
@@ -390,12 +436,12 @@ namespace Coherence
 
         internal ObjectController GetObject(string name)
         {
-            if (!objects.ContainsKey(name))
+            if (!Objects.ContainsKey(name))
             {
                 throw new Exception($"Object {name} does not exist");
             }
 
-            return objects[name];
+            return Objects[name];
         }
 
         private ObjectController AddObject(string name, InteropSceneObject iso)
@@ -419,7 +465,7 @@ namespace Coherence
 
             go.name = name;
 
-            objects[name] = controller;
+            Objects[name] = controller;
             controller.UpdateFromInterop(iso);
 
             ReparentObject(controller);
@@ -432,12 +478,12 @@ namespace Coherence
 
         private void RemoveObject(string name)
         {
-            if (!objects.ContainsKey(name))
+            if (!Objects.ContainsKey(name))
             {
                 return;
             }
 
-            var instance = objects[name];
+            var instance = Objects[name];
 
             // Move children to the main container and orphan them.
             var children = instance.GetComponentsInChildren<ObjectController>();
@@ -448,7 +494,7 @@ namespace Coherence
             }
 
             DestroyImmediate(instance.gameObject);
-            objects.Remove(name);
+            Objects.Remove(name);
             orphans.Remove(instance);
         }
 
@@ -484,7 +530,7 @@ namespace Coherence
                 orphans.Remove(obj);
             }
 
-            if (objects.TryGetValue(parentName, out ObjectController match))
+            if (Objects.TryGetValue(parentName, out ObjectController match))
             {
                 obj.transform.parent = match.transform;
                 orphans.Remove(obj);
@@ -508,7 +554,7 @@ namespace Coherence
             foreach (var orphan in orphans)
             {
                 var parentName = orphan.Data.transform.parent.Value;
-                if (objects.TryGetValue(parentName, out ObjectController parent))
+                if (Objects.TryGetValue(parentName, out ObjectController parent))
                 {
                     orphan.transform.parent = parent.transform;
                     parentedOrphans.Add(orphan);
@@ -551,11 +597,11 @@ namespace Coherence
             // Reset Blender state information
             blenderState = new InteropBlenderState();
 
-            // Clear the scene of any synced data from Blender
-            Clear();
-
             // Notify listeners
             OnCoherenceDisconnected?.Invoke();
+
+            // Clear the scene of any synced data from Blender
+            Clear();
         }
 
         /// <summary>
@@ -644,23 +690,33 @@ namespace Coherence
                         break;
 
                     // Component messages.
-                    // Target is in the form of `obj_name:component_name` so we use
-                    // the target info in the payload itself for routing.
+                    // Target is in the form of `obj_name:component_name`, mapped to our components dict.
                     case RpcRequest.AddComponent:
                         var component = FastStructure.PtrToStructure<InteropComponent>(ptr);
-                        ComponentInfo.Find(component.name).Instantiate(this, component);
+                        var instance = ComponentInfo.Find(component.name).Instantiate(this, component);
+
+                        Components.Add(target, instance);
+                        Debug.Log($"added component {target} for {component.target}");
                         break;
                     case RpcRequest.DestroyComponent:
-                        component = FastStructure.PtrToStructure<InteropComponent>(ptr);
-                        ComponentInfo.Find(component.name).Destroy(component);
+                        GetCoherenceComponent(target).DestroyCoherenceComponent();
+                        Components.Remove(target);
                         break;
                     case RpcRequest.UpdateComponent:
                         component = FastStructure.PtrToStructure<InteropComponent>(ptr);
-                        ComponentInfo.Find(target).Update(component);
+                        GetCoherenceComponent(target).DispatchUpdate(component);
                         break;
                     case RpcRequest.ComponentMessage:
-                        var componentMsg = FastStructure.PtrToStructure<InteropComponentMessage>(ptr);
-                        ComponentInfo.Find(componentMsg.name).OnMessage(componentMsg);
+                        var msg = FastStructure.PtrToStructure<InteropComponentMessage>(ptr);
+                        GetCoherenceComponent(target).GetCoherenceState()
+                            .DispatchNetworkEvent(msg.id, msg.size, msg.data);
+                        break;
+                    case RpcRequest.UpdateProperties:
+                        var data = GetCoherenceComponent(target).GetCoherenceState();
+                        data.RemoteProperties
+                            .Resize(header.length)
+                            .CopyFrom(ptr, header.index, header.count);
+                        data.DispatchRemotePropertyUpdates();
                         break;
 
                     // Mesh messages
@@ -720,7 +776,7 @@ namespace Coherence
                         );
                         break;
 
-                    // Texture messages
+                    // Image sync messages
                     case RpcRequest.UpdateImage:
                         GetTexture(target).UpdateFromInterop(
                             FastStructure.PtrToStructure<InteropImage>(ptr)
@@ -832,7 +888,37 @@ namespace Coherence
 
             Profiler.EndSample();
         }
-        #endregion
 
+        internal void SendArray<T>(RpcRequest type, string target, IArray<T> buffer) where T : struct
+        {
+            // NOTE: Same method as Bridge.SendArray in LibCoherence.
+
+            if (!IsConnected || buffer.Length < 1)
+            {
+                return;
+            }
+
+            messages.QueueArray(type, target, buffer);
+        }
+
+        /// <summary>
+        /// Send an <see cref="RpcRequest"/> with target <see cref="IInteropSerializable{T}.Name"/>
+        /// of <paramref name="entity"/> and a <typeparamref name="T"/> payload.
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="type"></param>
+        /// <param name="entity"></param>
+        internal void SendEntity<T>(RpcRequest type, IInteropSerializable<T> entity) where T : struct
+        {
+            if (!IsConnected)
+            {
+                return;
+            }
+
+            var data = entity.Serialize();
+            messages.ReplaceOrQueue(type, entity.Name, ref data);
+        }
+
+        #endregion
     }
 }

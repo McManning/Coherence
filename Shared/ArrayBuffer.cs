@@ -286,7 +286,7 @@ namespace Coherence
     /// <typeparam name="T"></typeparam>
     public class ArrayBuffer<T> : IArray<T> where T : struct
     {
-        private T[] data;
+        protected T[] data;
 
         public int Length { get; private set; }
 
@@ -313,6 +313,17 @@ namespace Coherence
         /// Length of the dirtied entries, starting at <see cref="DirtyStart"/>.
         /// </summary>
         public int DirtyLength => DirtyEnd - DirtyStart + 1;
+
+        public ArrayBuffer(T[] initial = null)
+        {
+            if (initial != null)
+            {
+                data = initial;
+                Length = initial.Length;
+                MaxLength = initial.Length;
+                Dirty(0, Length - 1);
+            }
+        }
 
         /// <summary>
         /// Get the underlying array of data - clearing the dirtied state in the process.
@@ -394,6 +405,13 @@ namespace Coherence
         /// </summary>
         public void Add(T value)
         {
+            if (data == null)
+            {
+                data = new T[2];
+                Length = 0;
+                MaxLength = 0;
+            }
+
             // Increase the underlying buffer size if it can't fit the new value
             if (data.Length <= Length)
             {
@@ -425,9 +443,25 @@ namespace Coherence
 
         public bool Equals(IArray<T> other)
         {
-            throw new NotImplementedException(
-                "ArrayBuffer.Equals not supported"
-            );
+            if (ReferenceEquals(this, other))
+            {
+                return true;
+            }
+
+            if (other == null || Length != other.Length)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < Length; i++)
+            {
+                if (!this[i].Equals(other[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         /// <summary>

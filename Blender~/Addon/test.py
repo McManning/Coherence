@@ -201,7 +201,7 @@ def event_loop():
             on_disconnected_from_unity()
     else:
         # Attempt to connect to shared memory if not already
-        if not bridge.IsConnectedToSharedMemory():
+        if not bridge.IsConnected():
             response = bridge.Connect(CONNECTION_NAME, VERSION_INFO)
             if response == 1:
                 on_connected_to_shared_memory()

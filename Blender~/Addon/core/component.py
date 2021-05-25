@@ -12,12 +12,11 @@ from bpy.props import (
     FloatVectorProperty
 )
 
-from .interop import (
-    InteropComponent,
-    InteropString64
-)
+from . import interop
+from . import runtime
+from . import scene_objects
 
-# XProperty functions that can transfer through Coherence
+# bpy.types.*Property functions that can transfer as Coherence Properties
 ALLOWED_PROPERTY_TYPES = [
     IntProperty,
     FloatProperty,
@@ -25,20 +24,30 @@ ALLOWED_PROPERTY_TYPES = [
     StringProperty,
     EnumProperty,
     FloatVectorProperty,
-    # And so on.
 ]
 
-def on_property_change_wrapper(func):
-    def wrap(self, context):
-        print('Before prop change')
-        print(context)
-        func(self, context)
-        print('After prop change')
-    return wrap
+def on_property_change(name, prev):
+    """
+    Args:
+        name (str): bpy property name
+        prev (Union[Callable, None]): Previous
+    """
+    plugin = runtime.instance.get_plugin(scene_objects.SceneObjects)
+    interop_name = interop.to_interop_property_name(name)
 
-def on_property_change(self, context):
-    print('do prop change')
-    print(context)
+    def wrap(self, context):
+        instance = plugin.get_component(self.id_data, self.component)
+        if not instance:
+            raise Exception(
+                'Cannot find component instance associated with property group [{}]'.format(self)
+            )
+
+        instance.update_property(interop_name, getattr(self, name))
+
+        if prev:
+            prev(self, context)
+
+    return wrap
 
 class BaseComponentPropertyGroup(PropertyGroup):
     # TODO: Magic to create this from the base component itself (copy annotations)
@@ -78,6 +87,7 @@ class BaseComponent:
         self._has_mesh = False
         self._enabled = False
         self._handlers = dict()
+        self._properties = dict()
 
     # No longer declared - we now use hasattr to determine if the component is autobind.
     # @classmethod
@@ -124,16 +134,16 @@ class BaseComponent:
         mesh_uid = self.mesh_uid
         material_id = self.material_id
 
-        component = InteropComponent()
-        component.name = InteropString64(self.name().encode())
-        component.target = InteropString64(self._name.encode())
+        component = interop.InteropComponent()
+        component.name = interop.InteropString64(self.name().encode())
+        component.target = interop.InteropString64(self._name.encode())
         component.enabled = self.enabled
 
         if mesh_uid:
-            component.mesh = InteropString64(mesh_uid.encode())
+            component.mesh = interop.InteropString64(mesh_uid.encode())
 
         if material_id:
-            component.material = InteropString64(material_id.encode())
+            component.material = interop.InteropString64(material_id.encode())
 
         return component
 
@@ -283,6 +293,7 @@ class BaseComponent:
         """
         raise NotImplementedError
 
+
     def _dispatch(self, message):
         """Dispatch a message to all listeners
 
@@ -298,7 +309,46 @@ class BaseComponent:
             message.data
         )
 
-    # TODO: Document global method for destroying components
+    def update_property(self, name: str, value):
+        """Update a property shared between synced components.
+
+        This is typically called as an event handler on Blender prop changes but can be
+        called directly with the caveat that the value may be overridden by the Blender UI.
+
+        Args:
+            name (str): Unique property name
+            value (mixed): Native property value (bool, int, vec3, etc)
+
+        Raises:
+            TypeError: If the value cannot be converted to an interop property type
+        """
+        print('Update property {} to value {}'.format(name, value))
+
+        prop = self._properties.get(name)
+        if not prop:
+            prop = interop.InteropProperty(
+                name=interop.InteropString64(name.encode())
+            )
+
+        prop.set_value_from_bpy_property(value)
+
+        self._properties[name] = prop
+        print('CALLING UPDATE PROPERTY FOR {} -> {}'.format(name, prop))
+        interop.lib.UpdateComponentProperty(self.interop, prop)
+
+    def update_all_properties(self):
+        """Push all associated PropertyGroup properties to Coherence"""
+        props = self.property_group
+        if not props:
+            return
+
+        # Annotations of the generated PropertyGroup should already be
+        # filtered down to supported properties. So it's safe to iterate here.
+        for name in props.__annotations__:
+            self.update_property(
+                interop.to_interop_property_name(name),
+                getattr(props, name)
+            )
 
     def destroy(self):
         """Remove this component from the :attr:`bpy_obj`."""
@@ -438,12 +488,11 @@ class BaseComponent:
                 props = annotation[1].copy()
 
                 # Create (or wrap) the update function with our own handler
-                if 'update' in props:
-                    props['update'] = on_property_change_wrapper(props['update'])
-                else:
-                    props['update'] = on_property_change
+                props['update'] = on_property_change(key, props.get('update'))
 
                 annotations[key] = (annotation[0], props)
+            else:
+                print('Skipping unsupported property [{}] - {}'.format(key, annotation))
 
         # Create a dynamic PropertyGroup associated with this component
         cls.property_group_class = type(

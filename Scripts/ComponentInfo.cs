@@ -1,10 +1,316 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Reflection.Emit;
+using System.Text.RegularExpressions;
 using UnityEngine;
 
 namespace Coherence
 {
+    /// <summary>
+    /// Interface for properties that can be synced between applications.
+    /// </summary>
+    internal interface ISyncedProperty
+    {
+        string Name { get; }
+
+        void CreateDelegates(IComponent obj, PropertyInfo prop);
+
+        void CreateDelegates(IComponent component, FieldInfo field);
+
+        void FromInterop(InteropProperty prop);
+
+        InteropProperty ToInterop();
+    }
+
+    internal abstract class SyncedProperty<T>
+    {
+        public string Name { get; private set; }
+
+        internal Action<T> setter;
+        internal Func<T> getter;
+
+        public void CreateDelegates(IComponent component, PropertyInfo prop)
+        {
+            // Property names are standardized to lowercase alphanumeric only.
+            Name = Regex.Replace(prop.Name, "[^A-Za-z0-9]", "").ToLower();
+
+            var getterMethod = prop.GetGetMethod(true);
+            var setterMethod = prop.GetSetMethod(true);
+
+            if (getterMethod == null || setterMethod == null)
+            {
+                throw new NotSupportedException();
+            }
+
+            getter = (Func<T>)Delegate.CreateDelegate(
+                typeof(Func<T>),
+                component,
+                getterMethod
+            );
+
+            setter = (Action<T>)Delegate.CreateDelegate(
+                typeof(Action<T>),
+                component,
+                setterMethod
+            );
+        }
+
+        public void CreateDelegates(IComponent component, FieldInfo field)
+        {
+            // Property names are standardized to lowercase alphanumeric only.
+            Name = Regex.Replace(field.Name, "[^A-Za-z0-9]", "").ToLower();
+
+            // We don't have GetGetMethod/GetSetMethod for fields so
+            // we use dynamic IL instead here.
+
+            var getterMethod = new DynamicMethod(
+                "get_" + field.Name,
+                typeof(T),
+                Type.EmptyTypes,
+                true
+            );
+
+            var il = getterMethod.GetILGenerator();
+            il.Emit(OpCodes.Ldarg_0); // Load "this"
+            il.Emit(OpCodes.Ldfld, field); // Load reference to field
+            il.Emit(OpCodes.Ret);
+
+            getter = (Func<T>)Delegate.CreateDelegate(
+                typeof(Func<T>),
+                component,
+                getterMethod
+            );
+
+            var setterMethod = new DynamicMethod(
+                "set_" + field.Name,
+                null,
+                new Type[] { typeof(T) },
+                true
+            );
+
+            il = setterMethod.GetILGenerator();
+            il.Emit(OpCodes.Ldarg_0); // Load "this"
+            il.Emit(OpCodes.Ldarg_1); // Load T value
+            il.Emit(OpCodes.Stfld, field); // Store in field
+            il.Emit(OpCodes.Ret);
+
+            setter = (Action<T>)Delegate.CreateDelegate(
+                typeof(Action<T>),
+                component,
+                setterMethod
+            );
+        }
+    }
+
+    internal class SyncedBoolProperty : SyncedProperty<bool>, ISyncedProperty
+    {
+        public void FromInterop(InteropProperty prop) => setter(prop.intValue == 1);
+
+        public InteropProperty ToInterop()
+        {
+            return new InteropProperty
+            {
+                name = new InteropString64(Name),
+                type = InteropPropertyType.Boolean,
+                intValue = getter() ? 1 : 0
+            };
+        }
+    }
+
+    internal class SyncedIntProperty : SyncedProperty<int>, ISyncedProperty
+    {
+        public void FromInterop(InteropProperty prop) => setter(prop.intValue);
+
+        public InteropProperty ToInterop()
+        {
+            return new InteropProperty
+            {
+                name = new InteropString64(Name),
+                type = InteropPropertyType.Integer,
+                intValue = getter()
+            };
+        }
+    }
+
+    internal class SyncedFloatProperty : SyncedProperty<float>, ISyncedProperty
+    {
+        public void FromInterop(InteropProperty prop) => setter(prop.vectorValue.x);
+
+        public InteropProperty ToInterop()
+        {
+            return new InteropProperty
+            {
+                name = new InteropString64(Name),
+                type = InteropPropertyType.Float,
+                vectorValue = new InteropVector4(getter(), 0, 0, 0)
+            };
+        }
+    }
+
+    internal class SyncedStringProperty : SyncedProperty<string>, ISyncedProperty
+    {
+        public void FromInterop(InteropProperty prop) => setter(prop.stringValue);
+
+        public InteropProperty ToInterop()
+        {
+            return new InteropProperty
+            {
+                name = new InteropString64(Name),
+                type = InteropPropertyType.String,
+                stringValue = new InteropString64(getter())
+            };
+        }
+    }
+
+    internal class SyncedVector2Property : SyncedProperty<Vector2>, ISyncedProperty
+    {
+        public void FromInterop(InteropProperty prop)
+        {
+            var v = prop.vectorValue;
+            setter(new Vector2(v.x, v.y));
+        }
+
+        public InteropProperty ToInterop()
+        {
+            var v = getter();
+            return new InteropProperty
+            {
+                name = new InteropString64(Name),
+                type = InteropPropertyType.FloatVector2,
+                vectorValue = new InteropVector4(v.x, v.y, 0, 0)
+            };
+        }
+    }
+
+    internal class SyncedVector3Property : SyncedProperty<Vector3>, ISyncedProperty
+    {
+        public void FromInterop(InteropProperty prop)
+        {
+            var v = prop.vectorValue;
+            setter(new Vector3(v.x, v.y, v.z));
+        }
+
+        public InteropProperty ToInterop()
+        {
+            var v = getter();
+            return new InteropProperty
+            {
+                name = new InteropString64(Name),
+                type = InteropPropertyType.FloatVector3,
+                vectorValue = new InteropVector4(v.x, v.y, v.z, 0)
+            };
+        }
+    }
+
+    internal class SyncedVector4Property : SyncedProperty<Vector4>, ISyncedProperty
+    {
+        public void FromInterop(InteropProperty prop)
+        {
+            var v = prop.vectorValue;
+            setter(new Vector4(v.x, v.y, v.z, v.w));
+        }
+
+        public InteropProperty ToInterop()
+        {
+            var v = getter();
+            return new InteropProperty
+            {
+                name = new InteropString64(Name),
+                type = InteropPropertyType.FloatVector4,
+                vectorValue = new InteropVector4(v.x, v.y, v.z, v.w)
+            };
+        }
+    }
+
+    internal class SyncedColorProperty : SyncedProperty<Color>, ISyncedProperty
+    {
+        public void FromInterop(InteropProperty prop)
+        {
+            var v = prop.vectorValue;
+            setter(new Color(v.x, v.y, v.z));
+        }
+
+        public InteropProperty ToInterop()
+        {
+            var v = getter();
+            return new InteropProperty
+            {
+                name = new InteropString64(Name),
+                type = InteropPropertyType.Color,
+                vectorValue = new InteropVector4(v.r, v.g, v.b, 1)
+            };
+        }
+    }
+
+    /// <summary>
+    /// Factory for instantiating new concrete <see cref="ISyncedProperty"/>
+    /// implementations already bound to the given component instance and property.
+    /// </summary>
+    internal class SyncedPropertyFactory
+    {
+        public static ISyncedProperty Create(IComponent component, PropertyInfo prop)
+        {
+            var instance = Instantiate(prop.PropertyType);
+            if (instance == null)
+            {
+                throw new NotSupportedException(
+                    $"Property [{prop.Name}] of type [{prop.PropertyType}] is not supported"
+                );
+            }
+
+            instance.CreateDelegates(component, prop);
+            return instance;
+        }
+
+        public static ISyncedProperty Create(IComponent component, FieldInfo field)
+        {
+            var instance = Instantiate(field.FieldType);
+            if (instance == null)
+            {
+                throw new NotSupportedException(
+                    $"Field [{field.Name}] of type [{field.FieldType}] is not supported"
+                );
+            }
+
+            instance.CreateDelegates(component, field);
+            return instance;
+        }
+
+        private static ISyncedProperty Instantiate(Type type)
+        {
+            if (type == typeof(bool))
+                return new SyncedBoolProperty();
+
+            if (type == typeof(int))
+                return new SyncedIntProperty();
+
+            if (type == typeof(float))
+                return new SyncedFloatProperty();
+
+            if (type == typeof(string))
+                return new SyncedStringProperty();
+
+            if (type == typeof(Vector2))
+                return new SyncedVector2Property();
+
+            if (type == typeof(Vector3))
+                return new SyncedVector3Property();
+
+            if (type == typeof(Vector4))
+                return new SyncedVector4Property();
+
+            if (type == typeof(Color))
+                return new SyncedColorProperty();
+
+            // TODO: enums pass as strings through Blender. Need to resolve.
+            // Ideally blender should convert it to an int and we can
+            // convert it as an enum by checking the prop type.
+
+            return null;
+        }
+    }
+
     /// <summary>
     /// Tracking and metadata for Coherence components
     /// </summary>
@@ -36,12 +342,14 @@ namespace Coherence
 
         internal Type Type { get; set; }
 
-        internal Dictionary<string, IComponent> instances = new Dictionary<string, IComponent>();
-
         /// <summary>
         /// Methods that can handle Coherence events (e.g. OnConnected, OnDisconnected)
         /// </summary>
         internal Dictionary<string, MethodInfo> EventLookupTable { get; } = new Dictionary<string, MethodInfo>();
+
+        internal HashSet<PropertyInfo> Properties { get; } = new HashSet<PropertyInfo>();
+
+        internal HashSet<FieldInfo> Fields { get; } = new HashSet<FieldInfo>();
 
         private static void LoadComponentsFromAssemblies()
         {
@@ -60,56 +368,12 @@ namespace Coherence
             }
         }
 
-        internal void DestroyAllInstances()
-        {
-            foreach (var instance in instances.Values)
-            {
-                UnityEngine.Object.Destroy(instance as UnityEngine.Object);
-            }
-
-            instances.Clear();
-        }
-
-        internal void Instantiate(SyncManager sync, InteropComponent interop)
+        internal IComponent Instantiate(SyncManager sync, InteropComponent interop)
         {
             var target = sync.GetObject(interop.target);
             var component = target.gameObject.AddComponent(Type) as IComponent;
-            //component.enabled = interop.enabled;
-
-            // Fill in binding data
-            component.CreateCoherenceData(this, sync);
-
-            // Attach a mesh to it if we referenced one
-            if (!string.IsNullOrEmpty(interop.mesh))
-            {
-                var mesh = sync.GetOrCreateMesh(interop.mesh);
-                component.SetMeshController(mesh);
-            }
-
-            instances[interop.target] = component;
-        }
-
-        internal void Destroy(InteropComponent interop)
-        {
-            var instance = instances[interop.target];
-
-            // TODO: If they destroy it via unity first, this won't be called.
-            // How do we make sure it gets cleaned up?
-            instance.UnbindCoherenceEvents();
-
-            UnityEngine.Object.Destroy(instance as UnityEngine.Object);
-        }
-
-        internal void Update(InteropComponent interop)
-        {
-            var instance = instances[interop.target];
-            // do thing
-        }
-
-        internal void OnMessage(InteropComponentMessage message)
-        {
-            var instance = instances[message.target];
-            // do thing
+            component.InitializeCoherenceState(interop, sync, this);
+            return component;
         }
 
         internal static void Add(Type type)
@@ -140,6 +404,19 @@ namespace Coherence
                 {
                     info.EventLookupTable.Add(method.Name, method);
                 }
+            }
+
+            // TODO: Is there any performance boost in doing this
+            // then caching? Or is it fast enough to do on-demand
+            // per instance?
+            foreach (var prop in type.GetProperties())
+            {
+                info.Properties.Add(prop);
+            }
+
+            foreach (var field in type.GetFields())
+            {
+                info.Fields.Add(field);
             }
 
             Infos.Add(attr.Name, info);

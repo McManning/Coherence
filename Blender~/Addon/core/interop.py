@@ -4,15 +4,20 @@
 # and DLL load/unload wrappers.
 ##############################################
 
+import bpy
 import os
+import re
 from ctypes import *
 import math
 from pathlib import Path
-from mathutils import Vector, Matrix, Quaternion
+from mathutils import Vector, Matrix, Quaternion, Color
 from .utils import (
     get_string_buffer,
     log
 )
+
+# RpcMessage ID for InteropComponentMessage payloads.
+RPC_COMPONENT_MESSAGE_ID = 255
 
 class InteropString64(Structure):
     _fields_ = [
@@ -64,6 +69,20 @@ class InteropVector3(Structure):
         self.x = x
         self.y = y
         self.z = z
+
+class InteropVector4(Structure):
+    _fields_ = [
+        ('x', c_float),
+        ('y', c_float),
+        ('z', c_float),
+        ('w', c_float),
+    ]
+
+    def __init__(self, x, y, z, w):
+        self.x = x
+        self.y = y
+        self.z = z
+        self.w = w
 
 class InteropQuaternion(Structure):
     _fields_ = [
@@ -126,9 +145,6 @@ class InteropComponent(Structure):
         ('enabled', c_int),
     ]
 
-# RpcMessage ID for InteropComponentMessage payloads.
-RPC_COMPONENT_MESSAGE_ID = 255
-
 class InteropComponentMessage(Structure):
     _fields_ = [
         ('target', InteropString64),
@@ -137,6 +153,69 @@ class InteropComponentMessage(Structure):
         ('data', POINTER(c_byte))
     ]
 
+class InteropProperty(Structure):
+    BOOLEAN = 1
+    INTEGER = 2
+    FLOAT = 3
+    STRING = 4
+    ENUM = 5
+    COLOR = 6
+    FLOAT_VECTOR2 = 7
+    FLOAT_VECTOR3 = 8
+    FLOAT_VECTOR4 = 9
+
+    _fields_ = [
+        ('name', InteropString64),
+        ('type', c_int),
+        ('intValue', c_int),
+        ('vectorValue', InteropVector4),
+        ('stringValue', InteropString64),
+    ]
+
+    def set_value_from_bpy_property(self, value):
+        """Update type and associated *Value field based on the input value
+
+        Args:
+            value (mixed):  Native property value (bool, int, Color, bpy_prop_array, etc)
+                            that comes from a Blender PropertyGroup entry
+
+        Raises:
+            TypeError: If the value cannot be converted to an interop property type
+        """
+        if type(value) is bool:
+            self.type = self.BOOLEAN
+            self.intValue = c_int(value)
+        elif type(value) is int:
+            self.type = self.INTEGER
+            self.intValue = c_int(value)
+        elif type(value) is float:
+            self.type = self.FLOAT
+            self.vectorValue = InteropVector4(value, 0, 0, 0)
+        elif type(value) is str: # enums are strings as well here.
+            self.type = self.STRING
+            self.stringValue = InteropString64(value.encode())
+        elif type(value) is Color:
+            self.type = self.COLOR
+            self.vectorValue = InteropVector4(value.r, value.g, value.b, 1)
+        elif type(value) is bpy.types.bpy_prop_array:
+            dim = len(value)
+            if dim == 2:
+                self.type = self.FLOAT_VECTOR2
+                self.vectorValue = InteropVector4(value[0], value[1], 0, 0)
+            elif dim == 3:
+                self.type = self.FLOAT_VECTOR3
+                self.vectorValue = InteropVector4(value[0], value[1], value[2], 0)
+            elif dim == 4:
+                self.type = self.FLOAT_VECTOR4
+                self.vectorValue = InteropVector4(value[0], value[1], value[2], value[3])
+            else:
+                raise TypeError(
+                    'Cannot convert array of dimension [{}] to interop'.format(dim)
+                )
+        else:
+            raise TypeError(
+                'Cannot convert [{}] type [{}] to interop'.format(value, type(value))
+            )
 
 class InteropMessageHeader(Structure):
     _fields_ = [
@@ -346,6 +425,19 @@ def to_interop_int_array(arr):
 
     return result
 
+def to_interop_property_name(name: str) -> str:
+    """Convert the input name to an interop property name.
+
+    InteropProperty names are lowercase alphanumeric only.
+
+    Args:
+        name (str)
+
+    Returns:
+        str
+    """
+    return re.sub(r'[^A-Za-z0-9]', '', name).lower()
+
 def update_transform(obj):
     """Send a transform of the given object to Coherence
 
@@ -435,6 +527,7 @@ def load_library(path: str):
     lib.AddComponent.argtypes = (InteropComponent,)
     lib.UpdateComponent.argtypes = (InteropComponent,)
     lib.DestroyComponent.argtypes = (InteropComponent,)
+    lib.UpdateComponentProperty.argtypes = (InteropComponent, InteropProperty)
 
     return lib
 

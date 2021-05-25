@@ -33,7 +33,7 @@ namespace Coherence
         const string UNITY_MESSAGES_BUFFER = "_UnityMessages";
         const string BLENDER_MESSAGES_BUFFER = "_BlenderMessages";
 
-        public bool IsConnectedToSharedMemory { get; private set; }
+        public bool IsConnected { get; private set; }
 
         public bool IsConnectedToUnity { get; private set; }
 
@@ -113,12 +113,12 @@ namespace Coherence
 
             try
             {
-                InteropLogger.Debug($"Connecting to `{connectionName + VIEWPORT_IMAGE_BUFFER}`");
+                // InteropLogger.Debug($"Connecting to `{connectionName + VIEWPORT_IMAGE_BUFFER}`");
 
                 // Buffer for render data coming from Unity (consume-only)
                 pixelsConsumer = new CircularBuffer(connectionName + VIEWPORT_IMAGE_BUFFER);
 
-                InteropLogger.Debug($"Connecting to `{connectionName + UNITY_MESSAGES_BUFFER}` and `{connectionName + BLENDER_MESSAGES_BUFFER}`");
+                // InteropLogger.Debug($"Connecting to `{connectionName + UNITY_MESSAGES_BUFFER}` and `{connectionName + BLENDER_MESSAGES_BUFFER}`");
 
                 // Two-way channel between Blender and Unity
                 messages = new InteropMessenger();
@@ -131,11 +131,11 @@ namespace Coherence
             {
                 // Shared memory space is not valid - Unity may not have started it.
                 // This is an error that should be gracefully handled by the UI.
-                IsConnectedToSharedMemory = false;
+                IsConnected = false;
                 return false;
             }
 
-            IsConnectedToSharedMemory = true;
+            IsConnected = true;
 
             // Send an initial connect message to let Unity know we're in
             messages.Queue(RpcRequest.Connect, versionInfo, ref blenderState);
@@ -153,7 +153,7 @@ namespace Coherence
             messages?.WriteDisconnect();
 
             IsConnectedToUnity = false;
-            IsConnectedToSharedMemory = false;
+            IsConnected = false;
 
             messages?.Dispose();
             messages = null;
@@ -315,6 +315,8 @@ namespace Coherence
                 foreach (var component in obj.components)
                 {
                     SendEntity(RpcRequest.AddComponent, component);
+                    SendArray(RpcRequest.UpdateProperties, component.Name, component.properties);
+                    component.properties.Clean();
                 }
             }
 
@@ -525,7 +527,7 @@ namespace Coherence
 
         public Component GetComponent(SceneObject obj, string name)
         {
-            var component = obj.components.Find((c) => c.Name == name);
+            var component = obj.components.Find((c) => c.data.name == name);
             if (component == null)
             {
                 throw new Exception($"Object [{obj.Name}] does not have component [{name}]");

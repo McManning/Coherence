@@ -151,9 +151,9 @@ namespace Coherence
         }
 
         [DllExport]
-        public static bool IsConnectedToSharedMemory()
+        public static bool IsConnected()
         {
-            return Bridge.IsConnectedToSharedMemory;
+            return Bridge.IsConnected;
         }
 
         #endregion
@@ -415,6 +415,7 @@ namespace Coherence
             {
                 var obj = Bridge.GetObject(component.target);
                 Bridge.AddComponent(obj, component);
+                InteropLogger.Debug($"Add component={component.name} to object={obj.Name}");
                 return 1;
             }
             catch (Exception e)
@@ -453,6 +454,77 @@ namespace Coherence
                     instance.data = component;
                     Bridge.SendEntity(RpcRequest.UpdateComponent, instance);
                 }
+                return 1;
+            }
+            catch (Exception e)
+            {
+                SetLastError(e);
+                return -1;
+            }
+        }
+
+        [DllExport]
+        public static int UpdateComponentProperty(
+            InteropComponent component,
+            InteropProperty property
+        ) {
+
+            InteropLogger.Debug($"UpdateComponentProperty {property.name} of {property.type}" +
+                $" intval={property.intValue}" +
+                $" strval={property.stringValue.Value}"
+            );
+
+            try
+            {
+                var obj = Bridge.GetObject(component.target);
+                var instance = Bridge.GetComponent(obj, component.name);
+
+                // Find an existing property match to replace
+                var found = false;
+                for (int i = 0; i < instance.properties.Length; i++)
+                {
+                    var prop = instance.properties[i];
+                    if (prop.name == property.name)
+                    {
+                        // Only assign if it differs so we don't unnecessarily dirty the array
+                        if (!prop.Equals(property))
+                        {
+                            instance.properties[i] = property;
+
+                            InteropLogger.Debug($"Update {instance.Name} - {instance.properties[i].name}" +
+                                $" intval={instance.properties[i].intValue}" +
+                                $" strval={instance.properties[i].stringValue}"
+                            );
+                        }
+                        else
+                        {
+                            InteropLogger.Debug($"Same value {instance.Name} - {instance.properties[i].name}" +
+                                $" intval={instance.properties[i].intValue} vs {property.intValue}" +
+                                $" strval={instance.properties[i].stringValue} vs {property.stringValue}"
+                            );
+                        }
+
+                        found = true;
+                        break;
+                    }
+                }
+
+                // Doesn't exist, add it as a new property
+                if (!found)
+                {
+                    InteropLogger.Debug($"Add prop {property.name} [{property.type}] for {instance.Name}");
+                    instance.properties.Add(property);
+                }
+
+                if (instance.properties.IsDirty)
+                {
+                    // If there were multiple properties updated in the same frame in Python,
+                    // these should all dirty parts of the array together so that a *single*
+                    // UpdateProperties message routes to the connected app.
+                    Bridge.SendArray(RpcRequest.UpdateProperties, instance.Name, instance.properties);
+                    instance.properties.Clean();
+                }
+
                 return 1;
             }
             catch (Exception e)
