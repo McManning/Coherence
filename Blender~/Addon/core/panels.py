@@ -233,16 +233,7 @@ class COHERENCE_OBJECT_PT_components(BasePanel):
             layout.label(text='Component is not registered')
             return
 
-        props = instance.property_group
-        if not props or len(props.__annotations__) < 1:
-            layout.active = False
-            layout.label(text='No properties available')
-            return
-
-        layout.use_property_split = True
-
-        for name in props.__annotations__:
-            layout.prop(props, name)
+        instance.draw(layout)
 
 @autoregister
 class COHERENCE_MATERIAL_PT_settings(BasePanel):

@@ -285,14 +285,14 @@ namespace Coherence
         /// A message from either a Unity or Blender component
         ///
         /// <para>
-        ///     Payload:<see cref="InteropComponentMessage"/>
+        ///     Payload:<see cref="InteropComponentEvent"/>
         /// </para>
         /// </summary>
-        ComponentMessage = 255,
+        ComponentEvent = 255,
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    public struct InteropComponentMessage
+    public struct InteropComponentEvent
     {
         /// <summary>
         /// Custom ID for this message
@@ -528,37 +528,6 @@ namespace Coherence
     }
 
     /// <summary>
-    /// How to display an object within Unity - controllable from Blender.
-    /// Specific render modes would override all materials for that object.
-    /// </summary>
-    public enum ObjectDisplayMode
-    {
-        /// <summary>Use Unity materials associated with the object (default)</summary>
-        Material = 0,
-
-        /// <summary>Render normal information</summary>
-        Normals,
-
-        /// <summary>Render vertex color information</summary>
-        VertexColors,
-
-        /// <summary>Checker pattern for the UV channel</summary>
-        UV = 10,
-
-        /// <summary>Checker pattern for the UV2 channel</summary>
-        UV2,
-
-        /// <summary>Checker pattern for the UV3 channel</summary>
-        UV3,
-
-        /// <summary>Checker pattern for the UV4 channel</summary>
-        UV4,
-
-        /// <summary>Do not render this object in Unity</summary>
-        Hidden = 100,
-    }
-
-    /// <summary>
     /// Fixed length (63 byte + \0) string that can be packed into an interop struct.
     ///
     /// <para>
@@ -669,21 +638,6 @@ namespace Coherence
         /// </summary>
         public InteropTransform transform;
 
-        /// <summary>
-        /// How to display this object in Unity
-        /// </summary>
-        public ObjectDisplayMode display; // TO BE REMOVED
-
-        /// <summary>
-        /// Name of the material used by this object
-        /// </summary>
-        public InteropString64 material; // TO BE... MOVED? (Interop Mesh?)
-
-        /// <summary>
-        /// Name of the mesh used by this object
-        /// </summary>
-        public InteropString64 mesh; // TO BE MOVED... TO COMPONENT?
-
         public override int GetHashCode()
         {
             return base.GetHashCode();
@@ -693,10 +647,7 @@ namespace Coherence
         {
             return obj is InteropSceneObject o
                 && o.name.Equals(name)
-                && o.transform.Equals(transform)
-                && o.display.Equals(display)
-                && o.material.Equals(material)
-                && o.mesh.Equals(mesh);
+                && o.transform.Equals(transform);
         }
     }
 
@@ -707,8 +658,8 @@ namespace Coherence
 
         public InteropString64 target;
 
+        // TO REMOVE - now can be done as properties
         public InteropString64 mesh;
-
         public InteropString64 material;
 
         // Ref: https://stackoverflow.com/a/39251864

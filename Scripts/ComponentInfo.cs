@@ -331,14 +331,6 @@ namespace Coherence
             }
         }
 
-        internal IComponent Instantiate(SyncManager sync, InteropComponent interop)
-        {
-            var target = sync.GetObject(interop.target);
-            var component = target.gameObject.AddComponent(Type) as IComponent;
-            component.InitializeCoherenceState(interop, sync, this);
-            return component;
-        }
-
         internal static void Add(Type type)
         {
             var attr = type.GetCustomAttribute<ComponentAttribute>();

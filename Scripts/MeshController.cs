@@ -13,6 +13,8 @@ namespace Coherence
     {
         public event OnUpdateMeshEvent OnUpdateMesh;
 
+        public string Name => Data.name;
+
         /// <summary>
         /// The matching interop data for this entity
         /// </summary>
@@ -52,7 +54,6 @@ namespace Coherence
 
         internal void UpdateFromInterop(InteropMesh interop)
         {
-            Debug.Log($"Update mesh {interop.name}");
             Data = interop;
 
             if (HasDirtyBuffers())
@@ -103,20 +104,16 @@ namespace Coherence
             // Channels that were dirtied from last time get loaded.
             if (vertices.IsDirty)
             {
-                InteropLogger.Debug($"Dirty vertices={vertices.Length}");
                 mesh.vertices = vertices.Read();
             }
 
             if (normals.IsDirty)
             {
-                InteropLogger.Debug($"Dirty normals={normals.Length}");
                 mesh.normals = normals.Read();
             }
 
             if (triangles.IsDirty)
             {
-                InteropLogger.Debug($"Dirty triangles={triangles.Length}");
-
                 // Change index format for large Blender meshes - when needed
                 if (triangles.Length > short.MaxValue)
                 {

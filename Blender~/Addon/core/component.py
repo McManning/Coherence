@@ -354,6 +354,30 @@ class BaseComponent:
         """Remove this component from the :attr:`bpy_obj`."""
         raise NotImplementedError
 
+    def draw(self, layout):
+        """Draw the component panel in Blender's UI
+
+        This can be overridden per-component to create a custom panel
+
+        Args:
+            layout (bpy.types.UILayout): Parent layout to draw into
+        """
+        props = self.property_group
+        if not props or len(props.__annotations__) < 1:
+            layout.active = False
+            layout.label(text='No properties available')
+            return
+
+        layout.use_property_split = True
+        for name in props.__annotations__:
+            (func, args) = props.__annotations__[name]
+
+            # Skip hidden props
+            if 'options' in args and 'HIDDEN' in args['options']: continue
+
+            layout.prop(props, name)
+
+
     @classmethod
     def on_registered(cls):
         """Perform any setup that needs to be done after loading this plugin"""
@@ -407,16 +431,22 @@ class BaseComponent:
         """
         pass
 
-    def on_update_mesh(self, depsgraph):
-        """Handle mesh update events from the underlying :class:`bpy.types.Object`
+    def on_update(self, depsgraph, update):
+        """Handle a depsgraph update for the linked `bpy.types.Object`
 
-        If the mesh is instanced across multiple objects, only one one of
-        objects will receive this event.
+        Args:
+            depsgraph (bpy.types.Depsgraph): Evaluated dependency graph
+            update (bpy.types.DepsgraphUpdate): Update for the linked object
+        """
+        pass
+
+    def on_after_depsgraph_updates(self, depsgraph):
+        """Executed after all depsgraph updates have been processed
 
         Args:
             depsgraph (bpy.types.Depsgraph): Evaluated dependency graph
         """
-        raise NotImplementedError('This must be implemented if there is a mesh_uid')
+        pass
 
     def add_vertex_data_stream(self, id: str, size: int, callback):
         """

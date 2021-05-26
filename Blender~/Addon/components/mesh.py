@@ -1,19 +1,17 @@
 import bpy
-from bpy.props import (EnumProperty, BoolProperty)
+from bpy.props import (EnumProperty, BoolProperty, StringProperty)
 
 from .. import api
 from ..core import (utils, interop, utils)
 
-def on_update_display_mode(self, context):
-    print('display mode updated')
-
-def on_update_optimize(self, context):
-    print('optimize mode updated')
-
 class Mesh(api.Component):
     """
-    Component attached to anything that can be represented as a Mesh in Unity
+    Component attached to anything that can be represented as a Mesh in Unity.
     """
+
+    #: Set[str]: Shared set of mesh UIDs that have updated within a depsgraph update event.
+    # This is shared between all Mesh components to support mesh instancing.
+    geometry_updates = set()
 
     #: enum, default 0: Technique used to render this object within Unity
     display_mode: EnumProperty(
@@ -22,18 +20,17 @@ class Mesh(api.Component):
         items=[
             # Enum items match ObjectDisplayMode in C#
             # First value will be cast to an int when passed to the bridge
-            ('0', 'Material', '', 0),
-            ('1', 'Normals', 'Show vertex normals in Unity', 1),
-            ('2', 'Vertex Colors', 'Show vertex colors in Unity', 2),
+            ('Material', 'Material', '', 0),
+            ('Normals', 'Normals', 'Show vertex normals in Unity', 1),
+            ('VertexColors', 'Vertex Colors', 'Show vertex colors in Unity', 2),
 
-            ('10', 'UV Checker', 'Show UV values in Unity', 10),
-            ('11', 'UV2 Checker', 'Show UV2 values in Unity', 11),
-            ('12', 'UV3 Checker', 'Show UV3 values in Unity', 12),
-            ('13', 'UV4 Checker', 'Show UV4 values in Unity', 13),
+            ('UV', 'UV Checker', 'Show UV values in Unity', 10),
+            ('UV2', 'UV2 Checker', 'Show UV2 values in Unity', 11),
+            ('UV3', 'UV3 Checker', 'Show UV3 values in Unity', 12),
+            ('UV4', 'UV4 Checker', 'Show UV4 values in Unity', 13),
 
-            ('100', 'Hidden', 'Do not render this object in Unity', 100),
-        ],
-        update=on_update_display_mode
+            ('Hidden', 'Hidden', 'Do not render this object in Unity', 100),
+        ]
     )
 
     #: bool, default True: Optimize (compress) vertex data prior to sending to Unity.
@@ -42,9 +39,11 @@ class Mesh(api.Component):
         description='Optimize (compress) vertex data prior to sending to Unity. ' +
                     'With this option turned off - full loops will be transmitted which may negatively ' +
                     'impact performance or lookdev in Unity when compared with an export of the same mesh',
-        default=True,
-        update=on_update_optimize
+        default=True
     )
+
+    #: string: Mesh ID attached to this object
+    mesh_id: StringProperty(options={'HIDDEN'})
 
     @classmethod
     def poll(cls, obj):
@@ -78,13 +77,47 @@ class Mesh(api.Component):
             return bpy_obj.data.name
 
         # If there are modifiers - we need to generate a unique
-        # name for this object + mesh combination.
+        # name for this object + mesh combination to avoid overwriting
+        # another instance of the same mesh with different modifiers.
         # This ends up something like `Cube.001_0x1d4d765ca40`
         return '{}_{}'.format(self._name[:40], hex(id(self)))
 
-    def send_evaluated_mesh(self, depsgraph):
+    def on_update(self, depsgraph, update):
+        """Handle a depsgraph update for the linked `bpy.types.Object`
+
+        Args:
+            depsgraph (bpy.types.Depsgraph): Evaluated dependency graph
+            update (bpy.types.DepsgraphUpdate): Update for the linked object
         """
-        Attempt to evaluate a mesh from the associated `bpy.types.Object`
+        print('Depsgraph update for {} - is_updated_geometry={}'.format(self.bpy_obj, update.is_updated_geometry))
+        if not update.is_updated_geometry:
+            return
+
+        mesh_uid = self.mesh_uid
+
+        # If this was the first component to receive a geometry update
+        # on the given mesh, push geometry data to LibCoherence.
+        if mesh_uid not in self.geometry_updates:
+            self.geometry_updates.add(mesh_uid)
+            self.send_evaluated_mesh(depsgraph, update)
+
+        # Reassign mesh ID if it was changed
+        if mesh_uid != self.property_group.mesh_id:
+            self.property_group.mesh_id = mesh_uid
+
+
+    def on_after_depsgraph_updates(self, depsgraph):
+        """Executed after all depsgraph updates have been processed
+
+        Args:
+            depsgraph (bpy.types.Depsgraph): Evaluated dependency graph
+        """
+        # Clear the geometry list that was updated this frame.
+        self.geometry_updates.clear()
+
+    def send_evaluated_mesh(self, depsgraph, update):
+        """
+        Attempt to evaluate a mesh from the linked `bpy.types.Object`
         using the provided depsgraph and send to Unity
 
         Args:
@@ -97,11 +130,30 @@ class Mesh(api.Component):
         try:
             # We need to do both evaluated_get() and preserve_all_data_layers=True to ensure
             # that - if the mesh is instanced - modifiers are applied to the correct instances.
-            eval_obj = self.bpy_obj.evaluated_get(depsgraph)
-            mesh = eval_obj.to_mesh(
-                preserve_all_data_layers=True,
-                depsgraph=depsgraph
+            # eval_obj = self.bpy_obj.evaluated_get(depsgraph)
+            mesh = update.id.to_mesh(
+                # preserve_all_data_layers=True,
+                # depsgraph=depsgraph
+
+                # ^ These two do NOT work if we're not in render preview mode.
+                # The mesh pointer will change but the underlying vertex data will not.
+
+                # For instancing, Blender's own behaviour is to disable modifiers for all
+                # instances while modifying one of them, and then re-enable modifiers once
+                # we exit edit mode. This *could* be done in Unity by replacing all instances
+                # with the base version while one is in edit. And then re-evaluating them all
+                # with modifiers once the edits are locked in - but we have no way of currently
+                # identifying what "locked in" means here.
+
+                # If the mesh isn't in edit focus - then don't apply modifiers?
+                # but then what about animation / etc. ...
             )
+
+            # preserve and depsgraph are both required.
+
+            # to_mesh preserve=True and no depsgraph
+            #   = mesh is null
+            # to_mesh
 
             # TODO: preserve_all_data_layers is only necessary if instanced and modifier
             # stacks change per instance. Might be cheaper to turn this off automatically
@@ -120,6 +172,13 @@ class Mesh(api.Component):
             for layer in range(len(mesh.uv_layers)):
                 if len(mesh.uv_layers[layer].data) > 0:
                     uv_ptr[layer] = mesh.uv_layers[layer].data[0].as_pointer()
+
+            co = mesh.vertices[0].co
+            print('SEND EVAL vertices={} x={}, y={}, z={}'.format(mesh.vertices[0].as_pointer(), co[0], co[1], co[2]))
+
+            # pointer changes, but the coordinates stay the same...
+            # UNLESS I'm in render view... has to be evaluated_get related... but
+            # I swear I dealt with this
 
             interop.lib.CopyMeshDataNative(
                 interop.get_string_buffer(mesh_uid),
@@ -144,22 +203,14 @@ class Mesh(api.Component):
             # (id, size, ptr) and pushed up to C# for diffing and syncing.
 
             # Release the temporary mesh
-            eval_obj.to_mesh_clear()
+            # eval_obj.to_mesh_clear()
+            update.id.to_mesh_clear()
         except Exception as e:
             utils.error('Could not update mesh', e)
 
-    def on_update_mesh(self, depsgraph):
-        """Callback from the runtime's depsgraph evaluation.
-
-        This method gets executed per *unique* mesh_uid that
-        had a geometry update this tick.
-
-        Args:
-            depsgraph (bpy.types.Depsgraph): Evaluated dependency graph
-        """
-        # Could do a lib.UpdateComponent here with interop but I don't want to
-        # expose that to the end users...
-        self.send_evaluated_mesh(depsgraph)
+    def draw(self, layout):
+        layout.label(text='Example override')
+        super().draw(layout)
 
 def register():
     api.register_component(Mesh)

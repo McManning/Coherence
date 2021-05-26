@@ -26,6 +26,8 @@ namespace Coherence
         const string UNITY_MESSAGES_BUFFER = "_UnityMessages";
         const string BLENDER_MESSAGES_BUFFER = "_BlenderMessages";
 
+        public static SyncManager Instance { get; private set; }
+
         /// <summary>
         /// How long to wait for a writable node to become available (milliseconds)
         ///
@@ -71,6 +73,8 @@ namespace Coherence
         /// </summary>
         Dictionary<string, IComponent> Components { get; } = new Dictionary<string, IComponent>();
 
+        // HashSet<IPlugin> Plugins { get; } = new HashSet<IPlugin>();
+
         //public Dictionary<string, HashSet<OnCoherenceEvent>> EventDelegates { get; } = new Dictionary<string, HashSet<OnCoherenceEvent>>();
 
         internal event OnCoherenceEvent OnCoherenceConnected;
@@ -102,6 +106,43 @@ namespace Coherence
         /// </summary>
         InteropBlenderState blenderState;
 
+        ComponentFactory components;
+        ObjectFactory objects;
+
+        private void LoadPlugins()
+        {
+            if (!components)
+            {
+                components = gameObject.AddComponent<ComponentFactory>();
+                components.OnRegistered();
+            }
+
+            if (!objects)
+            {
+                objects = gameObject.AddComponent<ObjectFactory>();
+                objects.OnRegistered();
+            }
+        }
+
+        private void UnloadPlugins()
+        {
+            Network.RemoveAllHandlers();
+
+            if (components)
+            {
+                components.OnUnregistered();
+                DestroyImmediate(components);
+                components = null;
+            }
+
+            if (objects)
+            {
+                objects.OnUnregistered();
+                DestroyImmediate(objects);
+                objects = null;
+            }
+        }
+
         /// <summary>
         /// Create a shared memory space for Blender to connect to.
         /// </summary>
@@ -114,6 +155,9 @@ namespace Coherence
 
             gameObject.transform.parent = null;
             IsRunning = true;
+            Instance = this;
+
+            LoadPlugins();
 
             var settings = CoherenceSettings.Instance;
             var name = settings.bufferName;
@@ -201,6 +245,10 @@ namespace Coherence
 
             pixelsProducer?.Dispose();
             pixelsProducer = null;
+
+            Instance = null;
+
+            UnloadPlugins();
         }
 
         /// <summary>
@@ -404,6 +452,16 @@ namespace Coherence
 
         #region Meshes
 
+        public MeshController GetMesh(string name)
+        {
+            if (!Meshes.ContainsKey(name))
+            {
+                return null;
+            }
+
+            return Meshes[name];
+        }
+
         internal MeshController GetOrCreateMesh(string name)
         {
             if (!Meshes.ContainsKey(name))
@@ -493,9 +551,16 @@ namespace Coherence
                 orphans.Add(child);
             }
 
-            DestroyImmediate(instance.gameObject);
+            // Cascade a destroy event to every component
+            foreach (var component in instance.Components)
+            {
+                component.DestroyCoherenceComponent();
+            }
+
             Objects.Remove(name);
             orphans.Remove(instance);
+
+            DestroyImmediate(instance.gameObject);
         }
 
         private void UpdateObject(string name, InteropSceneObject iso)
@@ -672,6 +737,7 @@ namespace Coherence
                         );
                         break;
 
+                    /*
                     // Object messages
                     case RpcRequest.AddObject:
                         AddObject(
@@ -688,28 +754,34 @@ namespace Coherence
                             FastStructure.PtrToStructure<InteropSceneObject>(ptr)
                         );
                         break;
+                    */
 
+                    /*
                     // Component messages.
                     // Target is in the form of `obj_name:component_name`, mapped to our components dict.
                     case RpcRequest.AddComponent:
-                        var component = FastStructure.PtrToStructure<InteropComponent>(ptr);
-                        var instance = ComponentInfo.Find(component.name).Instantiate(this, component);
-
-                        Components.Add(target, instance);
-                        Debug.Log($"added component {target} for {component.target}");
+                        AddComponent(
+                            target,
+                            FastStructure.PtrToStructure<InteropComponent>(ptr)
+                        );
                         break;
                     case RpcRequest.DestroyComponent:
-                        GetCoherenceComponent(target).DestroyCoherenceComponent();
-                        Components.Remove(target);
+                        DestroyComponent(
+                            target,
+                            FastStructure.PtrToStructure<InteropComponent>(ptr)
+                        );
                         break;
                     case RpcRequest.UpdateComponent:
-                        component = FastStructure.PtrToStructure<InteropComponent>(ptr);
-                        GetCoherenceComponent(target).DispatchUpdate(component);
+                        UpdateComponent(
+                            target,
+                            FastStructure.PtrToStructure<InteropComponent>(ptr)
+                        );
                         break;
-                    case RpcRequest.ComponentMessage:
-                        var msg = FastStructure.PtrToStructure<InteropComponentMessage>(ptr);
-                        GetCoherenceComponent(target).GetCoherenceState()
-                            .DispatchNetworkEvent(msg.id, msg.size, msg.data);
+                    case RpcRequest.ComponentEvent:
+                        SendEventToComponent(
+                            target,
+                            FastStructure.PtrToStructure<InteropComponentEvent>(ptr)
+                        );
                         break;
                     case RpcRequest.UpdateProperties:
                         var data = GetCoherenceComponent(target).GetCoherenceState();
@@ -718,6 +790,7 @@ namespace Coherence
                             .CopyFrom(ptr, header.index, header.count);
                         data.DispatchRemotePropertyUpdates();
                         break;
+                    */
 
                     // Mesh messages
                     case RpcRequest.UpdateTriangles:
@@ -789,7 +862,17 @@ namespace Coherence
                         break;
 
                     default:
-                        Debug.LogWarning($"Unhandled request type {header.type} for {target}");
+                        // TODO: Target type data.
+                        if (header.type >= RpcRequest.AddObject && header.type <= RpcRequest.UpdateObject)
+                        {
+                            Network.RouteInboundMessage(NetworkTargetType.Object, target, ptr, header);
+                        }
+                        else if (header.type >= RpcRequest.AddComponent && header.type <= RpcRequest.UpdateProperties)
+                        {
+                            Network.RouteInboundMessage(NetworkTargetType.Component, target, ptr, header);
+                        }
+
+                        //Debug.LogWarning($"Unhandled request type {header.type} for {target}");
                         break;
                 }
 
@@ -807,6 +890,36 @@ namespace Coherence
 
             return bytesRead;
         }
+
+        /*
+        private void AddComponent(string target, InteropComponent component)
+        {
+            var instance = ComponentInfo.Find(component.name).Instantiate(this, component);
+
+            Components.Add(target, instance);
+            Debug.Log($"added component {target} for {component.target}");
+        }
+
+        private void DestroyComponent(string target, InteropComponent component)
+        {
+            var instance = GetCoherenceComponent(target);
+            instance.DestroyCoherenceComponent();
+            Objects[component.target].Components.Remove(instance);
+            Components.Remove(target);
+        }
+
+        private void UpdateComponent(string target, InteropComponent component)
+        {
+            GetCoherenceComponent(target).DispatchUpdate(component);
+        }
+
+        private void SendEventToComponent(string target, InteropComponentEvent evt)
+        {
+            GetCoherenceComponent(target)
+                    .GetCoherenceState()
+                    .DispatchNetworkEvent(evt.id, evt.size, evt.data);
+        }
+        */
 
         /// <summary>
         /// Read a batch of messages off the message queue from Blender

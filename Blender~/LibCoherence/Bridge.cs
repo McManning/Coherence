@@ -307,6 +307,14 @@ namespace Coherence
         /// </summary>
         private void SendAllSceneData()
         {
+            // THEN send current mesh data for all objects with meshes.
+            // We do this last so that we can ensure Unity is completely setup and
+            // ready to start accepting large data chunks.
+            foreach (var mesh in meshes.Values)
+            {
+                mesh.SendAll();
+            }
+
             // Send all objects currently in the scene
             foreach (var obj in objects.Values)
             {
@@ -336,13 +344,6 @@ namespace Coherence
                 );*/
             }
 
-            // THEN send current mesh data for all objects with meshes.
-            // We do this last so that we can ensure Unity is completely setup and
-            // ready to start accepting large data chunks.
-            foreach (var mesh in meshes.Values)
-            {
-                mesh.SendAll();
-            }
         }
 
         /// <summary>

@@ -8,7 +8,7 @@ namespace Coherence
 {
     public interface IComponent
     {
-
+        // Components are also network message targets.
     }
 
     /// <summary>
@@ -28,8 +28,13 @@ namespace Coherence
         ///
         /// This handles all bindings and events between the host MonoBehaviour and Coherence.
         /// </summary>
-        internal class ComponentState
+        internal class ComponentState : INetworkTarget
         {
+            /// <summary>
+            /// Host component that this is a state of.
+            /// </summary>
+            internal IComponent Component { get; set; }
+
             /// <summary>
             /// Name of this component for interprocess messages.
             /// In the form `objectName:componentName` to avoid conflict
@@ -39,9 +44,9 @@ namespace Coherence
 
             internal ComponentInfo Info { get; set; }
 
-            internal SyncManager Sync { get; set; }
+            public NetworkTargetType GetNetworkType() => NetworkTargetType.Component;
 
-            internal MeshController Mesh { get; set; }
+            public string GetNetworkName() => Name;
 
             /// <summary>
             /// Event handler for OnUpdateMesh events triggered
@@ -85,43 +90,19 @@ namespace Coherence
             internal Dictionary<string, List<IVertexDataStreamHandler>> VertexDataStreams { get; }
                 = new Dictionary<string, List<IVertexDataStreamHandler>>();
 
-            internal void SetMeshController(MeshController mesh)
-            {
-                if (Mesh == mesh)
-                    return;
-
-                // Unbind previous mesh
-                if (Mesh != null)
-                {
-                    Mesh.OnUpdateMesh -= OnUpdateMesh;
-                }
-
-                // Bind new mesh
-                Mesh = mesh;
-                if (OnUpdateMesh != null)
-                {
-                    mesh.OnUpdateMesh += OnUpdateMesh;
-                    OnUpdateMesh.Invoke(mesh);
-                }
-            }
-
             internal void UnbindEvents()
             {
-                Sync.OnCoherenceConnected -= OnCoherenceConnected;
-                Sync.OnCoherenceDisconnected -= OnCoherenceDisconnected;
-                Sync.OnCoherenceEnabled -= OnCoherenceEnabled;
-                Sync.OnCoherenceDisabled -= OnCoherenceDisabled;
+                Network.OnCoherenceConnected -= OnCoherenceConnected;
+                Network.OnCoherenceDisconnected -= OnCoherenceDisconnected;
+                Network.OnCoherenceEnabled -= OnCoherenceEnabled;
+                Network.OnCoherenceDisabled -= OnCoherenceDisabled;
                 // and so on...
-
-                if (Mesh != null)
-                {
-                    Mesh.OnUpdateMesh -= OnUpdateMesh;
-                }
             }
 
             internal void Destroy()
             {
                 UnbindEvents();
+                Network.UnregisterTarget(this);
             }
 
             internal void DispatchNetworkEvent(string id, int size, IntPtr ptr)
@@ -218,9 +199,42 @@ namespace Coherence
                 // If we modified any properties - send the dirtied set to the remote.
                 if (RemoteProperties.IsDirty)
                 {
-                    Sync.SendArray(RpcRequest.UpdateProperties, Name, RemoteProperties);
+                    // TODO!
+                    //Network.SendArray(RpcRequest.UpdateProperties, Name, RemoteProperties);
                     RemoteProperties.Clean();
                 }
+            }
+
+            public void OnRegistered()
+            {
+                Network.Register(this, RpcRequest.UpdateComponent, OnInteropUpdate);
+                Network.Register(this, RpcRequest.DestroyComponent, OnInteropDestroy);
+                Network.Register(this, RpcRequest.UpdateProperties, OnUpdateProperties);
+            }
+
+            public void OnUnregistered()
+            {
+
+            }
+
+            public void OnUpdateProperties(IntPtr ptr, InteropMessageHeader header)
+            {
+                RemoteProperties
+                    .Resize(header.length)
+                    .CopyFrom(ptr, header.index, header.count);
+
+                DispatchRemotePropertyUpdates();
+            }
+
+            public void OnInteropUpdate(IntPtr ptr, InteropMessageHeader header)
+            {
+
+            }
+
+            public void OnInteropDestroy(IntPtr ptr, InteropMessageHeader header)
+            {
+                // TODO: Less roundabout way of doing this.
+                Component.DestroyCoherenceComponent();
             }
         }
 
@@ -246,13 +260,12 @@ namespace Coherence
         internal static ComponentState InitializeCoherenceState(
             this IComponent component,
             InteropComponent interop,
-            SyncManager sync,
             ComponentInfo info
         ) {
             var state = GetCoherenceState(component);
             state.Name = interop.target + ":" + interop.name;
             state.Info = info;
-            state.Sync = sync;
+            state.Component = component;
 
             // Turn MethodInfo's into delegates for known events
             foreach (var entry in info.EventLookupTable)
@@ -262,17 +275,18 @@ namespace Coherence
                     case "OnUpdateMesh":
                         BindEvent(component, entry.Value, ref state.OnUpdateMesh);
                         break;
+
                     case "OnCoherenceConnected":
-                        sync.OnCoherenceConnected += BindEvent(component, entry.Value, ref state.OnCoherenceConnected);
+                        Network.OnCoherenceConnected += BindEvent(component, entry.Value, ref state.OnCoherenceConnected);
                         break;
                     case "OnCoherenceDisconnected":
-                        sync.OnCoherenceDisconnected += BindEvent(component, entry.Value, ref state.OnCoherenceDisconnected);
+                        Network.OnCoherenceDisconnected += BindEvent(component, entry.Value, ref state.OnCoherenceDisconnected);
                         break;
                     case "OnCoherenceEnabled":
-                        sync.OnCoherenceEnabled += BindEvent(component, entry.Value, ref state.OnCoherenceEnabled);
+                        Network.OnCoherenceEnabled += BindEvent(component, entry.Value, ref state.OnCoherenceEnabled);
                         break;
                     case "OnCoherenceDisabled":
-                        sync.OnCoherenceDisabled += BindEvent(component, entry.Value, ref state.OnCoherenceDisabled);
+                        Network.OnCoherenceDisabled += BindEvent(component, entry.Value, ref state.OnCoherenceDisabled);
                         break;
                     default: break;
                     // and so on... this is awful tbh.
@@ -388,18 +402,7 @@ namespace Coherence
         public static void DispatchUpdate(this IComponent component, InteropComponent interop)
         {
             var state = component.GetCoherenceState();
-
-            // Assign mesh again, in case the reference changed.
-            if (string.IsNullOrEmpty(interop.mesh))
-            {
-                state.SetMeshController(null);
-            }
-            else
-            {
-                state.SetMeshController(state.Sync.GetOrCreateMesh(interop.mesh));
-            }
-
-            // TODO: enabled, material, etc.
+            // TODO: enabled state toggle (unless it's just a property... ?)
         }
 
         /// <summary>

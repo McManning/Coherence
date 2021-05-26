@@ -631,26 +631,45 @@ namespace Coherence
             // Need to add support on Unity's side.
             // E.g. b.SendArray(RpcRequest.UpdateVertices, Name, vertices.GetDirtyRange());
 
+            var hasChanges = false;
+
             if (vertices.IsDirty)
+            {
+                hasChanges = true;
                 b.SendArray(RpcRequest.UpdateVertices, Name, vertices);
+            }
 
             if (normals.IsDirty)
+            {
+                hasChanges = true;
                 b.SendArray(RpcRequest.UpdateNormals, Name, normals);
+            }
 
             if (colors.IsDirty)
+            {
+                hasChanges = true;
                 b.SendArray(RpcRequest.UpdateVertexColors, Name, colors);
+            }
 
             if (uvs.IsDirty)
+            {
+                hasChanges = true;
                 b.SendArray(RpcRequest.UpdateUV, Name, uvs);
+            }
 
             // ... and so on
 
             if (triangles.IsDirty)
+            {
+                hasChanges = true;
                 b.SendArray(RpcRequest.UpdateTriangles, Name, triangles);
+            }
 
-            SendApplyChanges();
-
-            CleanAllBuffers();
+            if (hasChanges)
+            {
+                SendApplyChanges();
+                CleanAllBuffers();
+            }
         }
 
         void CleanAllBuffers()

@@ -490,29 +490,37 @@ class SceneObjects(Plugin):
                 if update.is_updated_transform:
                     update_transform(update.id)
 
-                if update.is_updated_geometry:
-                    for instance in components:
-                        mesh_uid = instance.mesh_uid
-                        if mesh_uid:
-                            # Add one component handler per mesh UID.
-                            # For instanced meshes, this allows us to only have
-                            # *one* component push the mesh update to Coherence.
-                            # This also allows multiple components to manage
-                            # independent meshes on the same scene object.
-                            self.dirty_geometry[mesh_uid] = instance
+                for component in components:
+                    component.on_update(depsgraph, update)
 
-            elif type(update.id) == bpy.types.Mesh:
-                print('Got a mesh update for {}, is_geo={}'.format(update.id.name, update.is_updated_geometry))
+                # if update.is_updated_geometry:
+                #     for instance in components:
+                #         mesh_uid = instance.mesh_uid
+                #         if mesh_uid:
+                #             # Add one component handler per mesh UID.
+                #             # For instanced meshes, this allows us to only have
+                #             # *one* component push the mesh update to Coherence.
+                #             # This also allows multiple components to manage
+                #             # independent meshes on the same scene object.
+                #             self.dirty_geometry[mesh_uid] = instance
+
+            # elif type(update.id) == bpy.types.Mesh:
+            #     print('Got a mesh update for {}, is_geo={}'.format(update.id.name, update.is_updated_geometry))
 
         # Handle all unique geometry updates
-        for component in self.dirty_geometry.values():
-            try:
-                component.on_update_mesh(depsgraph)
-            except Exception as err:
-                self.on_component_error(component.name(), err, component.object_name)
-                pass
+        # for component in self.dirty_geometry.values():
+        #     try:
+        #         component.on_update_mesh(depsgraph)
+        #     except Exception as err:
+        #         self.on_component_error(component.name(), err, component.object_name)
+        #         pass
 
         self.dirty_geometry.clear()
+
+        # Notify *all* components of a depsgraph update
+        for components in self.objects.values():
+            for component in components:
+                component.on_after_depsgraph_updates(depsgraph)
 
     def on_registered(self):
         #self.sync_objects_with_scene(bpy.data.scenes[0])
