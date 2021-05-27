@@ -250,23 +250,25 @@ namespace Coherence
         /// </summary>
         private void ConsumeMessage()
         {
-            messages.Read((target, header, ptr) =>
+            messages.Read((msg) =>
             {
+                var type = msg.Type;
+                var target = msg.Target;
                 lastUpdateFromUnity = DateTime.Now;
 
                 // Message to be handled within Python.
-                if (header.type == RpcRequest.ComponentMessage)
+                if (type == RpcRequest.ComponentEvent)
                 {
                     return 0;
                 }
 
-                if (!handlers.ContainsKey(header.type))
+                if (!handlers.ContainsKey(type))
                 {
-                    InteropLogger.Warning($"Unhandled request type {header.type} for {target}");
+                    InteropLogger.Warning($"Unhandled request type {type} for {target}");
                     return 0;
                 }
 
-                return handlers[header.type](target, ptr);
+                return handlers[type](target, msg.data);
             });
         }
 

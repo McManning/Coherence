@@ -33,6 +33,8 @@ namespace Coherence
 
     public enum RpcRequest : byte
     {
+        #region Application (0)
+
         /// <summary>
         /// Sent by Blender the first time it connects to the shared memory space,
         /// then sent by Unity in response to Blender's Connect request.
@@ -67,6 +69,10 @@ namespace Coherence
         /// </summary>
         UpdateBlenderState,
 
+        #endregion
+
+        #region Viewports (10)
+
         /// <summary>
         /// Notify Unity that a new <see cref="InteropViewport"/>
         /// has been created in Blender.
@@ -75,7 +81,7 @@ namespace Coherence
         ///     Payload: <see cref="InteropViewport"/>
         /// </para>
         /// </summary>
-        AddViewport,
+        AddViewport = 10,
 
         /// <summary>
         /// Notify Unity that a <see cref="InteropViewport"/>
@@ -106,6 +112,10 @@ namespace Coherence
         /// </summary>
         UpdateVisibleObjects,
 
+        #endregion
+
+        #region Objects (20)
+
         /// <summary>
         /// Notify Unity that a <see cref="InteropSceneObject"/>
         /// has been added to the scene.
@@ -114,7 +124,7 @@ namespace Coherence
         ///     Payload: <see cref="InteropSceneObject"/>
         /// </para>
         /// </summary>
-        AddObject,
+        AddObject = 20,
 
         /// <summary>
         /// Notify Unity that a <see cref="InteropSceneObject"/>
@@ -136,6 +146,10 @@ namespace Coherence
         /// </summary>
         UpdateObject,
 
+        #endregion
+
+        #region Components and Properties (30)
+
         /// <summary>
         /// Notify Unity that a <see cref="InteropComponent"/>
         /// has been added to an object in the scene
@@ -144,7 +158,7 @@ namespace Coherence
         ///     Payload: <see cref="InteropComponent"/>
         /// </para>
         /// </summary>
-        AddComponent,
+        AddComponent = 30,
 
         /// <summary>
         /// Notify Unity of a destroyed component
@@ -173,6 +187,24 @@ namespace Coherence
         /// </para>
         /// </summary>
         UpdateProperties,
+
+        /// <summary>
+        /// A message from either a Unity or Blender component
+        ///
+        /// <para>
+        ///     Payload:<see cref="InteropComponentEvent"/>
+        /// </para>
+        /// </summary>
+        ComponentEvent,
+
+        #endregion
+
+        #region Meshes (50)
+
+        /// <summary>
+        /// Notify Unity that a new <see cref="InteropMesh"/> should be added for sync.
+        /// </summary>
+        AddMesh = 50,
 
         /// <summary>
         /// Notify Unity that a <see cref="InteropMesh"/> has updates.
@@ -255,15 +287,9 @@ namespace Coherence
         /// </summary>
         UpdateVertexColors,
 
-        /// <summary>
-        /// Notify Unity that the active material name for a
-        /// <see cref="InteropSceneObject"/> has changed.
-        ///
-        /// <para>
-        ///     Payload: Material name as <see cref="byte"/>[]
-        /// </para>
-        /// </summary>
-        UpdateMaterial,
+        #endregion
+
+        #region Images (100)
 
         /// <summary>
         ///
@@ -271,7 +297,7 @@ namespace Coherence
         ///     Payload: <see cref="InteropImage"/>
         /// </para>
         /// </summary>
-        UpdateImage,
+        UpdateImage = 100,
 
         /// <summary>
         ///
@@ -281,14 +307,7 @@ namespace Coherence
         /// </summary>
         UpdateImageData,
 
-        /// <summary>
-        /// A message from either a Unity or Blender component
-        ///
-        /// <para>
-        ///     Payload:<see cref="InteropComponentEvent"/>
-        /// </para>
-        /// </summary>
-        ComponentEvent = 255,
+        #endregion
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -314,6 +333,11 @@ namespace Coherence
     public struct InteropMessageHeader
     {
         public RpcRequest type;
+
+        /// <summary>
+        /// Optional reciever name for this message
+        /// </summary>
+        public InteropString64 target;
 
         /// <summary>
         /// Array index if this is an array of items
@@ -346,6 +370,7 @@ namespace Coherence
         public override bool Equals(object obj)
         {
             return obj is InteropMessageHeader o
+                && o.target.Equals(target)
                 && o.type == type
                 && o.index == index
                 && o.length == length
@@ -358,9 +383,22 @@ namespace Coherence
     {
         public static InteropMessage Invalid { get; } = new InteropMessage();
 
+        public RpcRequest Type => header.type;
+
+        public string Target => header.target.Value;
+
         public InteropMessageHeader header;
-        public InteropString64 target;
         public IntPtr data;
+
+        /// <summary>
+        /// Reinterpret the payload as <typeparamref name="T"/>.
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <returns></returns>
+        public T Reinterpret<T>() where T : struct
+        {
+            return FastStructure.PtrToStructure<T>(data);
+        }
     }
 
     /// <summary>
@@ -1085,7 +1123,7 @@ namespace Coherence
         }
     }
 
-    public delegate int InteropMessageProducer(string target, InteropMessageHeader hdr, IntPtr ptr);
+    public delegate int InteropMessageProducer(InteropMessageHeader hdr, IntPtr ptr);
 
     /// <summary>
     /// Simplified verison of RpcBuffer that:
@@ -1106,7 +1144,6 @@ namespace Coherence
 
         internal class OutboundMessage
         {
-            internal string target;
             internal InteropMessageHeader header;
             internal byte[] payload;
             internal InteropMessageProducer producer;
@@ -1151,8 +1188,8 @@ namespace Coherence
             InteropLogger.Debug($"    Q-> {target}:{type:F}");
             outboundQueue.Enqueue(new OutboundMessage
             {
-                target = target,
                 header = new InteropMessageHeader {
+                    target = target,
                     type = type,
                     index = 0,
                     length = 0,
@@ -1165,6 +1202,7 @@ namespace Coherence
         public bool ReplaceOrQueue<T>(RpcRequest type, string target, ref T data) where T : struct
         {
             var header = new InteropMessageHeader {
+                target = target,
                 type = type,
                 index = 0,
                 length = 0,
@@ -1184,13 +1222,11 @@ namespace Coherence
             // Remove the old one to then queue up one at the end
             // This ensures messages that are queued up together
             // remain in their queued order.
-            RemoveQueuedMessage(target, ref header);
-
+            RemoveQueuedMessage(header);
 
             InteropLogger.Debug($"    ROQ-> {target}:{header.type:F}");
             outboundQueue.Enqueue(new OutboundMessage
             {
-                target = target,
                 header = header,
                 payload = payload
             });
@@ -1198,11 +1234,11 @@ namespace Coherence
             return false;
         }
 
-        private OutboundMessage FindQueuedMessage(string target, ref InteropMessageHeader header)
+        private OutboundMessage FindQueuedMessage(InteropMessageHeader header)
         {
             foreach (var message in outboundQueue)
             {
-                if (message.target == target && message.header.Equals(header))
+                if (message.header.Equals(header))
                 {
                     return message;
                 }
@@ -1211,12 +1247,12 @@ namespace Coherence
             return null;
         }
 
-        private void RemoveQueuedMessage(string target, ref InteropMessageHeader header)
+        private void RemoveQueuedMessage(InteropMessageHeader header)
         {
             var replacement = new Queue<OutboundMessage>();
             foreach (var message in outboundQueue)
             {
-                if (message.target != target || !message.header.Equals(header))
+                if (!message.header.Equals(header))
                 {
                     replacement.Enqueue(message);
                 }
@@ -1244,6 +1280,7 @@ namespace Coherence
 
             // Construct a header with metadata for the array
             var header = new InteropMessageHeader {
+                target = target,
                 type = type,
                 length = buffer.MaxLength,
                 index = buffer.Offset,
@@ -1251,14 +1288,13 @@ namespace Coherence
             };
 
             // Remove any queued messages with the same outbound header
-            RemoveQueuedMessage(target, ref header);
+            RemoveQueuedMessage(header);
 
             InteropLogger.Debug($"    QA-> {target}:{type:F}");
             outboundQueue.Enqueue(new OutboundMessage
             {
-                target = target,
                 header = header,
-                producer = (tar, hdr, ptr) => {
+                producer = (hdr, ptr) => {
                     buffer.CopyTo(ptr, 0, buffer.Length);
                     return elementSize * buffer.Length;
                 }
@@ -1273,25 +1309,11 @@ namespace Coherence
         /// </summary>
         /// <param name="consumer"></param>
         /// <returns>Nonzero if a message was read, with message info copied to <see cref="Last"/>.</returns>
-        public int Read(Func<string, InteropMessageHeader, IntPtr, int> consumer)
+        public int Read(Func<InteropMessage, int> consumer)
         {
             return messageConsumer.Read((ptr) =>
             {
                 int bytesRead = 0;
-
-                // Read target name (varying length string)
-                int targetSize = FastStructure.PtrToStructure<int>(ptr);
-                bytesRead += FastStructure.SizeOf<int>();
-
-                string targetName = "";
-                if (targetSize > 0)
-                {
-                    byte[] target = new byte[targetSize];
-
-                    FastStructure.ReadBytes(target, IntPtr.Add(ptr, bytesRead), 0, targetSize);
-                    targetName = Encoding.UTF8.GetString(target);
-                    bytesRead += targetSize;
-                }
 
                 // Read message header
                 var headerSize = FastStructure.SizeOf<InteropMessageHeader>();
@@ -1301,13 +1323,12 @@ namespace Coherence
                 // Update the last message received
                 Last = new InteropMessage
                 {
-                    target = targetName,
                     header = header,
                     data = IntPtr.Add(ptr, bytesRead),
                 };
 
-                // Call consumer to handle the rest of the payload
-                bytesRead += consumer(targetName, header, IntPtr.Add(ptr, bytesRead));
+                // Call consumer to handle the the payload
+                bytesRead += consumer(Last);
 
                 // InteropLogger.Debug($"Consume {bytesRead} bytes - {header.type} for `{targetName}`");
 
@@ -1326,7 +1347,6 @@ namespace Coherence
             {
                 var message = new OutboundMessage()
                 {
-                    target = "",
                     header = new InteropMessageHeader
                     {
                         type = RpcRequest.Disconnect,
@@ -1352,18 +1372,6 @@ namespace Coherence
         {
             int bytesWritten = 0;
 
-            // Write the target name (varying length string)
-            byte[] target = Encoding.UTF8.GetBytes(message.target);
-            int targetLen = target.Length;
-            FastStructure.StructureToPtr(ref targetLen, ptr + bytesWritten);
-            bytesWritten += FastStructure.SizeOf<int>();
-
-            if (targetLen > 0)
-            {
-                FastStructure.WriteBytes(ptr + bytesWritten, target, 0, targetLen);
-                bytesWritten += targetLen;
-            }
-
             // Write the message header
             var headerSize = FastStructure.SizeOf<InteropMessageHeader>();
             var header = message.header;
@@ -1374,7 +1382,7 @@ namespace Coherence
             // If there's a custom producer, execute it for writing the payload
             if (message.producer != null)
             {
-                bytesWritten += message.producer(message.target, header, ptr + bytesWritten);
+                bytesWritten += message.producer(header, ptr + bytesWritten);
             }
 
             // If there's a payload included with the message, copy it
@@ -1412,7 +1420,7 @@ namespace Coherence
                 bytesWritten = messageProducer.Write((ptr) =>
                 {
                     var next = outboundQueue.Dequeue();
-                    InteropLogger.Debug($"    W-> {next.target}:{next.header.type:F}");
+                    InteropLogger.Debug($"    W-> {next.header.target}:{next.header.type:F}");
                     return WriteMessage(next, ptr);
                 }, 0);
             } while (bytesWritten > 0 && outboundQueue.Count() > 0);
