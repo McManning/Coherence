@@ -3,6 +3,9 @@ using SharedMemory;
 
 namespace Coherence
 {
+    /// <summary>
+    /// Handler for a component event between Coherence applications
+    /// </summary>
     public interface IEventHandler
     {
         void Dispatch(string id, int size, IntPtr data);

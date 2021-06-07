@@ -10,7 +10,7 @@ from bpy.props import (
     CollectionProperty
 )
 
-from . import runtime, scene_objects
+from . import runtime, scene_objects, image_sync
 from util.registry import autoregister
 
 def on_toggle_component_enabled(self, context):
@@ -132,7 +132,7 @@ def texture_slot_enum_items(self, context):
     Returns:
         list of [(slot, slot, ''), ...]
     """
-    slots = runtime.instance.get_texture_slots()
+    slots = image_sync.get_texture_slots()
     return [(name, name, '') for name in slots]
 
 def _on_update_texture_slot(self, context):

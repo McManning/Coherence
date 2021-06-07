@@ -40,27 +40,23 @@ namespace Coherence
             /// In the form `objectName:componentName` to avoid conflict
             /// with other components and objects.
             /// </summary>
-            internal string Name { get; set; }
+            public string Name { get; set; }
 
             internal ComponentInfo Info { get; set; }
 
-            public NetworkTargetType GetNetworkType() => NetworkTargetType.Component;
-
-            public string GetNetworkName() => Name;
-
             /// <summary>
             /// Event handler for OnUpdateMesh events triggered
-            /// by a referenced <see cref="MeshController"/>
+            /// by a referenced <see cref="SyncedMesh"/>
             /// </summary>
             internal OnUpdateMeshEvent OnUpdateMesh;
 
             // Generated delegates to OnCoherence* event methods on the
             // host MonoBehaviour IFF declared on that MonoBehaviour.
 
-            internal OnCoherenceEvent OnCoherenceConnected;
-            internal OnCoherenceEvent OnCoherenceDisconnected;
-            internal OnCoherenceEvent OnCoherenceEnabled;
-            internal OnCoherenceEvent OnCoherenceDisabled;
+            internal CoherenceEvent OnCoherenceConnected;
+            internal CoherenceEvent OnCoherenceDisconnected;
+            internal CoherenceEvent OnCoherenceEnabled;
+            internal CoherenceEvent OnCoherenceDisabled;
 
             /// <summary>
             /// Buffer of properties provided by the remote application
@@ -81,54 +77,56 @@ namespace Coherence
             /// <summary>
             /// Handlers for custom network events between applications
             /// </summary>
-            internal Dictionary<string, List<IEventHandler>> OnNetworkEvent { get; }
-                = new Dictionary<string, List<IEventHandler>>();
+            internal Dictionary<string, IEventHandler> OnNetworkEvent { get; }
+                = new Dictionary<string, IEventHandler>();
 
             /// <summary>
             /// Handlers for custom vertex data shared between applications
             /// </summary>
-            internal Dictionary<string, List<IVertexDataStreamHandler>> VertexDataStreams { get; }
-                = new Dictionary<string, List<IVertexDataStreamHandler>>();
+            internal Dictionary<string, IVertexDataStreamHandler> VertexDataStreams { get; }
+                = new Dictionary<string, IVertexDataStreamHandler>();
 
             internal void UnbindEvents()
             {
-                Network.OnCoherenceConnected -= OnCoherenceConnected;
-                Network.OnCoherenceDisconnected -= OnCoherenceDisconnected;
-                Network.OnCoherenceEnabled -= OnCoherenceEnabled;
-                Network.OnCoherenceDisabled -= OnCoherenceDisabled;
+                Network.OnConnected -= OnCoherenceConnected;
+                Network.OnDisconnected -= OnCoherenceDisconnected;
+                Network.OnEnabled -= OnCoherenceEnabled;
+                Network.OnDisabled -= OnCoherenceDisabled;
                 // and so on...
+            }
+
+            internal void Setup()
+            {
+                Network.Register(this, RpcRequest.UpdateComponent, OnInteropUpdate);
+                Network.Register(this, RpcRequest.DestroyComponent, OnInteropDestroy);
+                Network.Register(this, RpcRequest.UpdateProperties, OnUpdateProperties);
             }
 
             internal void Destroy()
             {
                 UnbindEvents();
-                Network.UnregisterTarget(this);
+                Network.Unregister(this);
             }
 
             internal void DispatchNetworkEvent(string id, int size, IntPtr ptr)
             {
-                if (OnNetworkEvent.TryGetValue(id, out var values))
+                if (OnNetworkEvent.TryGetValue(id, out var handler))
                 {
-                    foreach (var handler in values)
-                    {
-                        handler.Dispatch(id, size, ptr);
-                    }
+                    handler.Dispatch(id, size, ptr);
                 }
             }
 
             public void DispatchVertexDataStreams(string id, Mesh mesh, ArrayBuffer<byte> arr)
             {
+                // TODO:
                 // This assumes individual implementations can reinterpret the buffer.
                 // Using ArrayBuffer - maybe not since it's managed memory already
                 // (which would incur a second copy op)
                 // And NativeArray doesn't have the ability to specify a dirty range here.
                 // Need to really consolidate these array types betwen here, SharpRNA, LibCo, etc.
-                if (VertexDataStreams.TryGetValue(id, out var values))
+                if (VertexDataStreams.TryGetValue(id, out var handler))
                 {
-                    foreach (var handler in values)
-                    {
-                        handler.Dispatch(id, mesh, arr);
-                    }
+                    handler.Dispatch(id, mesh, arr);
                 }
             }
 
@@ -205,33 +203,24 @@ namespace Coherence
                 }
             }
 
-            public void OnRegistered()
-            {
-                Network.Register(this, RpcRequest.UpdateComponent, OnInteropUpdate);
-                Network.Register(this, RpcRequest.DestroyComponent, OnInteropDestroy);
-                Network.Register(this, RpcRequest.UpdateProperties, OnUpdateProperties);
-            }
-
-            public void OnUnregistered()
-            {
-
-            }
-
-            public void OnUpdateProperties(IntPtr ptr, InteropMessageHeader header)
+            public void OnUpdateProperties(InteropMessage msg)
             {
                 RemoteProperties
-                    .Resize(header.length)
-                    .CopyFrom(ptr, header.index, header.count);
+                    .Resize(msg.header.length)
+                    .CopyFrom(msg.data, msg.header.index, msg.header.count);
 
                 DispatchRemotePropertyUpdates();
             }
 
-            public void OnInteropUpdate(IntPtr ptr, InteropMessageHeader header)
+            public void OnInteropUpdate(InteropMessage msg)
             {
+                var data = msg.Reinterpret<InteropComponent>();
 
+                Debug.Log($"OnInteropUpdate {Name} for component");
+                (Component as MonoBehaviour).enabled = (data.enabled == 1);
             }
 
-            public void OnInteropDestroy(IntPtr ptr, InteropMessageHeader header)
+            public void OnInteropDestroy(InteropMessage msg)
             {
                 // TODO: Less roundabout way of doing this.
                 Component.DestroyCoherenceComponent();
@@ -266,27 +255,28 @@ namespace Coherence
             state.Name = interop.target + ":" + interop.name;
             state.Info = info;
             state.Component = component;
+            state.Setup();
 
             // Turn MethodInfo's into delegates for known events
-            foreach (var entry in info.EventLookupTable)
+            foreach (var method in info.Type.GetMethods())
             {
-                switch (entry.Key)
+                switch (method.Name)
                 {
                     case "OnUpdateMesh":
-                        BindEvent(component, entry.Value, ref state.OnUpdateMesh);
+                        BindEvent(component, method, ref state.OnUpdateMesh);
                         break;
 
                     case "OnCoherenceConnected":
-                        Network.OnCoherenceConnected += BindEvent(component, entry.Value, ref state.OnCoherenceConnected);
+                        Network.OnConnected += BindEvent(component, method, ref state.OnCoherenceConnected);
                         break;
                     case "OnCoherenceDisconnected":
-                        Network.OnCoherenceDisconnected += BindEvent(component, entry.Value, ref state.OnCoherenceDisconnected);
+                        Network.OnDisconnected += BindEvent(component, method, ref state.OnCoherenceDisconnected);
                         break;
                     case "OnCoherenceEnabled":
-                        Network.OnCoherenceEnabled += BindEvent(component, entry.Value, ref state.OnCoherenceEnabled);
+                        Network.OnEnabled += BindEvent(component, method, ref state.OnCoherenceEnabled);
                         break;
                     case "OnCoherenceDisabled":
-                        Network.OnCoherenceDisabled += BindEvent(component, entry.Value, ref state.OnCoherenceDisabled);
+                        Network.OnDisabled += BindEvent(component, method, ref state.OnCoherenceDisabled);
                         break;
                     default: break;
                     // and so on... this is awful tbh.
@@ -294,7 +284,7 @@ namespace Coherence
             }
 
             // Turn PropertyInfo entries to delegates into this instance
-            foreach (var prop in info.Properties)
+            foreach (var prop in info.Type.GetProperties())
             {
                 try
                 {
@@ -336,16 +326,15 @@ namespace Coherence
 
             var handlers = component.GetCoherenceState().OnNetworkEvent;
 
-            if (!handlers.TryGetValue(id, out List<IEventHandler> values))
+            if (handlers.ContainsKey(id))
             {
-                values = new List<IEventHandler>();
-                handlers.Add(id, values);
+                throw new Exception($"A handler is already registered for event '{id}'");
             }
 
-            values.Add(new EventHandler<T>
+            handlers[id] = new EventHandler<T>
             {
                 Callback = callback
-            });
+            };
         }
 
         internal static ComponentState GetCoherenceState(this IComponent component)
@@ -387,16 +376,15 @@ namespace Coherence
 
             var handlers = component.GetCoherenceState().VertexDataStreams;
 
-            if (!handlers.TryGetValue(id, out List<IVertexDataStreamHandler> values))
+            if (handlers.ContainsKey(id))
             {
-                values = new List<IVertexDataStreamHandler>();
-                handlers.Add(id, values);
+                throw new Exception($"A handler is already registered for vertex data stream '{id}'");
             }
 
-            values.Add(new VertexDataStreamHandler<T>
+            handlers[id] = new VertexDataStreamHandler<T>
             {
                 Callback = callback
-            });
+            };
         }
 
         public static void DispatchUpdate(this IComponent component, InteropComponent interop)
@@ -409,16 +397,19 @@ namespace Coherence
         /// Safely destroy both this component and its internal Coherence state.
         /// </summary>
         /// <param name="obj"></param>
-        internal static void DestroyCoherenceComponent(this IComponent obj)
+        internal static void DestroyCoherenceComponent(this IComponent obj, bool destroyMonoBehaviour = true)
         {
             obj.GetCoherenceState().Destroy();
             data.Remove(obj);
 
-        #if UNITY_EDITOR
-            UnityEngine.Object.DestroyImmediate(obj as UnityEngine.Object);
-        #else
-            UnityEngine.Object.Destroy(obj as UnityEngine.Object);
-        #endif
+            if (destroyMonoBehaviour)
+            {
+            #if UNITY_EDITOR
+                UnityEngine.Object.DestroyImmediate(obj as UnityEngine.Object);
+            #else
+                UnityEngine.Object.Destroy(obj as UnityEngine.Object);
+            #endif
+            }
         }
 
         /// <summary>

@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEditor;
+using UnityEditor.Callbacks;
 using UnityEngine;
 
 namespace Coherence
@@ -30,8 +31,13 @@ namespace Coherence
 
         const string SETTINGS_ASSET_PATH = "Assets/Settings/Coherence.asset";
 
+        /// <summary>
+        /// Flag persisted between assembly reloads to indicate whether or
+        /// not Coherence was running prior to the reload. This will help us
+        /// decide whether or not to restart Coherence once reload is complete.
+        /// </summary>
         [SerializeField]
-        internal bool isStarted = false;
+        internal bool shouldRestart = false;
 
         public static CoherenceSettings Instance
         {
@@ -51,10 +57,48 @@ namespace Coherence
             }
         }
 
+        /// <summary>
+        /// Current instance of the sync manager.
+        ///
+        /// When queried, if one does not exist it will be created and added to the scene on-demand.
+        /// </summary>
+        internal static SyncManager Sync
+        {
+            get {
+                if (sync == null)
+                {
+                    sync = FindObjectOfType<SyncManager>();
+                    if (sync == null)
+                    {
+                        var go = new GameObject("[Coherence]")
+                        {
+                            tag = "EditorOnly",
+                            hideFlags = HideFlags.NotEditable | HideFlags.DontSave
+                        };
+
+                        sync = go.AddComponent<SyncManager>();
+                    }
+                }
+                return sync;
+            }
+        }
+
         [NonSerialized]
         private static CoherenceSettings instance;
 
+        [NonSerialized]
+        private static SyncManager sync;
+
         #endregion
+
+        [DidReloadScripts]
+        private static void OnScriptsReloaded()
+        {
+            if (Instance.shouldRestart)
+            {
+                Sync.Setup();
+            }
+        }
 
         #region Shared Memory
 
@@ -230,25 +274,6 @@ namespace Coherence
         public List<BlenderTexture> textureSlots;
 
         #endregion
-
-        // TODO: Metaballs
-        // material / GO prefab
-        // going to convert to mesh in Blender first probably. Don't want
-        // to write a bunch of code to support a custom transfer format
-        // AND THEN write the compute shaders for it if I'm ultimately
-        // converting it to mesh anyway in my own use cases.
-        // Ref: https://blender.stackexchange.com/a/179015
-
-        // NOTE: Any settings that need to be communicated back to Blender
-        // on connect should be encapsulated in an interop struct that
-        // we can just push right through to Blender.
-
-        // TODO: Settings to ignore blender transform OR apply unity transforms
-        // to Blender. For example, I'd like to be able to model some stuff and
-        // apply unity physics to it - and then adjust the model a bit without
-        // blender's transform updating the physics-based positioning.
-        // Alternatively - I'd like to be able to pull in a model from blender,
-        // move it around in Unity, and then move around in blender independently.
 
         #region Component Management
 

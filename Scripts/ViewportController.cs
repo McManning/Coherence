@@ -39,8 +39,6 @@ namespace Coherence
         public Texture2D tex;
         RenderTexture rt;
 
-        public SyncManager Sync { get; set; }
-
         public void Awake()
         {
             gameObject.tag = "EditorOnly";

@@ -15,21 +15,11 @@ namespace Coherence
         private bool showTextureSyncSettings = true;
         private bool showAdvancedSettings = false;
         private bool showExperimentalSettings = false;
+        private bool showDebug = false;
 
-        private bool IsRunning
-        {
-            get { return sync != null && sync.IsRunning; }
-        }
+        private bool IsRunning => Network.IsRunning;
 
-        private bool IsConnected
-        {
-            get { return sync != null && sync.IsConnected; }
-        }
-
-        /// <summary>
-        /// Instance of the sync manager in the scene
-        /// </summary>
-        private SyncManager sync;
+        private bool IsConnected => Network.IsConnected;
 
         private ReorderableList materialOverridesList;
         private ReorderableList textureSlotList;
@@ -56,6 +46,7 @@ namespace Coherence
                 showDefaultBackground = false
             };
 
+            /*
             // If we went through an assembly reload - check if we should reboot Coherence.
             var instance = CoherenceSettings.Instance;
             if (instance.isStarted && !IsRunning && instance.restartAfterAssemblyReload)
@@ -66,6 +57,7 @@ namespace Coherence
             {
                 instance.isStarted = false;
             }
+            */
         }
 
         private void DrawMaterialOverridesHeader(Rect rect)
@@ -185,7 +177,7 @@ namespace Coherence
 
                 if (GUILayout.Button("Edit"))
                 {
-                    // open script
+                    // TODO: open script
                 }
             }
 
@@ -301,31 +293,15 @@ namespace Coherence
         /// </summary>
         private void Stop()
         {
-            CoherenceSettings.Instance.isStarted = false;
-
             foreach (var instance in Resources.FindObjectsOfTypeAll<SyncManager>())
             {
                 instance.Teardown();
-                DestroyImmediate(instance.gameObject);
             }
-
-            sync = null;
         }
 
         private void Start()
         {
-            Stop();
-
-            var go = new GameObject("[Coherence Sync]")
-            {
-                tag = "EditorOnly",
-                hideFlags = HideFlags.NotEditable | HideFlags.DontSave
-            };
-
-            sync = go.AddComponent<SyncManager>();
-            sync.Setup();
-
-            CoherenceSettings.Instance.isStarted = true;
+            CoherenceSettings.Sync.Setup();
         }
 
         private bool CanOpenSelectionInBlender()
@@ -496,12 +472,43 @@ namespace Coherence
             DrawOpenWithBlender();
         }
 
-        private void RefreshGreasePencilObjects()
-        {
-            // TODO: Iterate GPs and either convert the GOs to line renderer-based or
-            // quad based and apply the specified material.
+        Vector2 debugScrollPosition;
 
-            throw new System.NotImplementedException();
+        private void DrawDebug()
+        {
+            EditorGUILayout.BeginVertical();
+            debugScrollPosition = EditorGUILayout.BeginScrollView(debugScrollPosition, true, true);
+
+            // Registered plugin handlers (could be lambda delegates so can't really match back to a class here...)
+            EditorGUILayout.LabelField($"Plugin Handlers", EditorStyles.boldLabel);
+            foreach (var handler in Network.handlers)
+            {
+                EditorGUILayout.LabelField($"  IN: {handler.Key}");
+            }
+
+            // Registered network object instances and their inbound message handlers
+            foreach (var target in Network.targets)
+            {
+                EditorGUILayout.LabelField($"{target.Key} ({target.Value.Count} objects)", EditorStyles.boldLabel);
+                foreach (var instance in target.Value)
+                {
+                    EditorGUILayout.LabelField($"  {instance.Key}");
+
+                    // Search matching inbound handlers
+                    foreach (var request in Network.targetHandlers)
+                    {
+                        if (request.Value.ContainsKey(instance.Key))
+                        {
+                            EditorGUILayout.LabelField($"    {request.Key}");
+                        }
+                    }
+
+                }
+
+            }
+
+            EditorGUILayout.EndScrollView();
+            EditorGUILayout.EndVertical();
         }
 
         public override void OnInspectorGUI()
@@ -591,6 +598,25 @@ namespace Coherence
                     DrawExperimental();
                 }
             }
+
+            EditorGUILayout.EndFoldoutHeaderGroup();
+            EditorGUILayout.Space();
+
+
+            showDebug = EditorGUILayout.BeginFoldoutHeaderGroup(
+                showDebug, "Debug"
+            );
+            if (showDebug)
+            {
+                using (new EditorGUI.IndentLevelScope())
+                {
+                    DrawDebug();
+                }
+            }
+
+            EditorGUILayout.EndFoldoutHeaderGroup();
+            EditorGUILayout.Space();
+
 
             serializedObject.ApplyModifiedProperties();
         }

@@ -1098,7 +1098,7 @@ namespace Coherence
         public static void Debug(string message)
         {
         #if UNITY_EDITOR
-            UnityEngine.Debug.Log("[Coherence] " + message);
+            UnityEngine.Debug.Log("<b>[Coherence]</b> " + message);
         #else
             Console.WriteLine("[LibCoherence] " + message);
         #endif
@@ -1107,7 +1107,7 @@ namespace Coherence
         public static void Warning(string message)
         {
         #if UNITY_EDITOR
-            UnityEngine.Debug.LogWarning("[Coherence] " + message);
+            UnityEngine.Debug.LogWarning("<b>[Coherence]</b> " + message);
         #else
             Console.WriteLine("[LibCoherence] WARNING: " + message);
         #endif
@@ -1116,7 +1116,7 @@ namespace Coherence
         public static void Error(string message)
         {
         #if UNITY_EDITOR
-            UnityEngine.Debug.LogError("[Coherence] " + message);
+            UnityEngine.Debug.LogError("<b>[Coherence]</b> " + message);
         #else
             Console.WriteLine("[LibCoherence] ERROR: " + message);
         #endif

@@ -115,9 +115,6 @@ namespace Coherence
             {
                 // InteropLogger.Debug($"Connecting to `{connectionName + VIEWPORT_IMAGE_BUFFER}`");
 
-                // Buffer for render data coming from Unity (consume-only)
-                pixelsConsumer = new CircularBuffer(connectionName + VIEWPORT_IMAGE_BUFFER);
-
                 // InteropLogger.Debug($"Connecting to `{connectionName + UNITY_MESSAGES_BUFFER}` and `{connectionName + BLENDER_MESSAGES_BUFFER}`");
 
                 // Two-way channel between Blender and Unity
@@ -126,11 +123,16 @@ namespace Coherence
                     connectionName + UNITY_MESSAGES_BUFFER,
                     connectionName + BLENDER_MESSAGES_BUFFER
                 );
+
+                // Buffer for render data coming from Unity (consume-only)
+                pixelsConsumer = new CircularBuffer(connectionName + VIEWPORT_IMAGE_BUFFER);
             }
             catch (System.IO.FileNotFoundException)
             {
                 // Shared memory space is not valid - Unity may not have started it.
                 // This is an error that should be gracefully handled by the UI.
+                DisposeSharedMemory();
+
                 IsConnected = false;
                 return false;
             }
@@ -155,6 +157,11 @@ namespace Coherence
             IsConnectedToUnity = false;
             IsConnected = false;
 
+            DisposeSharedMemory();
+        }
+
+        void DisposeSharedMemory()
+        {
             messages?.Dispose();
             messages = null;
 
@@ -314,6 +321,7 @@ namespace Coherence
             // ready to start accepting large data chunks.
             foreach (var mesh in meshes.Values)
             {
+                SendEntity(RpcRequest.AddMesh, mesh);
                 mesh.SendAll();
             }
 
@@ -385,7 +393,10 @@ namespace Coherence
             InteropLogger.Debug("Unity disconnected");
 
             // Disconnect from invalidated shared memory since Unity was the owner
-            Disconnect();
+            IsConnectedToUnity = false;
+            IsConnected = false;
+
+            DisposeSharedMemory();
 
             // Based on Unity's side of things - we may never even see this message.
             // If unity sends out a Disconnect and then immediately disposes the
@@ -480,6 +491,8 @@ namespace Coherence
             {
                 var mesh = new Mesh(name);
                 meshes[name] = mesh;
+
+                SendEntity(RpcRequest.AddMesh, mesh);
                 return mesh;
             }
 

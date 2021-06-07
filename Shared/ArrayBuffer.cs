@@ -549,6 +549,16 @@ namespace Coherence
         }
 
         /// <summary>
+        /// Copy data from a network message representing an array segment
+        /// </summary>
+        /// <param name="msg"></param>
+        public void CopyFrom(InteropMessage msg)
+        {
+            Resize(msg.header.length)
+                .CopyFrom(msg.data, msg.header.index, msg.header.count);
+        }
+
+        /// <summary>
         /// Resize the buffer and mark dirty.
         ///
         /// Any sub-arrays created from <see cref="GetRange(int, int)"/>

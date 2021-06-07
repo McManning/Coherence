@@ -10,19 +10,16 @@ using UnityEngine.Rendering;
 
 namespace Coherence
 {
-    // A plugin that listens to typical Coherence events (just like a Component would... wink wink)
-    // plugins are attached to the Coherence root [Coherence] GameObject as monobehaviours.
-    // So we can easily iterate through them by pulling IPlugin instances.
     public interface IPlugin
     {
-        void OnUnregistered();
+        void OnRegistered();
 
-        void OnCoherenceStart();
-        void OnCoherenceStop();
+        void OnUnregistered();
     }
 
     /// <summary>
-    /// Coherence plugin that instantiates networked game objects on request
+    /// Coherence plugin that instantiates networked game objects
+    /// and adds/removes Coherence Components on request.
     /// </summary>
     public class ObjectFactory : MonoBehaviour, IPlugin
     {
@@ -31,10 +28,14 @@ namespace Coherence
         /// <summary>
         /// Objects added with parents that are not (yet) in the scene.
         /// </summary>
-        readonly HashSet<ObjectController> orphans = new HashSet<ObjectController>();
+        readonly HashSet<CoherenceObject> orphans = new HashSet<CoherenceObject>();
+
+        readonly HashSet<CoherenceObject> instances = new HashSet<CoherenceObject>();
 
         public void OnRegistered()
         {
+            InteropLogger.Debug("ObjectFactory.OnRegistered");
+
             if (container == null)
             {
                 container = new GameObject("Objects")
@@ -48,66 +49,78 @@ namespace Coherence
 
             Network.Register(RpcRequest.AddObject, OnAddObject);
             Network.Register(RpcRequest.RemoveObject, OnRemoveObject);
+            Network.Register(RpcRequest.AddComponent, OnAddComponent);
+
+            Network.OnDisconnected += DestroyAllObjects;
         }
 
         public void OnUnregistered()
         {
-            // Network handlers are automatically unregistered.
+            InteropLogger.Debug("ObjectFactory.OnUnregistered");
+            Network.OnDisconnected -= DestroyAllObjects;
         }
 
-        public void OnCoherenceStart()
+        private void DestroyAllObjects()
         {
+            foreach (var obj in instances)
+            {
+                DestroyImmediate(obj.gameObject);
+            }
+
+            orphans.Clear();
+            instances.Clear();
         }
 
-        public void OnCoherenceStop()
+        private void OnAddObject(InteropMessage msg)
         {
-
-        }
-
-        private void OnAddObject(IntPtr ptr, InteropMessageHeader header)
-        {
-            var obj = FastStructure.PtrToStructure<InteropSceneObject>(ptr);
+            var obj = msg.Reinterpret<InteropSceneObject>();
 
             var prefab = CoherenceSettings.Instance.sceneObjectPrefab;
             var go = prefab ? Instantiate(prefab) : new GameObject();
             go.name = obj.name;
 
-            var controller = go.AddComponent<ObjectController>();
-            controller.UpdateFromInterop(obj);
+            var controller = go.AddComponent<CoherenceObject>();
+            controller.Initialize(obj);
 
+            // Attach to an existing parent and attach any orphans
+            // waiting for this object to exist as new children
             ReparentObject(controller);
-
-            // Attach any orphaned objects that were waiting for this parent to be added.
             CheckOrphanedObjects();
 
-            // Add the object as a listener for network events
-            Network.RegisterTarget(controller);
+            instances.Add(controller);
         }
 
-        private void OnRemoveObject(IntPtr ptr, InteropMessageHeader header)
+        private void OnRemoveObject(InteropMessage msg)
         {
-            var obj = FastStructure.PtrToStructure<InteropSceneObject>(ptr);
+            var obj = msg.Reinterpret<InteropSceneObject>();
 
-            var instance = Network.FindTarget(NetworkTargetType.Object, obj.name) as ObjectController;
+            var instance = Network.FindTarget<CoherenceObject>(obj.name);
 
             // Move children to the main container and orphan them.
-            var children = instance.GetComponentsInChildren<ObjectController>();
+            var children = instance.GetComponentsInChildren<CoherenceObject>();
             foreach (var child in children)
             {
                 child.transform.parent = container.transform;
                 orphans.Add(child);
             }
 
-            // Cascade a destroy event to every component in the object
-            foreach (var component in instance.Components)
-            {
-                component.DestroyCoherenceComponent();
-            }
+            DestroyImmediate(instance.gameObject);
 
             orphans.Remove(instance);
+            instances.Remove(instance);
+        }
 
-            Network.UnregisterTarget(instance);
-            DestroyImmediate(instance.gameObject);
+        private void OnAddComponent(InteropMessage msg)
+        {
+            var component = msg.Reinterpret<InteropComponent>();
+
+            var obj = Network.FindTarget<CoherenceObject>(component.target);
+            if (obj == null)
+            {
+                throw new Exception($"No objects found with the name '{component.target}'");
+            }
+
+            obj.AddCoherenceComponent(component);
         }
 
         /// <summary>
@@ -118,9 +131,9 @@ namespace Coherence
         /// and added to the orphans list to be later picked up by new entries.
         /// </summary>
         /// <param name="obj"></param>
-        private void ReparentObject(ObjectController obj)
+        private void ReparentObject(CoherenceObject obj)
         {
-            var parentName = obj.Data.transform.parent.Value;
+            var parentName = obj.ParentName;
 
             // Object is root level / unparented.
             if (string.IsNullOrEmpty(parentName))
@@ -131,7 +144,7 @@ namespace Coherence
             }
 
             // Find an already loaded parent
-            var parent = Network.FindTarget(NetworkTargetType.Object, parentName) as ObjectController;
+            var parent = Network.FindTarget<CoherenceObject>(parentName);
             if (parent != null)
             {
                 obj.transform.parent = parent.transform;
@@ -144,6 +157,7 @@ namespace Coherence
             // Add to the orphan list to be later picked up if it does get added.
             obj.transform.parent = container.transform;
             orphans.Add(obj);
+
         }
 
         /// <summary>
@@ -151,11 +165,11 @@ namespace Coherence
         /// </summary>
         private void CheckOrphanedObjects()
         {
-            var parentedOrphans = new HashSet<ObjectController>();
+            var parentedOrphans = new HashSet<CoherenceObject>();
             foreach (var orphan in orphans)
             {
-                var parentName = orphan.Data.transform.parent.Value;
-                var parent = Network.FindTarget(NetworkTargetType.Object, parentName) as ObjectController;
+                var parentName = orphan.ParentName;
+                var parent = Network.FindTarget<CoherenceObject>(parentName);
                 if (parent != null)
                 {
                     orphan.transform.parent = parent.transform;

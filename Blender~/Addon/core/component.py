@@ -207,9 +207,11 @@ class BaseComponent:
         if not self._enabled and val:
             self._enabled = True
             self.on_enable()
+            interop.lib.UpdateComponent(self.interop)
         elif self._enabled and not val:
             self._enabled = False
             self.on_disable()
+            interop.lib.UpdateComponent(self.interop)
 
     @property
     def mesh_uid(self):

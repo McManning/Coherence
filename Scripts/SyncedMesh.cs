@@ -1,15 +1,22 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Events;
 using UnityEngine.Rendering;
 
 namespace Coherence
 {
-    public delegate void OnUpdateMeshEvent(MeshController mesh);
+    public delegate void OnUpdateMeshEvent(SyncedMesh mesh);
 
-    public class MeshController
+    /// <summary>
+    /// Mesh data synced between a remote application and a <see cref="Mesh"/>.
+    ///
+    /// <para>
+    ///     Instances are created through <see cref="MeshFactory"/> when mesh data
+    ///     is received from a connected application and made available to other
+    ///     plugins for referencing meshes while actively connected.
+    /// </para>
+    /// </summary>
+    public class SyncedMesh : INetworkTarget, IDisposable
     {
         public event OnUpdateMeshEvent OnUpdateMesh;
 
@@ -33,23 +40,43 @@ namespace Coherence
         /// <summary>
         /// OnUpdateMesh listeners for changes on this mesh instance.
         /// </summary>
-        internal readonly List<Action<MeshController>> listeners = new List<Action<MeshController>>();
+        internal readonly List<Action<SyncedMesh>> listeners = new List<Action<SyncedMesh>>();
 
         /// <summary>
         /// The underlying Unity Mesh to update
         /// </summary>
-        public Mesh mesh { get; }
+        public Mesh mesh { get; private set; }
 
         bool applyDirtiedBuffers;
+        private bool disposed;
 
-        public MeshController(string name)
+        public SyncedMesh(InteropMesh data)
         {
+            Data = data;
+
+            // Unity mesh instance to load geometry data into
             mesh = new Mesh
             {
-                name = name
+                name = data.name
             };
 
             mesh.MarkDynamic();
+
+            // Network messages for different vertex data buffers
+            Network.Register(this, RpcRequest.UpdateTriangles, triangles.CopyFrom);
+            Network.Register(this, RpcRequest.UpdateVertices, vertices.CopyFrom);
+            Network.Register(this, RpcRequest.UpdateNormals, normals.CopyFrom);
+            Network.Register(this, RpcRequest.UpdateUV, uv.CopyFrom);
+            Network.Register(this, RpcRequest.UpdateUV2, uv2.CopyFrom);
+            Network.Register(this, RpcRequest.UpdateUV3, uv3.CopyFrom);
+            Network.Register(this, RpcRequest.UpdateUV4, uv4.CopyFrom);
+            Network.Register(this, RpcRequest.UpdateVertexColors, colors.CopyFrom);
+
+            Network.Register(this, RpcRequest.UpdateMesh,
+                (msg) => UpdateFromInterop(msg.Reinterpret<InteropMesh>())
+            );
+
+            Network.OnSync += OnSync;
         }
 
         internal void UpdateFromInterop(InteropMesh interop)
@@ -62,7 +89,7 @@ namespace Coherence
             }
         }
 
-        public void Sync()
+        public void OnSync()
         {
             if (applyDirtiedBuffers)
             {
@@ -143,7 +170,8 @@ namespace Coherence
             if (uv4.IsDirty)
                 mesh.uv4 = uv4.Read();
 
-            // TODO: Additional channels
+            // TODO: Additional standard channels / custom channels
+
             // mesh.boneWeights =
             // mesh.bindposes =
             // mesh.tangents =
@@ -157,6 +185,30 @@ namespace Coherence
             mesh.UploadMeshData(false);
 
             OnUpdateMesh?.Invoke(this);
+        }
+
+        void Dispose(bool disposing)
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            if (disposing)
+            {
+                Network.OnSync -= OnSync;
+
+                UnityEngine.Object.DestroyImmediate(mesh);
+                mesh = null;
+            }
+
+            disposed = true;
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
         }
     }
 }

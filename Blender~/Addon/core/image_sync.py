@@ -5,16 +5,31 @@ import numpy as np
 from .plugin import Plugin
 from . import (runtime, interop)
 
+MAX_TEXTURE_SLOTS = 64
+UNASSIGNED_TEXTURE_SLOT_NAME = '-- Unassigned --'
+
+def get_texture_slots() -> list:
+    """Return all sync-able texture slot names exposed by the host
+
+    Returns:
+        list[str]
+    """
+    # if not runtime.instance.is_connected():
+    #     return []
+
+    buffer = (interop.InteropString64 * MAX_TEXTURE_SLOTS)()
+    size = interop.lib.GetTextureSlots(buffer, len(buffer))
+
+    # Convert byte arrays to a list of strings.
+    return [UNASSIGNED_TEXTURE_SLOT_NAME] + [buffer[i].buffer.decode('utf-8') for i in range(size)]
+
 class ImageSync(Plugin):
     """Sync Blender Images with Unity Render Textures"""
-    MAX_TEXTURE_SLOTS = 64
-    UNASSIGNED_TEXTURE_SLOT_NAME = '-- Unassigned --'
 
     #: Draw handler for :class:`bpy.types.SpaceImageEditor`
     image_editor_handle = None
 
-    # Numpy array referencing pixel data for the
-    # active bpy.types.Image to sync
+    #: np.ndarray: Numpy array with pixel data for the active :class:`bpy.types.Image`
     image_buffer = None # np.ndarray
 
     def on_start(self):
@@ -31,21 +46,6 @@ class ImageSync(Plugin):
             bpy.types.SpaceImageEditor.draw_handler_remove(self.image_editor_handle, 'WINDOW')
             self.image_editor_handle = None
 
-    def get_texture_slots(self) -> list:
-        """Return all sync-able texture slot names exposed by the host
-
-        Returns:
-            list[str]
-        """
-        if not self.is_connected():
-            return []
-
-        buffer = (interop.InteropString64 * self.MAX_TEXTURE_SLOTS)()
-        size = interop.lib.GetTextureSlots(buffer, len(buffer))
-
-        # Convert byte arrays to a list of strings.
-        return [self.UNASSIGNED_TEXTURE_SLOT_NAME] + [buffer[i].buffer.decode('utf-8') for i in range(size)]
-
     def sync_texture(self, image):
         """Send updated pixel data for a texture to the host
 
@@ -53,7 +53,7 @@ class ImageSync(Plugin):
             image (bpy.types.Image): The image to sync
         """
         settings = image.coherence
-        if settings.error or settings.texture_slot == self.UNASSIGNED_TEXTURE_SLOT_NAME:
+        if settings.error or settings.texture_slot == UNASSIGNED_TEXTURE_SLOT_NAME:
             return
 
         # TODO: Optimize further (e.g. don't allocate the numpy buffer each time, etc)
@@ -85,7 +85,7 @@ class ImageSync(Plugin):
         delay = bpy.context.scene.coherence.texture_slot_update_frequency
 
         # Don't do anything if we're still not connected
-        if bpy.context.mode != 'PAINT_TEXTURE' or not runtime.is_connected():
+        if bpy.context.mode != 'PAINT_TEXTURE' or not runtime.instance.is_connected():
             return delay
 
         image = bpy.context.tool_settings.image_paint.canvas
@@ -109,29 +109,3 @@ class ImageSync(Plugin):
         # on an image. Any other action (masking, viewing) are ignored.
         if space.mode == 'PAINT' and space.image:
             self.sync_texture(space.image)
-
-# Old unused one.
-# class ImageEditing:
-#     def __init__(self, context):
-#         self.handle = bpy.types.SpaceImageEditor.draw_handler_add(
-#             self.draw_callback, (context,),
-#             'WINDOW', 'POST_PIXEL'
-#         )
-
-#     def draw_callback(self, context):
-#         space = context.space_data
-#         print(space)
-#         print(space.image)
-#         print(space.cursor_location)
-#         print(space.mode)
-#         print(space.zoom[0], space.zoom[1])
-
-#         # This still gets fired for pan/zoom
-
-#         if space.mode == 'PAINT' and space.image:
-#             settings = space.image.coherence
-#             if settings.texture_slot[0] != '-': # TODO: Better "if defined..."
-#                 runtime.instance.sync_texture(settings.texture_slot, space.image)
-
-#     def remove_handle(self):
-#         bpy.types.SpaceImageEditor.draw_handler_remove(self.handle, 'WINDOW')
