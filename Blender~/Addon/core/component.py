@@ -84,7 +84,6 @@ class BaseComponent:
             obj_name (str)
         """
         self._name = obj_name
-        self._has_mesh = False
         self._enabled = False
         self._handlers = dict()
         self._properties = dict()
@@ -131,19 +130,10 @@ class BaseComponent:
 
     @property
     def interop(self):
-        mesh_uid = self.mesh_uid
-        material_id = self.material_id
-
         component = interop.InteropComponent()
         component.name = interop.InteropString64(self.name().encode())
         component.target = interop.InteropString64(self._name.encode())
         component.enabled = self.enabled
-
-        if mesh_uid:
-            component.mesh = interop.InteropString64(mesh_uid.encode())
-
-        if material_id:
-            component.material = interop.InteropString64(material_id.encode())
 
         return component
 
@@ -177,28 +167,6 @@ class BaseComponent:
         raise NotImplementedError
 
     @property
-    def mesh_id(self) -> str:
-        """Union[str, None]: Unique identifier for the mesh attached to the object
-
-        If the object has modifiers applied - this will be unique for
-        that object. Otherwise - this may be a common mesh name that
-        is instanced between multiple objects in the scene.
-        """
-        return None
-
-    @property
-    def material_id(self) -> str:
-        """Union[str, None]: Unique identifier for the material attached to the object
-
-        If there is no bpy_obj or no active material, this returns None.
-        """
-        obj = self.bpy_obj
-        if not obj or not obj.active_material:
-            return None
-
-        return obj.active_material.name
-
-    @property
     def enabled(self):
         return self._enabled
 
@@ -212,41 +180,6 @@ class BaseComponent:
             self._enabled = False
             self.on_disable()
             interop.lib.UpdateComponent(self.interop)
-
-    @property
-    def mesh_uid(self):
-        """Unique identifier for the mesh associated with this object.
-
-        If a mesh is instanced between different objects and should only be
-        evaluated once, then return the same UID between objects.
-
-        If this returns a non-None value, then :meth:`on_update_mesh` must be
-        implemented to handle the request for handling mesh data updates
-        when the depsgraph is modified.
-
-        Returns:
-            Union[str, None]
-        """
-        return None
-
-    @property
-    def has_mesh(self):
-        return self._has_mesh
-
-    @has_mesh.setter
-    def has_mesh(self, val):
-        self._has_mesh = val
-        # TODO: Notify runtime that this is provides mesh changes
-
-    # TODO: Replacement (I think just global methods)
-
-    # @classmethod
-    # def register(self):
-    #     self.on_registered()
-
-    # @classmethod
-    # def unregister(self):
-    #     self.on_unregistered()
 
     def add_handler(self, id: str, callback):
         """

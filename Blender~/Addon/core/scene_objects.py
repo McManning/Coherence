@@ -21,9 +21,6 @@ class SceneObjects(Plugin):
     #: set[Type[Component]]: All component classes that autobind
     autobinds: set
 
-    #: dict[str, Component]
-    dirty_geometry: dict
-
     #: set[str]: Object names found during the last scene scan
     current_names: set()
 
@@ -31,7 +28,6 @@ class SceneObjects(Plugin):
         self.objects = dict()
         self.registered = dict()
         self.autobinds = set()
-        self.dirty_geometry = dict()
         self.current_names = set()
 
     def on_new_object(self, obj):
@@ -270,12 +266,6 @@ class SceneObjects(Plugin):
         #     self.on_component_error(component_name, err, obj_name)
         #     # TODO: Should this have prevented creation altogether?
 
-        # If the component has a mesh assigned to it, add to the
-        # list of geometry to update next depsgraph update.
-        mesh_uid = instance.mesh_uid
-        if mesh_uid:
-            self.dirty_geometry[mesh_uid] = instance
-
         return instance
 
     def destroy_all_component_instances(self, component):
@@ -452,22 +442,6 @@ class SceneObjects(Plugin):
         traceback.print_stack()
         # TODO: Log somewhere more visible
 
-    def on_update_material(self, mat):
-        """
-        Args:
-            mat (bpy.types.Material)
-        """
-        debug('on_update_material - name={}'.format(mat.name))
-
-        # TODO: How do I refactor this? Each object needs to update
-        # themselves to reference the new material somehow...
-
-        # # Fire off an update for all objects that are using this material
-        # for bpy_obj in bpy.context.scene.objects:
-        #     if bpy_obj.active_material == mat:
-        #         obj = self.objects.find_by_bpy_name(bpy_obj.name)
-        #         if obj: obj.update_properties()
-
     def on_depsgraph_update(self, scene, depsgraph):
         """Sync the objects with the scene's dependency graph on each update
 
@@ -475,15 +449,10 @@ class SceneObjects(Plugin):
             scene (bpy.types.Scene)
             depsgraph (bpy.types.Depsgraph)
         """
-        debug('DEPSGRAPH UPDATE')
-
         self.sync_objects_with_scene(scene)
 
         for update in depsgraph.updates:
-            if type(update.id) == bpy.types.Material:
-                self.on_update_material(update.id)
-
-            elif type(update.id) == bpy.types.Object:
+            if type(update.id) == bpy.types.Object:
                 components = self.objects.get(update.id.name)
                 if not components: continue
 
@@ -492,30 +461,6 @@ class SceneObjects(Plugin):
 
                 for component in components:
                     component.on_update(depsgraph, update)
-
-                # if update.is_updated_geometry:
-                #     for instance in components:
-                #         mesh_uid = instance.mesh_uid
-                #         if mesh_uid:
-                #             # Add one component handler per mesh UID.
-                #             # For instanced meshes, this allows us to only have
-                #             # *one* component push the mesh update to Coherence.
-                #             # This also allows multiple components to manage
-                #             # independent meshes on the same scene object.
-                #             self.dirty_geometry[mesh_uid] = instance
-
-            # elif type(update.id) == bpy.types.Mesh:
-            #     print('Got a mesh update for {}, is_geo={}'.format(update.id.name, update.is_updated_geometry))
-
-        # Handle all unique geometry updates
-        # for component in self.dirty_geometry.values():
-        #     try:
-        #         component.on_update_mesh(depsgraph)
-        #     except Exception as err:
-        #         self.on_component_error(component.name(), err, component.object_name)
-        #         pass
-
-        self.dirty_geometry.clear()
 
         # Notify *all* components of a depsgraph update
         for components in self.objects.values():
@@ -547,9 +492,6 @@ class SceneObjects(Plugin):
     def on_stop(self):
         for component in self.all_components():
             component.on_coherence_stop()
-
-        # TODO: Necessary? We still want to persist state between stop/start.
-        # lib.Clear()
 
     def on_connected(self):
         for component in self.all_components():
