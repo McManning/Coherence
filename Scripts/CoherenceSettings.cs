@@ -221,6 +221,11 @@ namespace Coherence
 
         public Material GetMatchingMaterial(string blenderMaterialName)
         {
+            if (string.IsNullOrEmpty(blenderMaterialName))
+            {
+                return defaultMaterial;
+            }
+
             // Find an override for the Blender material
             var match = materialOverrides.Find((mo) => mo.blenderMaterial == blenderMaterialName);
             if (match != null)
