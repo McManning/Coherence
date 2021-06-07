@@ -49,12 +49,12 @@ def register():
 
     # Register builtin components
     components.mesh.register()
-    components.metaballs.register()
+    components.metaball.register()
 
 def unregister():
     # Unregister builtin components
     components.mesh.unregister()
-    components.metaballs.unregister()
+    components.metaball.unregister()
 
     # And then all plugins
     core.runtime.instance.unregister_all_plugins()

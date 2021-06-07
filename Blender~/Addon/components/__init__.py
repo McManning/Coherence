@@ -3,9 +3,9 @@
 if 'bpy' in locals():
     import importlib
     importlib.reload(mesh)
-    importlib.reload(metaballs)
+    importlib.reload(metaball)
 else:
     from . import mesh
-    from . import metaballs
+    from . import metaball
 
 import bpy

@@ -236,29 +236,6 @@ class COHERENCE_OBJECT_PT_components(BasePanel):
         instance.draw(layout)
 
 @autoregister
-class COHERENCE_MATERIAL_PT_settings(BasePanel):
-    bl_label = 'Coherence Settings'
-    bl_context = 'material'
-
-    @classmethod
-    def poll(cls, context):
-        return context.material and BasePanel.poll(context)
-
-    def draw(self, context):
-        mat = context.material
-        settings = mat.coherence
-
-        layout = self.layout
-        layout.use_property_split = True
-        layout.use_property_decorate = False
-
-        col = layout.column()
-
-        # col.prop(settings, 'use_override_name')
-        # if settings.use_override_name:
-        #    col.prop(settings, 'override_name')
-
-@autoregister
 class COHERENCE_PT_context_material(BasePanel):
     """Panel based on `CYCLES_PT_context_material` to provide a similar material selector menu"""
     bl_label = ''
