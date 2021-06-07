@@ -45,17 +45,36 @@ class Mesh(api.Component):
     #: string: Mesh ID attached to this object
     mesh_id: StringProperty(options={'HIDDEN'})
 
+    #: string: Active material for the mesh
+    material_name: StringProperty(options={'HIDDEN'})
+
     @classmethod
     def poll(cls, obj):
         return obj.type in {'MESH', 'CURVE', 'SURFACE', 'FONT'}
 
-    @property
-    def mesh_uid(self):
-        """Union[str, None]: Unique identifier for the mesh attached to the object
+    def get_material_name(self) -> str:
+        """Unique identifier for the material attached to the object
+
+        If there is no bpy_obj or no active material, this returns None.
+
+        Returns:
+            Union[str, None]
+        """
+        obj = self.bpy_obj
+        if not obj or not obj.active_material:
+            return None
+
+        return obj.active_material.name
+
+    def get_mesh_id(self) -> str:
+        """Unique identifier for the mesh attached to the object
 
         If the object has modifiers applied - this will be unique for
         that object. Otherwise - this may be a common mesh name that
         is instanced between multiple objects in the scene.
+
+        Returns:
+            Union[str, None]
         """
         bpy_obj = self.bpy_obj
 
@@ -93,18 +112,17 @@ class Mesh(api.Component):
         if not update.is_updated_geometry:
             return
 
-        mesh_uid = self.mesh_uid
+        mesh_id = self.get_mesh_id()
 
         # If this was the first component to receive a geometry update
         # on the given mesh, push geometry data to LibCoherence.
-        if mesh_uid not in self.geometry_updates:
-            self.geometry_updates.add(mesh_uid)
+        if mesh_id not in self.geometry_updates:
+            self.geometry_updates.add(mesh_id)
             self.send_evaluated_mesh(depsgraph, update)
 
         # Reassign mesh ID if it was changed
-        if mesh_uid != self.property_group.mesh_id:
-            self.property_group.mesh_id = mesh_uid
-
+        if mesh_id != self.property_group.mesh_id:
+            self.property_group.mesh_id = mesh_id
 
     def on_after_depsgraph_updates(self, depsgraph):
         """Executed after all depsgraph updates have been processed
@@ -115,16 +133,26 @@ class Mesh(api.Component):
         # Clear the geometry list that was updated this frame.
         self.geometry_updates.clear()
 
+        # Reassign material ID if it was changed.
+        # We do this after all depsgraph updates because a material could
+        # be renamed in Blender but our associated bpy obj won't get a
+        # depsgraph update event for it, despite using it.
+        material_name = self.get_material_name()
+        if material_name != self.property_group.material_name:
+            self.property_group.material_name = material_name
+
+
     def send_evaluated_mesh(self, depsgraph, update):
         """
         Attempt to evaluate a mesh from the linked `bpy.types.Object`
         using the provided depsgraph and send to Unity
 
         Args:
-            depsgraph (bpy.types.Depsgraph): Evaluated dependency graph
+            depsgraph (bpy.types.Depsgraph):    Evaluated dependency graph
+            update (bpy.types.DepsgraphUpdate): Information about the ID that was updated
         """
-        mesh_uid = self.mesh_uid
-        if not mesh_uid:
+        mesh_id = self.get_mesh_id()
+        if not mesh_id:
             return
 
         try:
@@ -181,7 +209,7 @@ class Mesh(api.Component):
             # I swear I dealt with this
 
             interop.lib.CopyMeshDataNative(
-                interop.get_string_buffer(mesh_uid),
+                interop.get_string_buffer(mesh_id),
                 mesh.loops[0].as_pointer(),
                 len(mesh.loops),
                 mesh.loop_triangles[0].as_pointer(),
